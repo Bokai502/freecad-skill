@@ -1,0 +1,134 @@
+# FreeCAD CLI Tools
+
+Command-line tools for interacting with FreeCAD documents and related YAML layout files. The
+package includes both XML-RPC-based commands and offline YAML utilities.
+
+## Installation
+
+### Method 1: Install from source
+
+```bash
+cd D:\workspace\skills_test\freecad_cli_tools
+conda run -n base pip install -e .
+```
+
+### Method 2: Build and install wheel
+
+```bash
+cd D:\workspace\skills_test\freecad_cli_tools
+conda run -n base pip install build
+conda run -n base python -m build
+conda run -n base pip install dist/freecad_cli_tools-*.whl
+```
+
+## Usage
+
+After installation, all commands are available directly:
+
+```bash
+# Document operations
+freecad-create-doc "MyDocument"
+freecad-list-docs
+
+# Object operations
+freecad-create-obj "MyDoc" "Part::Box" "Box1" -p '{"Length": 100}'
+freecad-edit-obj "MyDoc" "Box1" '{"Length": 200}'
+freecad-del-obj "MyDoc" "Box1"
+freecad-get-objs "MyDoc"
+freecad-get-obj "MyDoc" "Box1"
+
+# Library operations
+freecad-get-parts
+freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
+
+# Code execution and view
+freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
+freecad-get-view Isometric --output table.png
+freecad-create-assembly --input data/sample.updated.yaml --doc-name SampleYamlAssembly
+
+# YAML-first safe move and optional CAD sync
+freecad-yaml-safe-move --input data/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0
+freecad-yaml-safe-move --input data/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
+freecad-yaml-safe-move --input data/sample.yaml --output data/sample.reoriented.yaml --component P002 --install-face 4 --move 0 0 0
+
+# Document-only fallback commands
+freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
+freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
+```
+
+## Recommended Move Workflow
+
+Use YAML as the source of truth whenever you have a configuration file:
+
+1. Run `freecad-yaml-safe-move` on the YAML file.
+2. Let it compute a safe move and write the updated YAML.
+3. If needed, pass `--sync-cad --doc-name <doc>` so the same command updates the FreeCAD document.
+4. If you need a regenerated CAD document from the approved YAML, run `freecad-create-assembly`.
+
+Use `freecad-check-collision` and `freecad-move-obj` only as document-only fallbacks when no YAML
+source is available.
+
+## YAML Offline Move Command
+
+`freecad-yaml-safe-move` is the YAML-first move command. It can run as an offline YAML
+pre-processing command, and it can also sync the approved result into a running FreeCAD document.
+
+Use it when you want to:
+
+- move one component in a YAML assembly definition
+- detect box collisions against other components
+- preserve the component's current orientation while moving it, or explicitly reorient it onto a
+  different envelope face
+- keep the component inside `envelope.inner_size`
+- write a new YAML file with the updated position, `mount_point`, `envelope_face`, and optional
+  `rotation_matrix`
+- optionally update the matching component in an open FreeCAD document
+
+To build a new CAD document from the approved YAML, use:
+
+```bash
+freecad-create-assembly --input data/sample.updated.yaml --doc-name SampleYamlAssembly
+```
+
+This command creates:
+
+- an `Assembly` container
+- an `Envelope_part` with an `EnvelopeShell` when YAML `envelope` data exists
+- one `App::Part` plus one `Part::Box` per component
+- an automatic fitted GUI view after generation
+
+The command treats `placement.position` as the box minimum corner and performs translation-only
+collision-safe moves for the component's current orientation by default. In the current YAML/CLI
+model, `placement.mount_face` is the component's own mounting face, `placement.envelope_face` is
+the envelope face it is installed onto, and `placement.rotation_matrix` captures the assembly
+orientation. When `--install-face` is supplied, the command rotates the component so its own
+`mount_face` is installed onto the requested envelope face, starts from the centered position on
+that face, and applies the requested move as an in-plane offset there. If the full requested move
+is safe, it applies it directly. If not, it finds the closest safe prefix on that segment. If no
+safe point exists on the requested segment, it reports that no solution was found and still writes
+an output YAML for the constrained placement state. When `--sync-cad` is supplied, it then updates
+the matching component object in the target FreeCAD document from the written YAML result.
+
+On this machine, FreeCAD may run inside WSL while the CLI runs on Windows. In that setup:
+
+- use the normal Windows path for `--input` and `--output`
+- the CLI converts the written YAML path to a WSL-visible path before asking FreeCAD to read it
+- if Windows `localhost:9875` forwarding is unstable, pass `--host <current-wsl-ip> --port 9875`
+
+## Development Layout
+
+- `src/freecad_cli_tools/cli/`: thin command entry points
+- `src/freecad_cli_tools/cli_support.py`: shared CLI-side helpers for RPC calls, output parsing, and file input
+- `src/freecad_cli_tools/rpc_scripts/`: FreeCAD-side Python scripts executed over XML-RPC
+- `src/freecad_cli_tools/rpc_script_loader.py`: packaged script loader and placeholder renderer
+- `src/freecad_cli_tools/rpc_script_fragments.py`: reusable FreeCAD-side code fragments injected into script templates
+
+## Requirements
+
+- For RPC commands: FreeCAD with the MCP addon running (RPC server on localhost:9875)
+- For offline YAML-only use of `freecad-yaml-safe-move`: Python 3.9+ only
+- Python 3.9+
+
+## License
+
+MIT

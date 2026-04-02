@@ -1,0 +1,71 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "freecad-cli-tools"
+version = "0.1.0"
+description = "Command-line tools for FreeCAD RPC interaction"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "FreeCAD MCP Team"},
+]
+keywords = ["freecad", "cad", "cli", "rpc", "mcp"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = ["PyYAML"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "ruff",
+]
+
+[project.scripts]
+# CLI commands will be added here
+freecad-create-doc = "freecad_cli_tools.cli.create_document:main"
+freecad-list-docs = "freecad_cli_tools.cli.list_documents:main"
+freecad-create-obj = "freecad_cli_tools.cli.create_object:main"
+freecad-edit-obj = "freecad_cli_tools.cli.edit_object:main"
+freecad-del-obj = "freecad_cli_tools.cli.delete_object:main"
+freecad-get-objs = "freecad_cli_tools.cli.get_objects:main"
+freecad-get-obj = "freecad_cli_tools.cli.get_object:main"
+freecad-get-parts = "freecad_cli_tools.cli.get_parts_list:main"
+freecad-insert-part = "freecad_cli_tools.cli.insert_part:main"
+freecad-exec-code = "freecad_cli_tools.cli.execute_code:main"
+freecad-get-view = "freecad_cli_tools.cli.get_view:main"
+freecad-create-assembly = "freecad_cli_tools.cli.build_assembly_from_yaml:main"
+freecad-move-obj = "freecad_cli_tools.cli.move_document_object:main"
+freecad-check-collision = "freecad_cli_tools.cli.check_document_collisions:main"
+freecad-yaml-safe-move = "freecad_cli_tools.cli.yaml_component_safe_move:main"
+
+[project.urls]
+Homepage = "https://github.com/freecad-mcp/freecad-cli-tools"
+Repository = "https://github.com/freecad-mcp/freecad-cli-tools"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/freecad_cli_tools"]
+
+[tool.hatch.version]
+path = "src/freecad_cli_tools/__init__.py"
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "W", "I"]
+ignore = []
