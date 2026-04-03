@@ -3,6 +3,8 @@
 Command-line tools for interacting with FreeCAD documents and related YAML layout files. The
 package includes both XML-RPC-based commands and offline YAML utilities.
 
+Chinese version: [README.zh-CN.md](./README.zh-CN.md)
+
 ## Installation
 
 ### Method 1: Install from source

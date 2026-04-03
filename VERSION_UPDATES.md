@@ -1,10 +1,10 @@
 # Version Updates
 
-This workspace currently has one committed baseline:
+This document tracks notable workspace-level updates for `skills_test`.
 
-- `a31d64b` `【add】初始化项目`
+Original baseline commit:
 
-Everything below summarizes the updates made in the working tree after that commit.
+- `a31d64b` `initial project setup`
 
 ## v0.1.0 - Initial Baseline
 
@@ -18,25 +18,25 @@ Date: 2026-04-01
 
 Date: 2026-04-02
 
-- Added GUI/headless startup switching in [start_wsl_freecad_rpc.ps1](/D:/workspace/skills_test/scripts/start_wsl_freecad_rpc.ps1).
-- Added WSLg GUI startup script [start_freecad_gui_wsl.sh](/D:/workspace/skills_test/scripts/start_freecad_gui_wsl.sh).
+- Added GUI/headless startup switching in [start_wsl_freecad_rpc.ps1](./scripts/start_wsl_freecad_rpc.ps1).
+- Added WSLg GUI startup script [start_freecad_gui_wsl.sh](./scripts/start_freecad_gui_wsl.sh).
 - Updated the FreeCAD skill rules so move requests:
   - analyze first, then execute directly without waiting for an extra confirmation step
   - update the current CAD/YAML by default instead of rebuilding a new assembly automatically
-- Synced the latest FreeCAD skill backup into [freecad_skill_20260403](/D:/workspace/skills_test/skill_backups/freecad_skill_20260403).
-- The latest backup supersedes the previous backup in [freecad_skill_20260402](/D:/workspace/skills_test/skill_backups/freecad_skill_20260402).
+- Synced the latest FreeCAD skill backup into [freecad_skill](./skill_backups/freecad_skill).
+- Simplified skill backup management so the workspace keeps only the latest snapshot.
 
 ## v0.3.0 - Collision Search And Sync Performance Optimization
 
 Date: 2026-04-03
 
-- Reworked [yaml_component_safe_move.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) from dense path sampling to interval-based swept AABB analysis.
+- Reworked [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) from dense path sampling to interval-based swept AABB analysis.
 - Precomputed static obstacle bounds once per move request instead of recomputing them during every candidate test.
 - Reduced the fallback sampling path from `2000 + 60` style probing to `256 + 24` only for edge cases.
 - Changed the main safe-prefix search to a linear scan over obstacles instead of maintaining fragmented safe intervals.
-- Added direct placement sync script [sync_component_placement.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/rpc_scripts/sync_component_placement.py).
+- Added direct placement sync script [sync_component_placement.py](./freecad_cli_tools/src/freecad_cli_tools/rpc_scripts/sync_component_placement.py).
 - Removed the need for FreeCAD to reopen and parse YAML during `--sync-cad`; the final position and rotation are now passed directly over RPC.
-- Skipped the extra RPC `ping()` round-trip before `execute_code`, reducing per-call latency in [rpc_client.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/rpc_client.py) and [cli_support.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli_support.py).
+- Skipped the extra RPC `ping()` round-trip before `execute_code`, reducing per-call latency in [rpc_client.py](./freecad_cli_tools/src/freecad_cli_tools/rpc_client.py) and [cli_support.py](./freecad_cli_tools/src/freecad_cli_tools/cli_support.py).
 
 ## Functional Verification
 
@@ -44,8 +44,9 @@ Date: 2026-04-03
 
 ### Assembly Creation
 
-- Created [OriginalSingleUnit_Verify.FCStd](/D:/workspace/skills_test/data/OriginalSingleUnit_Verify.FCStd) from [sample.yaml](/D:/workspace/skills_test/data/sample.yaml).
-- Created [CompareSingleUnit_Verify.FCStd](/D:/workspace/skills_test/data/CompareSingleUnit_Verify.FCStd) from [sample.yaml](/D:/workspace/skills_test/data/sample.yaml).
+- Created runtime verification assemblies under `data/` from [sample.yaml](./examples/sample.yaml):
+  - `OriginalSingleUnit_Verify.FCStd`
+  - `CompareSingleUnit_Verify.FCStd`
 - Both documents opened successfully in FreeCAD:
   - `OriginalSingleUnit_Verify`
   - `CompareSingleUnit_Verify`
@@ -55,7 +56,7 @@ Date: 2026-04-03
 - Ran a real move test on `CompareSingleUnit_Verify`:
   - Component: `P005`
   - Target: `TOP` face, right-front direction
-  - Output YAML: [compare_single_unit_verify.P005.top-right-front.yaml](/D:/workspace/skills_test/data/compare_single_unit_verify.P005.top-right-front.yaml)
+  - Output YAML: `data/compare_single_unit_verify.P005.top-right-front.yaml`
 - Verified that:
   - `OriginalSingleUnit_Verify` kept `P005` at the original placement `[170.39544205001832, -32.163340202523656, -170.91101196102727]`
   - `CompareSingleUnit_Verify` updated `P005` to `[159.80590107668024, 53.18129340212163, 81.58361030306861]`
@@ -83,21 +84,30 @@ Summary:
 
 Date: 2026-04-03
 
-- Added unit tests for the YAML safe-move core in [test_yaml_component_safe_move.py](/D:/workspace/skills_test/freecad_cli_tools/tests/test_yaml_component_safe_move.py).
-- Added test path configuration in [pyproject.toml](/D:/workspace/skills_test/freecad_cli_tools/pyproject.toml).
-- Added GitHub Actions CI in [ci.yml](/D:/workspace/skills_test/.github/workflows/ci.yml) to run `ruff`, `black --check`, and `pytest`.
-- Bumped the package version from `0.1.0` to `0.4.0` in [pyproject.toml](/D:/workspace/skills_test/freecad_cli_tools/pyproject.toml) and [__init__.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/__init__.py).
-- Moved the tracked example YAML out of `data/` into [examples/sample.yaml](/D:/workspace/skills_test/examples/sample.yaml) so `data/` can remain a runtime/output-only directory.
+- Added unit tests for the YAML safe-move core in [test_yaml_component_safe_move.py](./freecad_cli_tools/tests/test_yaml_component_safe_move.py).
+- Added test path configuration in [pyproject.toml](./freecad_cli_tools/pyproject.toml).
+- Added GitHub Actions CI in [ci.yml](./.github/workflows/ci.yml) to run `ruff`, `black --check`, and `pytest`.
+- Bumped the package version from `0.1.0` to `0.4.0` in [pyproject.toml](./freecad_cli_tools/pyproject.toml) and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py).
+- Moved the tracked example YAML out of `data/` into [examples/sample.yaml](./examples/sample.yaml) so `data/` can remain a runtime/output-only directory.
 - Added Python cache ignores and removed tracked `__pycache__` artifacts from version control.
-- Added a reusable benchmark utility in [benchmark_yaml_safe_move.py](/D:/workspace/skills_test/scripts/benchmark_yaml_safe_move.py).
+- Added a reusable benchmark utility in [benchmark_yaml_safe_move.py](./scripts/benchmark_yaml_safe_move.py).
 
 ## v0.5.0 - Reusable Sync Module And Batch CAD Updates
 
 Date: 2026-04-03
 
-- Added reusable placement sync helpers in [freecad_sync.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/freecad_sync.py) so CLI commands can share one normalization and RPC rendering path.
-- Added batch placement sync CLI [sync_component_placements.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli/sync_component_placements.py).
-- Added FreeCAD-side batch sync script [sync_component_placements.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/rpc_scripts/sync_component_placements.py) to update multiple components in one RPC call and optionally recompute only once.
-- Switched [yaml_component_safe_move.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) to use the shared batch sync pathway even for single-component updates, reducing duplication in the sync flow.
-- Fixed JSON file loading in [cli_support.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli_support.py) so PowerShell-generated UTF-8 BOM files can be used directly with `--updates-file`.
-- Updated [README.md](/D:/workspace/skills_test/freecad_cli_tools/README.md), [pyproject.toml](/D:/workspace/skills_test/freecad_cli_tools/pyproject.toml), and [__init__.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/__init__.py) to document and expose the new sync interface.
+- Added reusable placement sync helpers in [freecad_sync.py](./freecad_cli_tools/src/freecad_cli_tools/freecad_sync.py) so CLI commands can share one normalization and RPC rendering path.
+- Added batch placement sync CLI [sync_component_placements.py](./freecad_cli_tools/src/freecad_cli_tools/cli/sync_component_placements.py).
+- Added FreeCAD-side batch sync script [sync_component_placements.py](./freecad_cli_tools/src/freecad_cli_tools/rpc_scripts/sync_component_placements.py) to update multiple components in one RPC call and optionally recompute only once.
+- Switched [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) to use the shared batch sync pathway even for single-component updates, reducing duplication in the sync flow.
+- Fixed JSON file loading in [cli_support.py](./freecad_cli_tools/src/freecad_cli_tools/cli_support.py) so PowerShell-generated UTF-8 BOM files can be used directly with `--updates-file`.
+- Updated [README.md](./freecad_cli_tools/README.md), [pyproject.toml](./freecad_cli_tools/pyproject.toml), and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py) to document and expose the new sync interface.
+
+## v0.6.0 - Documentation, Bilingual Guides, And Diagrams
+
+Date: 2026-04-03
+
+- Added the Chinese changelog [VERSION_UPDATES.zh-CN.md](./VERSION_UPDATES.zh-CN.md).
+- Added workspace-level bilingual entry docs [README.md](./README.md) and [README.zh-CN.md](./README.zh-CN.md).
+- Added architecture and workflow diagrams in [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+- Clarified the relationship between workspace docs, package docs, examples, runtime outputs, and startup scripts.
