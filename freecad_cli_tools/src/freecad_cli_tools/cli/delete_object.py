@@ -13,7 +13,9 @@ def main() -> None:
     parser.add_argument("obj_name", help="Name of the object to delete")
     add_connection_args(parser)
     args = parser.parse_args()
-    run_rpc_command(args, "delete_object", args.doc_name, args.obj_name, require_success=True)
+    run_rpc_command(
+        args, "delete_object", args.doc_name, args.obj_name, require_success=True
+    )
 
 
 if __name__ == "__main__":

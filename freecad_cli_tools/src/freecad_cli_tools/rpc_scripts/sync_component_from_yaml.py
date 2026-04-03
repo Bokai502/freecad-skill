@@ -44,7 +44,11 @@ try:
         raise RuntimeError(f"component not found in yaml: {COMPONENT_ID}")
 
     target_position = component["placement"]["position"]
-    rotation_rows = component["placement"].get("rotation_matrix") or [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    rotation_rows = component["placement"].get("rotation_matrix") or [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+    ]
     target_placement = make_placement(target_position, rotation_rows)
 
     solid = doc.getObject(SOLID_NAME) if SOLID_NAME else None

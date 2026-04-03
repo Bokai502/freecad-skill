@@ -11,7 +11,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Edit an object in FreeCAD")
     parser.add_argument("doc_name", help="Name of the document")
     parser.add_argument("obj_name", help="Name of the object to edit")
-    parser.add_argument("properties", nargs="?", default="{}", help='JSON properties')
+    parser.add_argument("properties", nargs="?", default="{}", help="JSON properties")
     parser.add_argument("--properties-file", help="JSON file with properties")
     add_connection_args(parser)
     args = parser.parse_args()

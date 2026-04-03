@@ -16,7 +16,9 @@ def parse_args() -> argparse.Namespace:
         description="Create a FreeCAD assembly document from a YAML layout."
     )
     parser.add_argument("--input", required=True, help="Path to the source YAML file.")
-    parser.add_argument("--doc-name", required=True, help="Name of the FreeCAD document to create.")
+    parser.add_argument(
+        "--doc-name", required=True, help="Name of the FreeCAD document to create."
+    )
     parser.add_argument(
         "--output",
         help="Optional output FCStd path. Defaults to '<doc-name>.FCStd' beside the YAML file.",
@@ -38,7 +40,11 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     input_path = Path(args.input)
-    output_path = Path(args.output) if args.output else input_path.with_name(f"{args.doc_name}.FCStd")
+    output_path = (
+        Path(args.output)
+        if args.output
+        else input_path.with_name(f"{args.doc_name}.FCStd")
+    )
 
     code = render_rpc_script(
         "assembly_from_yaml.py",

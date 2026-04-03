@@ -1,6 +1,5 @@
 """Reusable FreeCAD-side code fragments for embedded RPC scripts."""
 
-
 PLACEMENT_HELPERS = r"""
 def matrix_to_rotation(matrix_rows):
     matrix = FreeCAD.Matrix()

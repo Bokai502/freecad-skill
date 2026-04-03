@@ -2,20 +2,17 @@
 """Safely update a component placement inside a YAML assembly."""
 
 import argparse
-import math
+import itertools
 import json
+import math
 import sys
 from copy import deepcopy
 from pathlib import Path
-import itertools
 
 import yaml
 
 from freecad_cli_tools import add_connection_args
-from freecad_cli_tools.cli_support import execute_script_payload, to_wsl_path
-from freecad_cli_tools.rpc_script_fragments import PLACEMENT_HELPERS
-from freecad_cli_tools.rpc_script_loader import render_rpc_script
-
+from freecad_cli_tools.freecad_sync import execute_batch_sync
 
 EPSILON = 1e-9
 FACE_DEFINITIONS = {
@@ -43,13 +40,17 @@ def parse_args() -> argparse.Namespace:
             "write an updated YAML file, and optionally sync the result to FreeCAD."
         )
     )
-    parser.add_argument("--input", default="data/sample.yaml", help="Path to the source YAML file.")
+    parser.add_argument(
+        "--input", default="data/sample.yaml", help="Path to the source YAML file."
+    )
     parser.add_argument(
         "--output",
         default="data/sample.updated.yaml",
         help="Path to the output YAML file.",
     )
-    parser.add_argument("--component", default="P001", help="Target component id to move.")
+    parser.add_argument(
+        "--component", default="P001", help="Target component id to move."
+    )
     parser.add_argument(
         "--move",
         nargs=3,
@@ -83,7 +84,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--part-object",
-        help="Exact FreeCAD container object name for the component. Defaults to '<component>_part'.",
+        help=(
+            "Exact FreeCAD container object name for the component. "
+            "Defaults to '<component>_part'."
+        ),
     )
     add_connection_args(parser)
     return parser.parse_args()
@@ -131,10 +135,7 @@ ROTATIONS = signed_permutation_rotations()
 
 
 def apply_rotation(matrix: list[list[int]], point: list[float]) -> list[float]:
-    return [
-        sum(matrix[row][col] * point[col] for col in range(3))
-        for row in range(3)
-    ]
+    return [sum(matrix[row][col] * point[col] for col in range(3)) for row in range(3)]
 
 
 def component_mount_face(component: dict) -> int:
@@ -178,7 +179,11 @@ def local_face_centroid(dims: list[float], face_id: int) -> list[float]:
     return centroid
 
 
-def box_bounds(position: list[float], dims: list[float], rotation_matrix: list[list[int]]) -> list[tuple[float, float]]:
+def box_bounds(
+    position: list[float],
+    dims: list[float],
+    rotation_matrix: list[list[int]],
+) -> list[tuple[float, float]]:
     corners = []
     for x in (0.0, dims[0]):
         for y in (0.0, dims[1]):
@@ -212,7 +217,8 @@ def bounds_overlap(
     b_bounds: list[tuple[float, float]],
 ) -> bool:
     return all(
-        a_bounds[i][0] < b_bounds[i][1] - EPSILON and b_bounds[i][0] < a_bounds[i][1] - EPSILON
+        a_bounds[i][0] < b_bounds[i][1] - EPSILON
+        and b_bounds[i][0] < a_bounds[i][1] - EPSILON
         for i in range(3)
     )
 
@@ -257,7 +263,9 @@ def constrain_position_to_envelope_face(
     rotation_matrix: list[list[int]],
 ) -> list[float]:
     _, axis, direction = FACE_DEFINITIONS[face_id]
-    target_contact = -inner_size[axis] / 2.0 if direction < 0 else inner_size[axis] / 2.0
+    target_contact = (
+        -inner_size[axis] / 2.0 if direction < 0 else inner_size[axis] / 2.0
+    )
     bounds = box_bounds(position, dims, rotation_matrix)
     current_contact = bounds[axis][0] if direction < 0 else bounds[axis][1]
     constrained = list(position)
@@ -269,12 +277,15 @@ def choose_rotation(component_face: int, target_envelope_face: int) -> list[list
     source = face_normal(component_face)
     target = face_normal(target_envelope_face)
     candidates = [
-        matrix for matrix in ROTATIONS
-        if apply_rotation(matrix, source) == target
+        matrix for matrix in ROTATIONS if apply_rotation(matrix, source) == target
     ]
     if not candidates:
-        raise RuntimeError("No valid orthogonal rotation found for requested face change.")
-    candidates.sort(key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True)
+        raise RuntimeError(
+            "No valid orthogonal rotation found for requested face change."
+        )
+    candidates.sort(
+        key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True
+    )
     return candidates[0]
 
 
@@ -289,12 +300,16 @@ def centered_face_position(
     centroid_world = apply_rotation(rotation, centroid_local)
     _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
     target_contact = [0.0, 0.0, 0.0]
-    target_contact[axis] = (-inner_size[axis] / 2.0) if direction < 0 else (inner_size[axis] / 2.0)
+    target_contact[axis] = (
+        (-inner_size[axis] / 2.0) if direction < 0 else (inner_size[axis] / 2.0)
+    )
     position = [target_contact[i] - centroid_world[i] for i in range(3)]
     return position, rotation
 
 
-def project_move_to_mount_plane(move: list[float], axis: int) -> tuple[list[float], bool]:
+def project_move_to_mount_plane(
+    move: list[float], axis: int
+) -> tuple[list[float], bool]:
     projected = list(move)
     ignored = abs(projected[axis]) > EPSILON
     projected[axis] = 0.0
@@ -526,7 +541,9 @@ def find_best_safe_scale(
 
     earliest_blocking_scale = safe_high
     for _, obstacle_bounds in context["other_bounds"]:
-        collision_interval = collision_interval_for_obstacle(start_bounds, move, obstacle_bounds)
+        collision_interval = collision_interval_for_obstacle(
+            start_bounds, move, obstacle_bounds
+        )
         if collision_interval is None:
             continue
         block_low = collision_interval[0]
@@ -589,30 +606,28 @@ def sync_yaml_result_to_cad(
 
     solid_name = args.component_object or args.component
     part_name = args.part_object or f"{args.component}_part"
-    code = render_rpc_script(
-        "sync_component_placement.py",
-        {
-            "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
-            "__DOC_NAME__": json.dumps(args.doc_name),
-            "__YAML_PATH__": json.dumps(to_wsl_path(output_path)),
-            "__COMPONENT_ID__": json.dumps(args.component),
-            "__SOLID_NAME__": json.dumps(solid_name),
-            "__PART_NAME__": json.dumps(part_name),
-            "__TARGET_POSITION__": json.dumps(position),
-            "__ROTATION_ROWS__": json.dumps(rotation_matrix),
-            "__RECOMPUTE__": "False",
-        },
-    )
-
     try:
-        payload = execute_script_payload(args.host, args.port, code)
+        payload = execute_batch_sync(
+            args.host,
+            args.port,
+            args.doc_name,
+            [
+                {
+                    "component": args.component,
+                    "solid_name": solid_name,
+                    "part_name": part_name,
+                    "position": position,
+                    "rotation_matrix": rotation_matrix,
+                }
+            ],
+            recompute=False,
+        )
     except SystemExit as exc:
         raise RuntimeError(
             f"cannot connect to FreeCAD RPC server at {args.host}:{args.port}"
         ) from exc
-    if not payload.get("success"):
-        raise RuntimeError(payload.get("error") or "CAD sync failed")
     payload["enabled"] = True
+    payload["yaml_path"] = str(output_path)
     return payload
 
 
@@ -626,12 +641,16 @@ def main() -> int:
     components = data.get("components", {})
     if args.component not in components:
         available = ", ".join(sorted(components))
-        raise KeyError(f"Component {args.component} not found. Available components: {available}")
+        raise KeyError(
+            f"Component {args.component} not found. Available components: {available}"
+        )
 
     target = components[args.component]
     component_face = component_mount_face(target)
     original_envelope_face = envelope_face(target)
-    target_envelope_face = args.install_face if args.install_face is not None else original_envelope_face
+    target_envelope_face = (
+        args.install_face if args.install_face is not None else original_envelope_face
+    )
     _, target_face_label, target_axis, _ = get_face_data(target_envelope_face)
 
     if args.install_face is not None:
@@ -651,8 +670,12 @@ def main() -> int:
             target_rotation_matrix,
         )
 
-    effective_move, normal_component_ignored = project_move_to_mount_plane(move, target_axis)
-    analysis_context = build_analysis_context(data, args.component, target_rotation_matrix)
+    effective_move, normal_component_ignored = project_move_to_mount_plane(
+        move, target_axis
+    )
+    analysis_context = build_analysis_context(
+        data, args.component, target_rotation_matrix
+    )
     requested_position = vector_add(start_position, effective_move)
     requested_ok, requested_blockers = analyze_position(
         analysis_context, requested_position, target_rotation_matrix
@@ -721,7 +744,9 @@ def main() -> int:
     print(f"component_mount_face: {component_face}")
     print(f"component_mount_face_label: {FACE_DEFINITIONS[component_face][0]}")
     print(f"original_envelope_face: {original_envelope_face}")
-    print(f"original_envelope_face_label: {FACE_DEFINITIONS[original_envelope_face][0]}")
+    print(
+        f"original_envelope_face_label: {FACE_DEFINITIONS[original_envelope_face][0]}"
+    )
     print(f"target_envelope_face: {target_envelope_face}")
     print(f"target_envelope_face_label: {target_face_label}")
     print("orientation_change_supported: True")

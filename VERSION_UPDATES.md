@@ -78,3 +78,26 @@ Summary:
 - Collision search is no longer the dominant bottleneck.
 - The remaining major cost is now the actual FreeCAD document mutation and GUI-side update work.
 - Compared with the earlier `~5.20s` sync path, the current `~2.76s` result is about a `47%` reduction in wall-clock time for the tested move path.
+
+## v0.4.0 - Quality, CI, And Repo Hygiene
+
+Date: 2026-04-03
+
+- Added unit tests for the YAML safe-move core in [test_yaml_component_safe_move.py](/D:/workspace/skills_test/freecad_cli_tools/tests/test_yaml_component_safe_move.py).
+- Added test path configuration in [pyproject.toml](/D:/workspace/skills_test/freecad_cli_tools/pyproject.toml).
+- Added GitHub Actions CI in [ci.yml](/D:/workspace/skills_test/.github/workflows/ci.yml) to run `ruff`, `black --check`, and `pytest`.
+- Bumped the package version from `0.1.0` to `0.4.0` in [pyproject.toml](/D:/workspace/skills_test/freecad_cli_tools/pyproject.toml) and [__init__.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/__init__.py).
+- Moved the tracked example YAML out of `data/` into [examples/sample.yaml](/D:/workspace/skills_test/examples/sample.yaml) so `data/` can remain a runtime/output-only directory.
+- Added Python cache ignores and removed tracked `__pycache__` artifacts from version control.
+- Added a reusable benchmark utility in [benchmark_yaml_safe_move.py](/D:/workspace/skills_test/scripts/benchmark_yaml_safe_move.py).
+
+## v0.5.0 - Reusable Sync Module And Batch CAD Updates
+
+Date: 2026-04-03
+
+- Added reusable placement sync helpers in [freecad_sync.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/freecad_sync.py) so CLI commands can share one normalization and RPC rendering path.
+- Added batch placement sync CLI [sync_component_placements.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli/sync_component_placements.py).
+- Added FreeCAD-side batch sync script [sync_component_placements.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/rpc_scripts/sync_component_placements.py) to update multiple components in one RPC call and optionally recompute only once.
+- Switched [yaml_component_safe_move.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) to use the shared batch sync pathway even for single-component updates, reducing duplication in the sync flow.
+- Fixed JSON file loading in [cli_support.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/cli_support.py) so PowerShell-generated UTF-8 BOM files can be used directly with `--updates-file`.
+- Updated [README.md](/D:/workspace/skills_test/freecad_cli_tools/README.md), [pyproject.toml](/D:/workspace/skills_test/freecad_cli_tools/pyproject.toml), and [__init__.py](/D:/workspace/skills_test/freecad_cli_tools/src/freecad_cli_tools/__init__.py) to document and expose the new sync interface.

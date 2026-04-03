@@ -12,7 +12,7 @@ def main() -> None:
     parser.add_argument("doc_name", help="Name of the document")
     parser.add_argument("obj_type", help="Object type (e.g. Part::Box)")
     parser.add_argument("obj_name", help="Name of the object to create")
-    parser.add_argument("--properties", "-p", default="{}", help='JSON properties')
+    parser.add_argument("--properties", "-p", default="{}", help="JSON properties")
     parser.add_argument("--properties-file", help="JSON file with properties")
     parser.add_argument("--analysis", help="FEM analysis name")
     add_connection_args(parser)
@@ -25,7 +25,9 @@ def main() -> None:
         "Properties": properties,
         "Analysis": args.analysis,
     }
-    run_rpc_command(args, "create_object", args.doc_name, obj_data, require_success=True)
+    run_rpc_command(
+        args, "create_object", args.doc_name, obj_data, require_success=True
+    )
 
 
 if __name__ == "__main__":

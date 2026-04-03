@@ -23,7 +23,12 @@ def is_helper(obj):
     name = obj.Name
     if name == "Assembly":
         return True
-    if name.startswith("Origin") or name.startswith("X_Axis") or name.startswith("Y_Axis") or name.startswith("Z_Axis"):
+    if (
+        name.startswith("Origin")
+        or name.startswith("X_Axis")
+        or name.startswith("Y_Axis")
+        or name.startswith("Z_Axis")
+    ):
         return True
     if "Plane" in name or "Envelope" in name:
         return True
@@ -49,7 +54,11 @@ def solid_descendants(root):
         for child in children:
             walk(child)
             cshape = getattr(child, "Shape", None)
-            if cshape is not None and not cshape.isNull() and getattr(cshape, "Volume", 0) > 0:
+            if (
+                cshape is not None
+                and not cshape.isNull()
+                and getattr(cshape, "Volume", 0) > 0
+            ):
                 child_has_solid = True
         shape = getattr(obj, "Shape", None)
         if (
@@ -97,7 +106,9 @@ def collisions(doc, target):
             if moving_shape.distToShape(other_shape)[0] > 0:
                 continue
             common = moving_shape.common(other_shape)
-            volume = float(getattr(common, "Volume", 0.0)) if not common.isNull() else 0.0
+            volume = (
+                float(getattr(common, "Volume", 0.0)) if not common.isNull() else 0.0
+            )
             if volume > VOLUME_EPS:
                 found.append(
                     {
@@ -117,7 +128,9 @@ try:
     if target is None:
         raise RuntimeError(f"object not found: {OBJ_NAME}")
 
-    current = FreeCAD.Vector(target.Placement.Base.x, target.Placement.Base.y, target.Placement.Base.z)
+    current = FreeCAD.Vector(
+        target.Placement.Base.x, target.Placement.Base.y, target.Placement.Base.z
+    )
     requested = float(MOVE.Length)
     direction = (
         FreeCAD.Vector(MOVE.x / requested, MOVE.y / requested, MOVE.z / requested)
@@ -141,7 +154,9 @@ try:
             lo, hi = 0.0, requested
             for _ in range(24):
                 mid = (lo + hi) / 2.0
-                probe = FreeCAD.Vector(direction.x * mid, direction.y * mid, direction.z * mid)
+                probe = FreeCAD.Vector(
+                    direction.x * mid, direction.y * mid, direction.z * mid
+                )
                 target.Placement.Base = current.add(probe)
                 doc.recompute()
                 if collisions(doc, target):

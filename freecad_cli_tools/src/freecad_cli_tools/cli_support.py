@@ -9,10 +9,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .rpc_client import get_connection, print_result as print_json
-
+from .rpc_client import get_connection
+from .rpc_client import print_result as print_json
 
 OUTPUT_MARKER = "Output:"
+
+
 def exit_on_failure(result: Any) -> None:
     """Exit with status 1 when a JSON result reports failure."""
     if isinstance(result, dict) and not result.get("success"):
@@ -87,7 +89,7 @@ def run_script_command(args: Any, code: str, require_success: bool = True) -> di
 def load_json_input(raw_value: str = "{}", *, file_path: str | None = None) -> Any:
     """Load JSON either from an inline string or from a file."""
     if file_path:
-        with Path(file_path).open("r", encoding="utf-8") as handle:
+        with Path(file_path).open("r", encoding="utf-8-sig") as handle:
             return json.load(handle)
     return json.loads(raw_value)
 

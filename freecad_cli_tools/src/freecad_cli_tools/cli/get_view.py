@@ -32,17 +32,39 @@ def requested_views(args: argparse.Namespace) -> list[str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Get screenshots of FreeCAD view")
-    parser.add_argument("view_name", nargs="?", default="Isometric",
-                        choices=ALL_VIEWS + ["Dimetric", "Trimetric"],
-                        help="View angle (ignored when --all is used)")
-    parser.add_argument("--all", "-a", action="store_true",
-                        help="Capture all standard views (Isometric, Front, Top, Right, Back, Left, Bottom)")
-    parser.add_argument("--views", nargs="+",
-                        choices=ALL_VIEWS + ["Dimetric", "Trimetric"],
-                        help="Capture specific multiple views")
-    parser.add_argument("--output-dir", "-d", default=None,
-                        help="Output directory for screenshots (default: ./freecad_views/<timestamp>)")
-    parser.add_argument("--output", "-o", default=None, help="Output PNG file (single view only)")
+    parser.add_argument(
+        "view_name",
+        nargs="?",
+        default="Isometric",
+        choices=ALL_VIEWS + ["Dimetric", "Trimetric"],
+        help="View angle (ignored when --all is used)",
+    )
+    parser.add_argument(
+        "--all",
+        "-a",
+        action="store_true",
+        help=(
+            "Capture all standard views "
+            "(Isometric, Front, Top, Right, Back, Left, Bottom)"
+        ),
+    )
+    parser.add_argument(
+        "--views",
+        nargs="+",
+        choices=ALL_VIEWS + ["Dimetric", "Trimetric"],
+        help="Capture specific multiple views",
+    )
+    parser.add_argument(
+        "--output-dir",
+        "-d",
+        default=None,
+        help=(
+            "Output directory for screenshots " "(default: ./freecad_views/<timestamp>)"
+        ),
+    )
+    parser.add_argument(
+        "--output", "-o", default=None, help="Output PNG file (single view only)"
+    )
     parser.add_argument("--width", type=int, help="Screenshot width in pixels")
     parser.add_argument("--height", type=int, help="Screenshot height in pixels")
     parser.add_argument("--focus", help="Object name to focus on")
@@ -57,7 +79,9 @@ def main() -> None:
         output_path = Path(args.output or args.output_dir or "freecad_view.png")
         if output_path.is_dir():
             output_path = output_path / f"{views[0].lower()}.png"
-        path = capture_one(conn, views[0], output_path, args.width, args.height, args.focus)
+        path = capture_one(
+            conn, views[0], output_path, args.width, args.height, args.focus
+        )
         if path is None:
             print("ERROR: Cannot get screenshot in current view.", file=sys.stderr)
             sys.exit(1)
@@ -66,7 +90,9 @@ def main() -> None:
 
     # Multi-view mode
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = Path(args.output_dir) if args.output_dir else Path("freecad_views") / timestamp
+    output_dir = (
+        Path(args.output_dir) if args.output_dir else Path("freecad_views") / timestamp
+    )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     saved = []

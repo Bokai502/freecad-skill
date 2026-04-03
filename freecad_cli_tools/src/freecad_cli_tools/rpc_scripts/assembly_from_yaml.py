@@ -102,13 +102,19 @@ for component_id, component in data.get("components", {}).items():
     assembly.addObject(part)
 
     if component.get("shape", "box") != "box":
-        raise RuntimeError(f"Unsupported shape for {component_id}: {component.get('shape')}")
+        raise RuntimeError(
+            f"Unsupported shape for {component_id}: {component.get('shape')}"
+        )
 
     box = doc.addObject("Part::Box", component_id)
     dims = component["dims"]
     placement = component["placement"]
     pos = placement["position"]
-    rotation_rows = placement.get("rotation_matrix") or [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    rotation_rows = placement.get("rotation_matrix") or [
+        [1, 0, 0],
+        [0, 1, 0],
+        [0, 0, 1],
+    ]
     box.Length = float(dims[0])
     box.Width = float(dims[1])
     box.Height = float(dims[2])

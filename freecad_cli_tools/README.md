@@ -44,12 +44,13 @@ freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
 # Code execution and view
 freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
 freecad-get-view Isometric --output table.png
-freecad-create-assembly --input data/sample.updated.yaml --doc-name SampleYamlAssembly
+freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssembly
 
 # YAML-first safe move and optional CAD sync
-freecad-yaml-safe-move --input data/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0
-freecad-yaml-safe-move --input data/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
-freecad-yaml-safe-move --input data/sample.yaml --output data/sample.reoriented.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0
+freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
+freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.reoriented.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.json
 
 # Document-only fallback commands
 freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
@@ -63,7 +64,7 @@ Use YAML as the source of truth whenever you have a configuration file:
 1. Run `freecad-yaml-safe-move` on the YAML file.
 2. Let it compute a safe move and write the updated YAML.
 3. If needed, pass `--sync-cad --doc-name <doc>` so the same command updates the FreeCAD document.
-4. If you need a regenerated CAD document from the approved YAML, run `freecad-create-assembly`.
+4. Only run `freecad-create-assembly` when you explicitly need a regenerated CAD document.
 
 Use `freecad-check-collision` and `freecad-move-obj` only as document-only fallbacks when no YAML
 source is available.
@@ -84,10 +85,10 @@ Use it when you want to:
   `rotation_matrix`
 - optionally update the matching component in an open FreeCAD document
 
-To build a new CAD document from the approved YAML, use:
+To build a new CAD document from the updated YAML, use:
 
 ```bash
-freecad-create-assembly --input data/sample.updated.yaml --doc-name SampleYamlAssembly
+freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssembly
 ```
 
 This command creates:
@@ -107,17 +108,36 @@ that face, and applies the requested move as an in-plane offset there. If the fu
 is safe, it applies it directly. If not, it finds the closest safe prefix on that segment. If no
 safe point exists on the requested segment, it reports that no solution was found and still writes
 an output YAML for the constrained placement state. When `--sync-cad` is supplied, it then updates
-the matching component object in the target FreeCAD document from the written YAML result.
+the matching component object in the target FreeCAD document directly from the computed final
+placement.
 
 On this machine, FreeCAD may run inside WSL while the CLI runs on Windows. In that setup:
 
 - use the normal Windows path for `--input` and `--output`
-- the CLI converts the written YAML path to a WSL-visible path before asking FreeCAD to read it
+- the CLI still writes a YAML result to disk, but `--sync-cad` no longer requires FreeCAD to reopen that YAML file
 - if Windows `localhost:9875` forwarding is unstable, pass `--host <current-wsl-ip> --port 9875`
+
+For multi-component placement updates, `freecad-sync-placements` accepts a JSON list like:
+
+```json
+[
+  {
+    "component": "P006",
+    "position": [-103.72, 139.72, -170.91],
+    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  },
+  {
+    "component": "P018",
+    "position": [-249.72, 179.32, -170.91],
+    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+  }
+]
+```
 
 ## Development Layout
 
 - `src/freecad_cli_tools/cli/`: thin command entry points
+- `src/freecad_cli_tools/freecad_sync.py`: reusable placement sync helpers for single or batched CAD updates
 - `src/freecad_cli_tools/cli_support.py`: shared CLI-side helpers for RPC calls, output parsing, and file input
 - `src/freecad_cli_tools/rpc_scripts/`: FreeCAD-side Python scripts executed over XML-RPC
 - `src/freecad_cli_tools/rpc_script_loader.py`: packaged script loader and placeholder renderer

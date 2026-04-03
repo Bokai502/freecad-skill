@@ -5,7 +5,6 @@ from __future__ import annotations
 from importlib.resources import files
 from typing import Mapping
 
-
 SCRIPT_PACKAGE = "freecad_cli_tools.rpc_scripts"
 
 
