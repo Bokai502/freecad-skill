@@ -3,9 +3,9 @@ units:
   mass: kg
   power: W
   temperature: K
-  thermal_conductivity: W/(m路K)
-  thermal_resistance: m虏路K/W
-  thermal_conductance: W/(m虏路K)
+  thermal_conductivity: W/(m·K)
+  thermal_resistance: m²·K/W
+  thermal_conductance: W/(m²·K)
   elastic_modulus: GPa
   thermal_expansion: 1/K
 sample_id: '000001'
