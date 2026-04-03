@@ -42,9 +42,9 @@ Determine the user's intent and read the corresponding guide from the `guides/` 
 | **Insert Part** | `guides/insert-part-from-library.md` | Insert a pre-made part from the library |
 | **Load YAML Data** | `guides/load-yaml-data.md` | Batch-create objects from a YAML spec file |
 | **YAML Safe Move** | `guides/yaml-safe-move.md` | Analyze and rewrite a YAML component move with collision and boundary checks |
-| **Safe Move Workflow** | `guides/safe-move-workflow.md` | Default workflow for analyzing a move, asking for confirmation, then regenerating assembly and YAML |
+| **Safe Move Workflow** | `guides/safe-move-workflow.md` | Default workflow for analyzing a move, executing the safe result, and updating YAML/CAD without creating a new assembly by default |
 | **Create Assembly** | `guides/create-assembly.md` | Create an Assembly container with hierarchical sub-parts |
-| **Move Object** | `guides/move-object.md` | Apply an already approved move to a document object |
+| **Move Object** | `guides/move-object.md` | Apply an already computed safe move to a document object |
 | **Check Collision** | `guides/check-collision.md` | Analyze interference and compute safe move options before execution |
 
 ## Routing Logic
@@ -62,27 +62,28 @@ Determine the user's intent and read the corresponding guide from the `guides/` 
 
 ### Build assembly from YAML
 1. `safe-move-workflow` -> analyze any requested part move first
-2. `yaml-safe-move` -> update the YAML after user confirmation
-3. `create-assembly` -> build the updated assembly with envelope and fitted view
-4. `get-view` -> verify visually
+2. `yaml-safe-move` -> update the YAML with the safe move result
+3. keep the current CAD document synced instead of creating a new assembly by default
+4. `create-assembly` only when the user explicitly wants a rebuilt assembly file
+5. `get-view` -> verify visually
 
 ### Move YAML with collision safety
-1. `safe-move-workflow` -> analyze the requested move and present the safe option
-2. Wait for user confirmation
-3. `yaml-safe-move` -> write the updated YAML and optionally sync CAD
-4. `create-assembly` -> regenerate from the approved YAML when a full rebuild is needed
+1. `safe-move-workflow` -> analyze the requested move
+2. `yaml-safe-move` -> write the updated YAML using the safe move result
+3. sync CAD from the written YAML when an open document should be updated
+4. `create-assembly` only when the user explicitly asks for a rebuilt assembly file
 
 ### Move a document object with collision safety
 1. `safe-move-workflow` -> locate the source YAML first
-2. `yaml-safe-move` -> compute the safe move from YAML and write the approved YAML
-3. Wait for user confirmation
-4. `yaml-safe-move --sync-cad` or full YAML reload -> sync the approved result into FreeCAD
+2. `yaml-safe-move` -> compute the safe move from YAML and write the updated YAML
+3. `yaml-safe-move --sync-cad` or full YAML reload -> sync the updated result into FreeCAD
+4. `create-assembly` only when the user explicitly asks for a full regenerated document
 5. Use document-only commands only if no YAML source exists
 
 ## Global Rules
 
 - For any request to move a part, prefer `safe-move-workflow` as the default entry point instead of directly calling `move-object`.
-- Default safety rule: analyze first, present the move plan to the user, wait for confirmation, then execute the final move and regeneration steps.
+- Default safety rule: analyze first, then execute the fully safe move or the closest safe result on the requested path, and report any adjustment clearly.
 - Prefer first-class CLI commands over handwritten ad hoc Python whenever the packaged command covers the task.
 - When a YAML layout file exists, treat that YAML file as the source of truth for move planning and execution.
 - For document-space collision checks, treat `getGlobalPlacement()` as the source of truth. Local `Shape` and local `BoundBox` can be stale or misleading when a parent container such as `App::Part` moves.
@@ -94,17 +95,18 @@ Determine the user's intent and read the corresponding guide from the `guides/` 
 - For reorientation, use `--install-face <0..5>` to rotate the component so its own `mount_face` is installed onto the requested envelope face. The command then applies the requested `--move` as an in-plane offset on that target face.
 - When the target FreeCAD instance runs inside WSL, YAML-to-CAD sync may need a WSL-visible path and
   an explicit RPC host if Windows `localhost` forwarding is flaky.
-- `freecad-create-assembly` is the preferred CLI for creating a new CAD document from YAML.
+- `freecad-create-assembly` is the preferred CLI only when a new CAD document from YAML is explicitly needed.
 - Generated assemblies should include the envelope when YAML provides one.
+- When only moving an existing layout, prefer syncing the current CAD document instead of creating a new assembly.
 - After CAD generation, switch the GUI to a readable fitted view automatically.
 - `freecad-check-collision` is a document-only fallback CLI for FreeCAD document objects when no YAML source is available.
-- `freecad-move-obj` is a document-only fallback CLI for applying an approved move when no YAML source is available.
+- `freecad-move-obj` is a document-only fallback CLI for applying a computed safe move when no YAML source is available.
 - When verifying a YAML-to-CAD sync or regeneration result, avoid reading back document state in parallel with the mutation step; perform verification after the write completes.
 - `check-collision` is an analysis tool, not the final move step.
-- `move-object` is an execution tool and should be used only after the user confirms the analyzed plan.
+- `move-object` is an execution tool and should be used only after the safe final move has been computed.
 - After any executed move, run a post-move collision verification before reporting success.
 - **Snap sandbox**: FreeCAD installed via Snap cannot access paths outside its home. Use `Path.home() / 'freecad_data'` for file I/O inside FreeCAD. Copy files in/out from the normal shell.
 - RPC-oriented commands usually return JSON output; check `"success": true`.
 - Common optional flags for RPC commands: `--host <host>`, `--port <port>` (defaults: `localhost`, `9875`).
 - Always call `doc.recompute()` after geometry changes in execute-code.
-- Never auto-execute destructive actions (delete, overwrite) without user confirmation.
+- Never auto-execute destructive actions such as delete or unrelated overwrite operations without user confirmation. Safe move execution is allowed after analysis.

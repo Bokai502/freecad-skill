@@ -4,14 +4,14 @@ Batch-create objects in FreeCAD from a YAML specification file via `freecad-exec
 
 ## Important
 
-In a move request, this is a post-confirmation step. The recommended top-level path is
+In a move request, this is an optional post-move step. The recommended top-level path is
 `safe-move-workflow.md`.
 
 ## When to Use
 
 - When the user provides a YAML file describing components, dimensions, positions, and metadata.
 - When rebuilding geometry in FreeCAD from an updated layout file.
-- When the task needs a regenerated assembly after a confirmed move.
+- When the user explicitly wants geometry rebuilt from the updated YAML after a safe move has been written.
 
 ## YAML Format
 
@@ -69,5 +69,5 @@ Key patterns in the loader script:
 - Call `doc.recompute()` after all objects are created.
 - If the task is to build a new assembly from YAML, prefer `create-assembly.md` or the packaged
   `freecad-create-assembly` CLI.
-- Use this after the user has confirmed the approved move and the YAML has been updated.
+- Use this after the safe move has been written to YAML only when the user explicitly wants a rebuild from YAML.
 - Prefer `--file` over inline code for complex scripts.

@@ -89,17 +89,23 @@ def add_connection_args(parser: Any) -> None:
     )
 
 
-def get_connection(host: str = DEFAULT_HOST, port: int = DEFAULT_PORT) -> FreeCADConnection:
-    """Create and verify connection to FreeCAD RPC server."""
+def get_connection(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_PORT,
+    *,
+    verify: bool = True,
+) -> FreeCADConnection:
+    """Create a connection to the FreeCAD RPC server, optionally verifying with ping."""
     conn = FreeCADConnection(host, port)
-    try:
-        if not conn.ping():
-            raise ConnectionError(f"Cannot ping FreeCAD RPC server at {host}:{port}")
-    except Exception as e:
-        print(f"ERROR: Cannot connect to FreeCAD RPC server at {host}:{port}", file=sys.stderr)
-        print(f"Make sure the FreeCAD MCP addon is running.", file=sys.stderr)
-        print(f"Details: {e}", file=sys.stderr)
-        sys.exit(1)
+    if verify:
+        try:
+            if not conn.ping():
+                raise ConnectionError(f"Cannot ping FreeCAD RPC server at {host}:{port}")
+        except Exception as e:
+            print(f"ERROR: Cannot connect to FreeCAD RPC server at {host}:{port}", file=sys.stderr)
+            print(f"Make sure the FreeCAD MCP addon is running.", file=sys.stderr)
+            print(f"Details: {e}", file=sys.stderr)
+            sys.exit(1)
     return conn
 
 

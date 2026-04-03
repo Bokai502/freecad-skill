@@ -1,6 +1,6 @@
 # FreeCAD: Move Object
 
-Apply an already approved move to an object. This is a document-only fallback step for cases where
+Apply an already computed safe move to an object. This is a document-only fallback step for cases where
 no YAML source exists and the YAML-first workflow cannot be used.
 
 ## Important
@@ -11,9 +11,9 @@ the layout file exists.
 
 ## When to Use
 
-- When the user already confirmed a proposed move plan.
+- When the safe move has already been computed.
 - When the safe move distance or safe position has already been analyzed.
-- When you need to apply the final approved translation to a document object and no YAML-driven sync
+- When you need to apply the final safe translation to a document object and no YAML-driven sync
   path is available.
 
 ## Workflow
@@ -62,11 +62,11 @@ freecad-exec-code --file /tmp/move_object.py
 
 Immediately re-run the collision workflow from `check-collision.md` against the moved object using
 global transformed descendant shapes. Only report success if the post-move verification is clean or
-matches the approved collision outcome.
+matches the computed safe collision outcome.
 
 ## Rules
 
-- Use this only after the user has confirmed the proposed movement plan.
+- Use this only after the safe movement plan has been computed.
 - Prefer `freecad-yaml-safe-move --sync-cad` over this step when a YAML source is available.
 - Collision analysis belongs before this step, not after it.
 - Prefer `safe-move-workflow.md` as the top-level path and `check-collision.md` for the analysis stage.

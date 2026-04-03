@@ -7,35 +7,35 @@ result into a FreeCAD document.
 ## Important
 
 This is the recommended YAML-side analyzer and rewriter inside `safe-move-workflow.md`. Use it to
-compute and explain a safe move before the final assembly regeneration step.
+compute and apply a safe move before any optional assembly regeneration step.
 
 ## When to Use
 
 - When the user wants to move a component in a YAML layout before importing it into FreeCAD.
 - When the user wants collision-safe pre-processing for a YAML assembly definition.
 - When the final deliverable must include an updated YAML file.
-- When the same YAML-approved result should also be pushed into an open FreeCAD document.
+- When the same YAML move result should also be pushed into an open FreeCAD document.
 
 ## Command
 
 ```bash
 freecad-yaml-safe-move \
-  --input sample.yaml \
-  --output sample.updated.yaml \
+  --input data/sample.yaml \
+  --output data/sample.updated.yaml \
   --component P001 \
   --move 50 50 0
 
 freecad-yaml-safe-move \
-  --input sample.yaml \
-  --output sample.updated.yaml \
+  --input data/sample.yaml \
+  --output data/sample.updated.yaml \
   --component P001 \
   --move 50 50 0 \
   --sync-cad \
   --doc-name SampleYamlAssembly
 
 freecad-yaml-safe-move \
-  --input sample.yaml \
-  --output sample.reoriented.yaml \
+  --input data/sample.yaml \
+  --output data/sample.reoriented.yaml \
   --component P002 \
   --install-face 4 \
   --move 0 0 0
@@ -84,9 +84,9 @@ The command prints a plain-text summary including:
 
 1. Run `freecad-yaml-safe-move` on the source YAML.
 2. Inspect the reported blockers or safe move result.
-3. Present the proposed movement to the user and wait for confirmation.
-4. After confirmation, either rerun with `--sync-cad --doc-name <doc>` or use the updated YAML with
-   `load-yaml-data` or `create-assembly`.
+3. Report whether the requested move was applied exactly or adjusted to the closest safe result.
+4. Then sync the current CAD document with `--sync-cad --doc-name <doc>` when needed, or use the
+   updated YAML with `load-yaml-data` or `create-assembly` only if the user explicitly wants a rebuild.
 
 ## Rules
 

@@ -2,6 +2,7 @@
 """Safely update a component placement inside a YAML assembly."""
 
 import argparse
+import math
 import json
 import sys
 from copy import deepcopy
@@ -31,6 +32,8 @@ IDENTITY_ROTATION = [
     [0, 1, 0],
     [0, 0, 1],
 ]
+FALLBACK_SAMPLE_COUNT = 256
+FALLBACK_BISECTION_STEPS = 24
 
 
 def parse_args() -> argparse.Namespace:
@@ -204,6 +207,16 @@ def boxes_overlap(
     )
 
 
+def bounds_overlap(
+    a_bounds: list[tuple[float, float]],
+    b_bounds: list[tuple[float, float]],
+) -> bool:
+    return all(
+        a_bounds[i][0] < b_bounds[i][1] - EPSILON and b_bounds[i][0] < a_bounds[i][1] - EPSILON
+        for i in range(3)
+    )
+
+
 def inside_envelope(
     position: list[float],
     dims: list[float],
@@ -212,6 +225,18 @@ def inside_envelope(
 ) -> bool:
     half_inner = [length / 2.0 for length in inner_size]
     bounds = box_bounds(position, dims, rotation_matrix)
+    for axis in range(3):
+        low, high = bounds[axis]
+        if low < -half_inner[axis] - EPSILON or high > half_inner[axis] + EPSILON:
+            return False
+    return True
+
+
+def inside_envelope_bounds(
+    bounds: list[tuple[float, float]],
+    inner_size: list[float],
+) -> bool:
+    half_inner = [length / 2.0 for length in inner_size]
     for axis in range(3):
         low, high = bounds[axis]
         if low < -half_inner[axis] - EPSILON or high > half_inner[axis] + EPSILON:
@@ -287,52 +312,158 @@ def compute_mount_point(
     return [position[i] + rotated[i] for i in range(3)]
 
 
-def analyze_position(
+def build_analysis_context(
     data: dict,
     component_id: str,
-    position: list[float],
     rotation_matrix: list[list[int]],
-) -> tuple[bool, list[str]]:
+) -> dict:
     components = data["components"]
     target = components[component_id]
-    dims = target["dims"]
-    inner_size = data["envelope"]["inner_size"]
-    blockers: list[str] = []
-
-    if not inside_envelope(position, dims, inner_size, rotation_matrix):
-        blockers.append("ENVELOPE_BOUNDARY")
-
+    other_bounds = []
     for other_id, other in components.items():
         if other_id == component_id:
             continue
-        if boxes_overlap(
-            position,
-            dims,
-            rotation_matrix,
-            other["placement"]["position"],
-            other["dims"],
-            rotation_matrix_from_component(other),
-        ):
-            blockers.append(other_id)
+        other_bounds.append(
+            (
+                other_id,
+                box_bounds(
+                    other["placement"]["position"],
+                    other["dims"],
+                    rotation_matrix_from_component(other),
+                ),
+            )
+        )
+    return {
+        "target_dims": target["dims"],
+        "inner_size": data["envelope"]["inner_size"],
+        "other_bounds": other_bounds,
+    }
 
+
+def analyze_bounds(
+    context: dict,
+    bounds: list[tuple[float, float]],
+) -> tuple[bool, list[str]]:
+    blockers: list[str] = []
+    if not inside_envelope_bounds(bounds, context["inner_size"]):
+        blockers.append("ENVELOPE_BOUNDARY")
+    for other_id, other_bounds in context["other_bounds"]:
+        if bounds_overlap(bounds, other_bounds):
+            blockers.append(other_id)
     return len(blockers) == 0, blockers
 
 
+def analyze_position(
+    context: dict,
+    position: list[float],
+    rotation_matrix: list[list[int]],
+) -> tuple[bool, list[str]]:
+    bounds = box_bounds(position, context["target_dims"], rotation_matrix)
+    return analyze_bounds(context, bounds)
+
+
+def axis_overlap_interval(
+    moving_low: float,
+    moving_high: float,
+    delta: float,
+    static_low: float,
+    static_high: float,
+) -> tuple[float, float] | None:
+    overlap_low = static_low + EPSILON
+    overlap_high = static_high - EPSILON
+
+    if delta == 0.0:
+        if moving_low < overlap_high and moving_high > overlap_low:
+            return (-math.inf, math.inf)
+        return None
+
+    first = (overlap_low - moving_high) / delta
+    second = (overlap_high - moving_low) / delta
+    low = min(first, second)
+    high = max(first, second)
+    return (low, high)
+
+
+def interval_intersection(
+    intervals: list[tuple[float, float]],
+) -> tuple[float, float] | None:
+    if not intervals:
+        return None
+    low = max(interval[0] for interval in intervals)
+    high = min(interval[1] for interval in intervals)
+    if low >= high:
+        return None
+    return (low, high)
+
+
+def collision_interval_for_obstacle(
+    start_bounds: list[tuple[float, float]],
+    move: list[float],
+    obstacle_bounds: list[tuple[float, float]],
+) -> tuple[float, float] | None:
+    intervals = []
+    for axis in range(3):
+        axis_interval = axis_overlap_interval(
+            moving_low=start_bounds[axis][0],
+            moving_high=start_bounds[axis][1],
+            delta=move[axis],
+            static_low=obstacle_bounds[axis][0],
+            static_high=obstacle_bounds[axis][1],
+        )
+        if axis_interval is None:
+            return None
+        intervals.append(axis_interval)
+    return interval_intersection(intervals)
+
+
+def envelope_safe_interval(
+    start_bounds: list[tuple[float, float]],
+    move: list[float],
+    inner_size: list[float],
+) -> tuple[float, float] | None:
+    low = 0.0
+    high = 1.0
+    half_inner = [length / 2.0 for length in inner_size]
+
+    for axis in range(3):
+        min_allowed = -half_inner[axis]
+        max_allowed = half_inner[axis]
+        bound_low = start_bounds[axis][0]
+        bound_high = start_bounds[axis][1]
+        delta = move[axis]
+
+        if delta == 0.0:
+            if bound_low < min_allowed - EPSILON or bound_high > max_allowed + EPSILON:
+                return None
+            continue
+
+        limit_one = (min_allowed - bound_low) / delta
+        limit_two = (max_allowed - bound_high) / delta
+        axis_low = min(limit_one, limit_two)
+        axis_high = max(limit_one, limit_two)
+        low = max(low, axis_low)
+        high = min(high, axis_high)
+        if low > high:
+            return None
+
+    return (low, high)
+
+
 def refine_safe_interval_end(
-    data: dict,
-    component_id: str,
+    context: dict,
     start_position: list[float],
     move: list[float],
     safe_low: float,
     unsafe_high: float,
     rotation_matrix: list[list[int]],
+    steps: int = FALLBACK_BISECTION_STEPS,
 ) -> float:
     low = safe_low
     high = unsafe_high
-    for _ in range(60):
+    for _ in range(steps):
         mid = (low + high) / 2.0
         candidate = vector_add(start_position, vector_scale(move, mid))
-        ok, _ = analyze_position(data, component_id, candidate, rotation_matrix)
+        ok, _ = analyze_position(context, candidate, rotation_matrix)
         if ok:
             low = mid
         else:
@@ -340,24 +471,17 @@ def refine_safe_interval_end(
     return low
 
 
-def find_best_safe_scale(
-    data: dict,
-    component_id: str,
+def legacy_best_safe_scale(
+    context: dict,
     start: list[float],
     move: list[float],
     rotation_matrix: list[list[int]],
 ) -> float | None:
-    full_position = vector_add(start, move)
-    full_ok, _ = analyze_position(data, component_id, full_position, rotation_matrix)
-    if full_ok:
-        return 1.0
-
-    sample_count = 2000
     safe_samples: list[float] = []
-    for index in range(sample_count + 1):
-        scale = index / sample_count
+    for index in range(FALLBACK_SAMPLE_COUNT + 1):
+        scale = index / FALLBACK_SAMPLE_COUNT
         candidate = vector_add(start, vector_scale(move, scale))
-        ok, _ = analyze_position(data, component_id, candidate, rotation_matrix)
+        ok, _ = analyze_position(context, candidate, rotation_matrix)
         if ok:
             safe_samples.append(scale)
 
@@ -368,15 +492,66 @@ def find_best_safe_scale(
     if best_sample >= 1.0:
         return 1.0
 
-    step = 1.0 / sample_count
+    step = 1.0 / FALLBACK_SAMPLE_COUNT
     unsafe_high = min(1.0, best_sample + step)
     return refine_safe_interval_end(
-        data=data,
-        component_id=component_id,
+        context=context,
         start_position=start,
         move=move,
         safe_low=best_sample,
         unsafe_high=unsafe_high,
+        rotation_matrix=rotation_matrix,
+    )
+
+
+def find_best_safe_scale(
+    context: dict,
+    start: list[float],
+    move: list[float],
+    rotation_matrix: list[list[int]],
+) -> float | None:
+    start_bounds = box_bounds(start, context["target_dims"], rotation_matrix)
+    start_ok, _ = analyze_bounds(context, start_bounds)
+    if not start_ok:
+        return legacy_best_safe_scale(context, start, move, rotation_matrix)
+
+    allowed_interval = envelope_safe_interval(start_bounds, move, context["inner_size"])
+    if allowed_interval is None or allowed_interval[1] < 0.0:
+        return None
+
+    safe_low = max(0.0, allowed_interval[0])
+    safe_high = min(1.0, allowed_interval[1])
+    if not safe_low <= 0.0 <= safe_high:
+        return legacy_best_safe_scale(context, start, move, rotation_matrix)
+
+    earliest_blocking_scale = safe_high
+    for _, obstacle_bounds in context["other_bounds"]:
+        collision_interval = collision_interval_for_obstacle(start_bounds, move, obstacle_bounds)
+        if collision_interval is None:
+            continue
+        block_low = collision_interval[0]
+        block_high = collision_interval[1]
+        if block_high <= 0.0 or block_low >= earliest_blocking_scale:
+            continue
+        earliest_blocking_scale = max(0.0, block_low)
+        if earliest_blocking_scale <= 0.0:
+            return 0.0
+
+    candidate_scale = earliest_blocking_scale
+    if candidate_scale >= 1.0:
+        return 1.0
+
+    candidate_position = vector_add(start, vector_scale(move, candidate_scale))
+    candidate_ok, _ = analyze_position(context, candidate_position, rotation_matrix)
+    if candidate_ok:
+        return candidate_scale
+
+    return refine_safe_interval_end(
+        context=context,
+        start_position=start,
+        move=move,
+        safe_low=0.0,
+        unsafe_high=candidate_scale,
         rotation_matrix=rotation_matrix,
     )
 
@@ -401,7 +576,12 @@ def update_component_placement(
     return updated
 
 
-def sync_yaml_result_to_cad(args: argparse.Namespace, output_path: Path) -> dict:
+def sync_yaml_result_to_cad(
+    args: argparse.Namespace,
+    output_path: Path,
+    position: list[float],
+    rotation_matrix: list[list[int]],
+) -> dict:
     if not args.sync_cad:
         return {"enabled": False, "success": False}
     if not args.doc_name:
@@ -410,7 +590,7 @@ def sync_yaml_result_to_cad(args: argparse.Namespace, output_path: Path) -> dict
     solid_name = args.component_object or args.component
     part_name = args.part_object or f"{args.component}_part"
     code = render_rpc_script(
-        "sync_component_from_yaml.py",
+        "sync_component_placement.py",
         {
             "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
             "__DOC_NAME__": json.dumps(args.doc_name),
@@ -418,6 +598,9 @@ def sync_yaml_result_to_cad(args: argparse.Namespace, output_path: Path) -> dict
             "__COMPONENT_ID__": json.dumps(args.component),
             "__SOLID_NAME__": json.dumps(solid_name),
             "__PART_NAME__": json.dumps(part_name),
+            "__TARGET_POSITION__": json.dumps(position),
+            "__ROTATION_ROWS__": json.dumps(rotation_matrix),
+            "__RECOMPUTE__": "False",
         },
     )
 
@@ -469,9 +652,10 @@ def main() -> int:
         )
 
     effective_move, normal_component_ignored = project_move_to_mount_plane(move, target_axis)
+    analysis_context = build_analysis_context(data, args.component, target_rotation_matrix)
     requested_position = vector_add(start_position, effective_move)
     requested_ok, requested_blockers = analyze_position(
-        data, args.component, requested_position, target_rotation_matrix
+        analysis_context, requested_position, target_rotation_matrix
     )
 
     solution_found = True
@@ -481,8 +665,7 @@ def main() -> int:
         final_position = requested_position
     else:
         best_scale = find_best_safe_scale(
-            data,
-            args.component,
+            analysis_context,
             start_position,
             effective_move,
             target_rotation_matrix,
@@ -498,7 +681,7 @@ def main() -> int:
             final_position = vector_add(start_position, applied_move)
 
     final_ok, final_blockers = analyze_position(
-        data, args.component, final_position, target_rotation_matrix
+        analysis_context, final_position, target_rotation_matrix
     )
     if solution_found and not final_ok:
         raise RuntimeError(
@@ -517,7 +700,12 @@ def main() -> int:
     save_yaml(output_path, updated)
 
     try:
-        cad_sync = sync_yaml_result_to_cad(args, output_path)
+        cad_sync = sync_yaml_result_to_cad(
+            args,
+            output_path,
+            final_position,
+            target_rotation_matrix,
+        )
     except Exception as exc:
         cad_sync = {
             "enabled": True,

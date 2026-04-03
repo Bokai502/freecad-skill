@@ -5,14 +5,14 @@ Create an Assembly container with hierarchical sub-parts from YAML. Prefer the p
 
 ## Important
 
-For move requests, this is a post-confirmation regeneration step. The recommended top-level path is
+For move requests, this is an optional post-move regeneration step. The recommended top-level path is
 `safe-move-workflow.md`.
 
 ## When to Use
 
 - When building a multi-component model that needs an assembly container.
 - When grouping parts hierarchically.
-- When regenerating an assembly from an updated YAML after a confirmed move.
+- When the user explicitly wants a rebuilt assembly from an updated YAML after a safe move has been written.
 
 ## Target Hierarchy
 
@@ -35,7 +35,7 @@ document with the same name first.
 Preferred CLI:
 
 ```bash
-freecad-create-assembly --input sample.updated.yaml --doc-name SampleYamlAssembly
+freecad-create-assembly --input data/sample.updated.yaml --doc-name SampleYamlAssembly
 ```
 
 ### Step 2: Create the assembly container
@@ -92,5 +92,5 @@ execute `fitAll()`, and save the result to the target output path.
 - Call `doc.recompute()` after all objects are added.
 - After generation, set a readable GUI view automatically instead of leaving the camera in an arbitrary state.
 - Close before re-run to avoid naming conflicts.
-- In move workflows, use this only after the move plan has been approved and the YAML has been updated.
+- In move workflows, use this only when the user explicitly asks for a rebuilt assembly after the safe move has been written to YAML.
 - For Snap-based FreeCAD, use `Path.home() / 'freecad_data'` for file I/O.

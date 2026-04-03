@@ -19,9 +19,15 @@ def exit_on_failure(result: Any) -> None:
         raise SystemExit(1)
 
 
-def call_rpc_method(host: str, port: int, method_name: str, *method_args: Any) -> Any:
+def call_rpc_method(
+    host: str,
+    port: int,
+    method_name: str,
+    *method_args: Any,
+    verify_connection: bool = True,
+) -> Any:
     """Call a named RPC method through the shared FreeCAD connection."""
-    conn = get_connection(host, port)
+    conn = get_connection(host, port, verify=verify_connection)
     method = getattr(conn, method_name)
     return method(*method_args)
 
@@ -60,7 +66,7 @@ def extract_output_payload(result: dict) -> dict:
 
 def execute_script_payload(host: str, port: int, code: str) -> dict:
     """Execute a Python script in FreeCAD and return the embedded JSON payload."""
-    result = call_rpc_method(host, port, "execute_code", code)
+    result = call_rpc_method(host, port, "execute_code", code, verify_connection=False)
     return extract_output_payload(result)
 
 
