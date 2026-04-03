@@ -23,7 +23,7 @@
 - 更新 FreeCAD skill 的移动规则：
   - 先分析，再直接执行，不再额外等待用户确认
   - 默认更新当前 CAD / YAML，不再自动新建新的装配文件
-- 将最新 FreeCAD skill 备份同步到 [freecad_skill](./skill_backups/freecad_skill)。
+- 将最新 FreeCAD skill 备份同步到 [`skill_backups/`](./skill_backups/) 下的跟踪备份目录。
 - 调整 skill 备份策略，工作区只保留最新一份备份。
 
 ## v0.3.0 - 碰撞搜索与同步性能优化
@@ -111,3 +111,14 @@
 - 新增工作区级中英文入口文档 [README.md](./README.md) 与 [README.zh-CN.md](./README.zh-CN.md)。
 - 新增系统架构与流程图文档 [ARCHITECTURE.md](./docs/ARCHITECTURE.md)。
 - 明确了工作区文档、包级文档、示例数据、运行时输出和启动脚本之间的关系。
+
+## v0.7.0 - 原地更新移动流程与 skill 备份刷新
+
+日期：2026-04-03
+
+- 在 [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) 中新增 `--spin`，支持在同一面上做 90 度整数倍旋转。
+- 在 [test_yaml_component_safe_move.py](./freecad_cli_tools/tests/test_yaml_component_safe_move.py) 中补充同面旋转和非法旋转角度的单元测试。
+- 更新 [freecad_cli_tools/README.md](./freecad_cli_tools/README.md) 和 [freecad_cli_tools/README.zh-CN.md](./freecad_cli_tools/README.zh-CN.md)，补充原地更新 YAML 的示例和同面旋转说明。
+- 更新 [README.md](./README.md)、[README.zh-CN.md](./README.zh-CN.md) 和 [ARCHITECTURE.md](./docs/ARCHITECTURE.md)，将默认移动/旋转流程明确为“覆盖源 YAML，并原地保存当前 `FCStd` 文档”。
+- 刷新已跟踪的 FreeCAD skill 备份到 [skill_backups/freecad](./skill_backups/freecad)，并移除旧的 `skill_backups/freecad_skill` 路径。
+- 在 [pyproject.toml](./freecad_cli_tools/pyproject.toml) 和 [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py) 中将包版本由 `0.5.0` 升到 `0.7.0`。

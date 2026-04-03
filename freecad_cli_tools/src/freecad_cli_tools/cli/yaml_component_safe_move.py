@@ -29,6 +29,11 @@ IDENTITY_ROTATION = [
     [0, 1, 0],
     [0, 0, 1],
 ]
+POSITIVE_AXIS_QUARTER_TURNS = {
+    0: [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
+    1: [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+    2: [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+}
 FALLBACK_SAMPLE_COUNT = 256
 FALLBACK_BISECTION_STEPS = 24
 
@@ -40,17 +45,13 @@ def parse_args() -> argparse.Namespace:
             "write an updated YAML file, and optionally sync the result to FreeCAD."
         )
     )
-    parser.add_argument(
-        "--input", default="data/sample.yaml", help="Path to the source YAML file."
-    )
+    parser.add_argument("--input", default="data/sample.yaml", help="Path to the source YAML file.")
     parser.add_argument(
         "--output",
         default="data/sample.updated.yaml",
         help="Path to the output YAML file.",
     )
-    parser.add_argument(
-        "--component", default="P001", help="Target component id to move."
-    )
+    parser.add_argument("--component", default="P001", help="Target component id to move.")
     parser.add_argument(
         "--move",
         nargs=3,
@@ -67,6 +68,16 @@ def parse_args() -> argparse.Namespace:
             "Optional target envelope face for reorientation. When supplied, the component is "
             "rotated so its own mount_face is installed onto the specified envelope face and "
             "placed at the center of that face."
+        ),
+    )
+    parser.add_argument(
+        "--spin",
+        type=int,
+        default=0,
+        help=(
+            "Optional in-plane rotation in degrees around the installed face normal. "
+            "Must be a multiple of 90. Keeps the mount point fixed and may be used "
+            "with or without --install-face."
         ),
     )
     parser.add_argument(
@@ -138,6 +149,20 @@ def apply_rotation(matrix: list[list[int]], point: list[float]) -> list[float]:
     return [sum(matrix[row][col] * point[col] for col in range(3)) for row in range(3)]
 
 
+def multiply_rotation_matrices(left: list[list[int]], right: list[list[int]]) -> list[list[int]]:
+    return [
+        [sum(left[row][k] * right[k][col] for k in range(3)) for col in range(3)]
+        for row in range(3)
+    ]
+
+
+def rotation_power(matrix: list[list[int]], turns: int) -> list[list[int]]:
+    result = [row[:] for row in IDENTITY_ROTATION]
+    for _ in range(turns % 4):
+        result = multiply_rotation_matrices(matrix, result)
+    return result
+
+
 def component_mount_face(component: dict) -> int:
     mount_face = component.get("placement", {}).get("mount_face")
     if mount_face not in FACE_DEFINITIONS:
@@ -151,9 +176,7 @@ def envelope_face(component: dict) -> int:
     placement = component.get("placement", {})
     face = placement.get("envelope_face", placement.get("mount_face"))
     if face not in FACE_DEFINITIONS:
-        raise ValueError(
-            f"Invalid or missing envelope_face {face!r}. Expected an integer in 0..5."
-        )
+        raise ValueError(f"Invalid or missing envelope_face {face!r}. Expected an integer in 0..5.")
     return face
 
 
@@ -191,8 +214,7 @@ def box_bounds(
                 rotated = apply_rotation(rotation_matrix, [x, y, z])
                 corners.append([position[i] + rotated[i] for i in range(3)])
     return [
-        (min(point[i] for point in corners), max(point[i] for point in corners))
-        for i in range(3)
+        (min(point[i] for point in corners), max(point[i] for point in corners)) for i in range(3)
     ]
 
 
@@ -217,8 +239,7 @@ def bounds_overlap(
     b_bounds: list[tuple[float, float]],
 ) -> bool:
     return all(
-        a_bounds[i][0] < b_bounds[i][1] - EPSILON
-        and b_bounds[i][0] < a_bounds[i][1] - EPSILON
+        a_bounds[i][0] < b_bounds[i][1] - EPSILON and b_bounds[i][0] < a_bounds[i][1] - EPSILON
         for i in range(3)
     )
 
@@ -263,9 +284,7 @@ def constrain_position_to_envelope_face(
     rotation_matrix: list[list[int]],
 ) -> list[float]:
     _, axis, direction = FACE_DEFINITIONS[face_id]
-    target_contact = (
-        -inner_size[axis] / 2.0 if direction < 0 else inner_size[axis] / 2.0
-    )
+    target_contact = -inner_size[axis] / 2.0 if direction < 0 else inner_size[axis] / 2.0
     bounds = box_bounds(position, dims, rotation_matrix)
     current_contact = bounds[axis][0] if direction < 0 else bounds[axis][1]
     constrained = list(position)
@@ -276,17 +295,60 @@ def constrain_position_to_envelope_face(
 def choose_rotation(component_face: int, target_envelope_face: int) -> list[list[int]]:
     source = face_normal(component_face)
     target = face_normal(target_envelope_face)
-    candidates = [
-        matrix for matrix in ROTATIONS if apply_rotation(matrix, source) == target
-    ]
+    candidates = [matrix for matrix in ROTATIONS if apply_rotation(matrix, source) == target]
     if not candidates:
-        raise RuntimeError(
-            "No valid orthogonal rotation found for requested face change."
-        )
-    candidates.sort(
-        key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True
-    )
+        raise RuntimeError("No valid orthogonal rotation found for requested face change.")
+    candidates.sort(key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True)
     return candidates[0]
+
+
+def normalize_spin_quarter_turns(spin_degrees: int) -> int:
+    if spin_degrees % 90 != 0:
+        raise ValueError("--spin must be a multiple of 90 degrees.")
+    return (spin_degrees // 90) % 4
+
+
+def spin_rotation_for_envelope_face(
+    target_envelope_face: int, spin_quarter_turns: int
+) -> list[list[int]]:
+    _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
+    effective_turns = (spin_quarter_turns * direction) % 4
+    return rotation_power(POSITIVE_AXIS_QUARTER_TURNS[axis], effective_turns)
+
+
+def apply_in_plane_spin(
+    base_rotation: list[list[int]],
+    target_envelope_face: int,
+    spin_quarter_turns: int,
+) -> list[list[int]]:
+    if spin_quarter_turns % 4 == 0:
+        return [row[:] for row in base_rotation]
+    spin_matrix = spin_rotation_for_envelope_face(target_envelope_face, spin_quarter_turns)
+    return multiply_rotation_matrices(spin_matrix, base_rotation)
+
+
+def position_for_mount_point(
+    mount_point: list[float],
+    dims: list[float],
+    mount_face: int,
+    rotation_matrix: list[list[int]],
+) -> list[float]:
+    centroid_local = local_face_centroid(dims, mount_face)
+    centroid_world = apply_rotation(rotation_matrix, centroid_local)
+    return [mount_point[i] - centroid_world[i] for i in range(3)]
+
+
+def mount_point_from_component(component: dict) -> list[float]:
+    placement = component.get("placement", {})
+    mount_point = placement.get("mount_point")
+    if mount_point is not None:
+        return [float(value) for value in mount_point]
+    return compute_mount_point(
+        placement["position"],
+        component["dims"],
+        component_mount_face(component),
+        rotation_matrix_from_component(component),
+    )
 
 
 def centered_face_position(
@@ -294,22 +356,16 @@ def centered_face_position(
     inner_size: list[float],
     component_face: int,
     target_envelope_face: int,
-) -> tuple[list[float], list[list[int]]]:
+) -> tuple[list[float], list[float], list[list[int]]]:
     rotation = choose_rotation(component_face, target_envelope_face)
-    centroid_local = local_face_centroid(dims, component_face)
-    centroid_world = apply_rotation(rotation, centroid_local)
     _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
-    target_contact = [0.0, 0.0, 0.0]
-    target_contact[axis] = (
-        (-inner_size[axis] / 2.0) if direction < 0 else (inner_size[axis] / 2.0)
-    )
-    position = [target_contact[i] - centroid_world[i] for i in range(3)]
-    return position, rotation
+    mount_point = [0.0, 0.0, 0.0]
+    mount_point[axis] = (-inner_size[axis] / 2.0) if direction < 0 else (inner_size[axis] / 2.0)
+    position = position_for_mount_point(mount_point, dims, component_face, rotation)
+    return position, mount_point, rotation
 
 
-def project_move_to_mount_plane(
-    move: list[float], axis: int
-) -> tuple[list[float], bool]:
+def project_move_to_mount_plane(move: list[float], axis: int) -> tuple[list[float], bool]:
     projected = list(move)
     ignored = abs(projected[axis]) > EPSILON
     projected[axis] = 0.0
@@ -541,9 +597,7 @@ def find_best_safe_scale(
 
     earliest_blocking_scale = safe_high
     for _, obstacle_bounds in context["other_bounds"]:
-        collision_interval = collision_interval_for_obstacle(
-            start_bounds, move, obstacle_bounds
-        )
+        collision_interval = collision_interval_for_obstacle(start_bounds, move, obstacle_bounds)
         if collision_interval is None:
             continue
         block_low = collision_interval[0]
@@ -636,46 +690,85 @@ def main() -> int:
     input_path = Path(args.input)
     output_path = Path(args.output)
     move = [float(value) for value in args.move]
+    spin_quarter_turns = normalize_spin_quarter_turns(args.spin)
 
     data = load_yaml(input_path)
     components = data.get("components", {})
     if args.component not in components:
         available = ", ".join(sorted(components))
-        raise KeyError(
-            f"Component {args.component} not found. Available components: {available}"
-        )
+        raise KeyError(f"Component {args.component} not found. Available components: {available}")
 
     target = components[args.component]
     component_face = component_mount_face(target)
     original_envelope_face = envelope_face(target)
+    original_rotation_matrix = rotation_matrix_from_component(target)
     target_envelope_face = (
         args.install_face if args.install_face is not None else original_envelope_face
     )
     _, target_face_label, target_axis, _ = get_face_data(target_envelope_face)
 
     if args.install_face is not None:
-        start_position, target_rotation_matrix = centered_face_position(
+        base_position, start_mount_point, base_rotation_matrix = centered_face_position(
             target["dims"],
             data["envelope"]["inner_size"],
             component_face,
             target_envelope_face,
         )
-    else:
-        target_rotation_matrix = rotation_matrix_from_component(target)
+        target_rotation_matrix = apply_in_plane_spin(
+            base_rotation_matrix,
+            target_envelope_face,
+            spin_quarter_turns,
+        )
+        start_position = (
+            base_position
+            if spin_quarter_turns == 0
+            else position_for_mount_point(
+                start_mount_point,
+                target["dims"],
+                component_face,
+                target_rotation_matrix,
+            )
+        )
         start_position = constrain_position_to_envelope_face(
-            target["placement"]["position"],
+            start_position,
             target["dims"],
             data["envelope"]["inner_size"],
             target_envelope_face,
             target_rotation_matrix,
         )
+    else:
+        if spin_quarter_turns == 0:
+            target_rotation_matrix = original_rotation_matrix
+            start_position = constrain_position_to_envelope_face(
+                target["placement"]["position"],
+                target["dims"],
+                data["envelope"]["inner_size"],
+                target_envelope_face,
+                target_rotation_matrix,
+            )
+        else:
+            start_mount_point = mount_point_from_component(target)
+            target_rotation_matrix = apply_in_plane_spin(
+                original_rotation_matrix,
+                target_envelope_face,
+                spin_quarter_turns,
+            )
+            start_position = position_for_mount_point(
+                start_mount_point,
+                target["dims"],
+                component_face,
+                target_rotation_matrix,
+            )
+            start_position = constrain_position_to_envelope_face(
+                start_position,
+                target["dims"],
+                data["envelope"]["inner_size"],
+                target_envelope_face,
+                target_rotation_matrix,
+            )
 
-    effective_move, normal_component_ignored = project_move_to_mount_plane(
-        move, target_axis
-    )
-    analysis_context = build_analysis_context(
-        data, args.component, target_rotation_matrix
-    )
+    effective_move, normal_component_ignored = project_move_to_mount_plane(move, target_axis)
+    analysis_context = build_analysis_context(data, args.component, target_rotation_matrix)
     requested_position = vector_add(start_position, effective_move)
     requested_ok, requested_blockers = analyze_position(
         analysis_context, requested_position, target_rotation_matrix
@@ -744,13 +837,16 @@ def main() -> int:
     print(f"component_mount_face: {component_face}")
     print(f"component_mount_face_label: {FACE_DEFINITIONS[component_face][0]}")
     print(f"original_envelope_face: {original_envelope_face}")
-    print(
-        f"original_envelope_face_label: {FACE_DEFINITIONS[original_envelope_face][0]}"
-    )
+    print(f"original_envelope_face_label: {FACE_DEFINITIONS[original_envelope_face][0]}")
     print(f"target_envelope_face: {target_envelope_face}")
     print(f"target_envelope_face_label: {target_face_label}")
     print("orientation_change_supported: True")
-    print(f"orientation_change_applied: {args.install_face is not None}")
+    print(
+        "orientation_change_applied: " f"{args.install_face is not None or spin_quarter_turns != 0}"
+    )
+    print(f"in_plane_spin_degrees_requested: {args.spin}")
+    print(f"in_plane_spin_quarter_turns_applied: {spin_quarter_turns}")
+    print(f"original_rotation_matrix: {original_rotation_matrix}")
     print(f"rotation_matrix: {target_rotation_matrix}")
     print(f"normal_move_component_ignored: {normal_component_ignored}")
     print(f"original_position: {target['placement']['position']}")
@@ -765,8 +861,7 @@ def main() -> int:
     print(f"applied_move: {applied_move}")
     print(f"final_position: {final_position}")
     print(
-        "final_mount_point: "
-        f"{updated['components'][args.component]['placement']['mount_point']}"
+        "final_mount_point: " f"{updated['components'][args.component]['placement']['mount_point']}"
     )
     print(f"final_blockers: {final_blockers}")
     print(f"cad_sync_enabled: {args.sync_cad}")

@@ -17,7 +17,7 @@ action guides based on the requested task.
 - FreeCAD must be running with the **FreeCADMCP addon** active (RPC server on `localhost:9875` by default) for RPC-based commands.
 - Use the Python environment where `freecad-cli-tools` is installed. On this machine that is currently `base`.
 - Prefer the packaged CLI entry points when they exist:
-  - `freecad-yaml-safe-move` for YAML-first move analysis, YAML rewrite, and optional CAD sync
+  - `freecad-yaml-safe-move` for YAML-first move analysis, in-place YAML rewrite, and CAD sync
   - `freecad-create-assembly` for regenerating CAD from YAML with envelope and automatic view fitting
   - `freecad-check-collision` only when there is no YAML source of truth and a document-only analysis is needed
   - `freecad-move-obj` only when there is no YAML source of truth and a document-only execution step is needed
@@ -62,21 +62,21 @@ Determine the user's intent and read the corresponding guide from the `guides/` 
 
 ### Build assembly from YAML
 1. `safe-move-workflow` -> analyze any requested part move first
-2. `yaml-safe-move` -> update the YAML with the safe move result
-3. keep the current CAD document synced instead of creating a new assembly by default
+2. `yaml-safe-move` -> update the source YAML file in place with the safe move result
+3. keep the current CAD document synced and saved to the same `FCStd` file instead of creating a new assembly by default
 4. `create-assembly` only when the user explicitly wants a rebuilt assembly file
 5. `get-view` -> verify visually
 
 ### Move YAML with collision safety
 1. `safe-move-workflow` -> analyze the requested move
-2. `yaml-safe-move` -> write the updated YAML using the safe move result
-3. sync CAD from the written YAML when an open document should be updated
+2. `yaml-safe-move` -> overwrite the source YAML using the safe move result
+3. sync CAD from the written YAML, then save the current document back to the same `FCStd` file
 4. `create-assembly` only when the user explicitly asks for a rebuilt assembly file
 
 ### Move a document object with collision safety
 1. `safe-move-workflow` -> locate the source YAML first
-2. `yaml-safe-move` -> compute the safe move from YAML and write the updated YAML
-3. `yaml-safe-move --sync-cad` or full YAML reload -> sync the updated result into FreeCAD
+2. `yaml-safe-move` -> compute the safe move from YAML and overwrite the source YAML
+3. `yaml-safe-move --sync-cad` or full YAML reload -> sync the updated result into FreeCAD and save the same `FCStd` document
 4. `create-assembly` only when the user explicitly asks for a full regenerated document
 5. Use document-only commands only if no YAML source exists
 
@@ -87,17 +87,19 @@ Determine the user's intent and read the corresponding guide from the `guides/` 
 - Prefer first-class CLI commands over handwritten ad hoc Python whenever the packaged command covers the task.
 - When a YAML layout file exists, treat that YAML file as the source of truth for move planning and execution.
 - For document-space collision checks, treat `getGlobalPlacement()` as the source of truth. Local `Shape` and local `BoundBox` can be stale or misleading when a parent container such as `App::Part` moves.
-- `freecad-yaml-safe-move` is the preferred YAML-first move command; it can work offline on YAML only, or it can sync the written result into CAD when asked.
+- `freecad-yaml-safe-move` is the preferred YAML-first move command; for move/rotate requests in this skill, use it to overwrite the source YAML and sync/save the current CAD document instead of creating sibling output files.
 - In the intended data model, YAML `placement.mount_face` identifies the component's own mounting face, not the envelope face.
 - `freecad-yaml-safe-move` supports two YAML-first workflows:
   - translation-only moves that preserve the current orientation
   - reorientation moves that keep `placement.mount_face` as the component's own face while changing `placement.envelope_face` and `placement.rotation_matrix`
 - For reorientation, use `--install-face <0..5>` to rotate the component so its own `mount_face` is installed onto the requested envelope face. The command then applies the requested `--move` as an in-plane offset on that target face.
+- For in-place rotation on the same installed face, use `--spin <degrees>` with a multiple of `90`, such as `--spin 90`. This keeps the component on the same `envelope_face`, keeps the mount point fixed, and only changes the in-plane orientation.
+- `--install-face` and `--spin` can be combined when the user wants to move to another face and then rotate again within that target face.
 - When the target FreeCAD instance runs inside WSL, YAML-to-CAD sync may need a WSL-visible path and
   an explicit RPC host if Windows `localhost` forwarding is flaky.
 - `freecad-create-assembly` is the preferred CLI only when a new CAD document from YAML is explicitly needed.
 - Generated assemblies should include the envelope when YAML provides one.
-- When only moving an existing layout, prefer syncing the current CAD document instead of creating a new assembly.
+- When only moving or rotating an existing layout, update the existing YAML file in place and save the existing `FCStd` document in place instead of creating new YAML or `FCStd` files.
 - After CAD generation, switch the GUI to a readable fitted view automatically.
 - `freecad-check-collision` is a document-only fallback CLI for FreeCAD document objects when no YAML source is available.
 - `freecad-move-obj` is a document-only fallback CLI for applying a computed safe move when no YAML source is available.

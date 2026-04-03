@@ -48,14 +48,51 @@ flowchart TD
     G -- "No" --> I["Use Closest Safe Prefix<br/>Or Constrained Fallback"]
     H --> J["Update YAML Placement<br/>position<br/>mount_point<br/>rotation_matrix"]
     I --> J
-    J --> K["Write Output YAML"]
+    J --> K["Overwrite Source YAML"]
     K --> L{"Sync CAD?"}
-    L -- "No" --> M["Return Analysis And Output Path"]
+    L -- "No" --> M["Return Analysis And Updated YAML Path"]
     L -- "Yes" --> N["Normalize Placement Updates"]
     N --> O["Render Batch Sync RPC Script"]
     O --> P["Update One Or More Objects In FreeCAD"]
     P --> Q["Optional Single Recompute"]
-    Q --> R["Return Final Result"]
+    Q --> R["Save Existing FCStd Document"]
+    R --> S["Return Final Result"]
+```
+
+## Move-Part Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant U as "User"
+    participant K as "$freecad Skill"
+    participant C as "freecad-yaml-safe-move"
+    participant Y as "YAML Layout"
+    participant S as "freecad_sync.py"
+    participant X as "XML-RPC"
+    participant F as "FreeCAD Runtime"
+    participant R as "sync_component_placements.py"
+
+    U->>K: Request move for one part
+    K->>K: Route to safe-move-workflow
+    K->>C: Invoke YAML-first safe move CLI
+    C->>Y: Load component placement and envelope data
+    C->>C: Compute safe target or closest safe prefix
+    C->>Y: Overwrite source YAML with updated placement
+
+    alt sync current CAD document
+        C->>S: Build normalized placement update
+        S->>X: Send rendered batch sync script
+        X->>F: Execute RPC code
+        F->>R: Apply Placement to solid/part
+        R-->>F: Return sync payload
+        F-->>X: Return JSON result
+        X-->>S: Parsed payload
+        S-->>C: Sync success/failure
+        C->>F: Save current FCStd document in place
+    end
+
+    C-->>K: Safe move result and updated file paths
+    K-->>U: Report executed move and any adjustment
 ```
 
 ## Notes
@@ -64,6 +101,7 @@ flowchart TD
 - `data/` stores generated files and verification outputs, and is intentionally ignored by git.
 - `freecad-yaml-safe-move` is the YAML-first path for collision-aware movement.
 - `freecad-sync-placements` is the reusable batch placement path for faster multi-component updates.
+- The current skill workflow overwrites the existing YAML and saves the existing `FCStd` document in place for move/rotate requests.
 
 ## 中文说明
 

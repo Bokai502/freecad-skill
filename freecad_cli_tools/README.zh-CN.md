@@ -48,9 +48,10 @@ freecad-get-view Isometric --output table.png
 freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssembly
 
 # 基于 YAML 的安全移动与可选 CAD 同步
-freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0
-freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
-freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.reoriented.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --spin 90 --move 0 0 0
 freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.json
 
 # 仅针对现有文档的兜底命令
@@ -72,6 +73,8 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 ## YAML 离线移动命令
 
 `freecad-yaml-safe-move` 是面向 YAML 的主移动命令。它既可以离线处理 YAML，也可以把批准后的结果同步到正在运行的 FreeCAD 文档里。
+
+在 `skills_test` 工作区流程中，移动和旋转请求默认会覆盖源 YAML，并在同步后把现有 `FCStd` 文档原地保存；只有在用户明确要求时，才额外产出新的重建文件。
 
 适用场景包括：
 

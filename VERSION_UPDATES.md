@@ -23,7 +23,7 @@ Date: 2026-04-02
 - Updated the FreeCAD skill rules so move requests:
   - analyze first, then execute directly without waiting for an extra confirmation step
   - update the current CAD/YAML by default instead of rebuilding a new assembly automatically
-- Synced the latest FreeCAD skill backup into [freecad_skill](./skill_backups/freecad_skill).
+- Synced the latest FreeCAD skill backup into the tracked backup directory under [`skill_backups/`](./skill_backups/).
 - Simplified skill backup management so the workspace keeps only the latest snapshot.
 
 ## v0.3.0 - Collision Search And Sync Performance Optimization
@@ -111,3 +111,14 @@ Date: 2026-04-03
 - Added workspace-level bilingual entry docs [README.md](./README.md) and [README.zh-CN.md](./README.zh-CN.md).
 - Added architecture and workflow diagrams in [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 - Clarified the relationship between workspace docs, package docs, examples, runtime outputs, and startup scripts.
+
+## v0.7.0 - In-Place Move Workflow And Skill Backup Refresh
+
+Date: 2026-04-03
+
+- Added explicit `--spin` support for in-plane 90-degree rotation in [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py).
+- Added unit coverage for same-face rotation and invalid spin input in [test_yaml_component_safe_move.py](./freecad_cli_tools/tests/test_yaml_component_safe_move.py).
+- Updated the package docs in [freecad_cli_tools/README.md](./freecad_cli_tools/README.md) and [freecad_cli_tools/README.zh-CN.md](./freecad_cli_tools/README.zh-CN.md) to document in-place YAML update examples and same-face rotation.
+- Updated the workspace docs in [README.md](./README.md), [README.zh-CN.md](./README.zh-CN.md), and [ARCHITECTURE.md](./docs/ARCHITECTURE.md) to describe the default move/rotate workflow as: overwrite the source YAML and save the current `FCStd` document in place.
+- Refreshed the tracked FreeCAD skill backup under [skill_backups/freecad](./skill_backups/freecad) and retired the older `skill_backups/freecad_skill` path.
+- Bumped the package version from `0.5.0` to `0.7.0` in [pyproject.toml](./freecad_cli_tools/pyproject.toml) and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py).

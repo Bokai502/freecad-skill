@@ -49,9 +49,10 @@ freecad-get-view Isometric --output table.png
 freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssembly
 
 # YAML-first safe move and optional CAD sync
-freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0
-freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.updated.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
-freecad-yaml-safe-move --input examples/sample.yaml --output data/sample.reoriented.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --spin 90 --move 0 0 0
 freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.json
 
 # Document-only fallback commands
@@ -83,7 +84,7 @@ Use it when you want to:
 - preserve the component's current orientation while moving it, or explicitly reorient it onto a
   different envelope face
 - keep the component inside `envelope.inner_size`
-- write a new YAML file with the updated position, `mount_point`, `envelope_face`, and optional
+- write the updated YAML placement with the new position, `mount_point`, `envelope_face`, and optional
   `rotation_matrix`
 - optionally update the matching component in an open FreeCAD document
 
@@ -104,14 +105,21 @@ The command treats `placement.position` as the box minimum corner and performs t
 collision-safe moves for the component's current orientation by default. In the current YAML/CLI
 model, `placement.mount_face` is the component's own mounting face, `placement.envelope_face` is
 the envelope face it is installed onto, and `placement.rotation_matrix` captures the assembly
-orientation. When `--install-face` is supplied, the command rotates the component so its own
-`mount_face` is installed onto the requested envelope face, starts from the centered position on
-that face, and applies the requested move as an in-plane offset there. If the full requested move
-is safe, it applies it directly. If not, it finds the closest safe prefix on that segment. If no
-safe point exists on the requested segment, it reports that no solution was found and still writes
-an output YAML for the constrained placement state. When `--sync-cad` is supplied, it then updates
-the matching component object in the target FreeCAD document directly from the computed final
+orientation. With `--spin`, the command rotates the component in place around the installed face
+normal in multiples of `90` degrees while keeping the mount point fixed. When `--install-face` is
+supplied, the command rotates the component so its own `mount_face` is installed onto the requested
+envelope face, starts from the centered position on that face, and applies the requested move as an
+in-plane offset there. `--install-face` and `--spin` can be combined when a component should move
+to another face and then rotate again within that target face. If the full requested move is safe,
+it applies it directly. If not, it finds the closest safe prefix on that segment. If no safe point
+exists on the requested segment, it reports that no solution was found and still writes an output
+YAML for the constrained placement state. When `--sync-cad` is supplied, it then updates the
+matching component object in the target FreeCAD document directly from the computed final
 placement.
+
+In the `skills_test` workspace workflow, move and rotation requests now default to overwriting the
+source YAML path and saving the existing `FCStd` document in place after sync unless the user
+explicitly asks for a separate rebuilt output.
 
 On this machine, FreeCAD may run inside WSL while the CLI runs on Windows. In that setup:
 

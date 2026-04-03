@@ -47,8 +47,10 @@ freecad-create-assembly --input examples\sample.yaml --doc-name SampleYamlAssemb
 ### 4. 执行一次安全移动并同步回 CAD
 
 ```powershell
-freecad-yaml-safe-move --input examples\sample.yaml --output data\sample.updated.yaml --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name SampleYamlAssembly
+freecad-yaml-safe-move --input examples\sample.yaml --output examples\sample.yaml --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name SampleYamlAssembly
 ```
+
+在当前工作区的 skill 流程中，移动和旋转操作默认会原地更新 YAML，并将当前 `FCStd` 文档原地保存，而不是默认再生成旁路输出文件。
 
 ### 5. 批量同步多个位姿
 

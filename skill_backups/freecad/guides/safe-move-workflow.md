@@ -2,14 +2,15 @@
 
 Default high-safety workflow for moving a part. Prefer YAML as the source of truth: analyze from
 the YAML configuration first, then write the fully safe move or the closest safe result on the
-requested path, and sync the CAD model from that YAML without creating a new assembly by default.
+requested path, then overwrite the source YAML and save the current CAD model in place without
+creating a new assembly by default.
 
 ## When to Use
 
 - When the user asks to move a part in YAML.
 - When the user asks to move a part in an already opened FreeCAD document.
 - When overlap, interference, or invalid layout is possible.
-- When the final deliverable should include an updated YAML file and, optionally, an updated CAD document.
+- When the final deliverable should include the updated source YAML file and the updated existing CAD document.
 
 ## Input Expectations
 
@@ -41,8 +42,8 @@ Never apply the final move yet.
 2. Read the output summary:
    - whether the requested move is fully safe
    - blockers such as component ids or boundary constraints
-   - whether the move preserves orientation or changes `envelope_face`
-   - the chosen `rotation_matrix` when a face change is requested
+   - whether the move preserves orientation, changes `envelope_face`, or applies an in-plane spin on the same face
+   - the chosen `rotation_matrix` when a face change or same-face rotation is requested
    - the safe applied move or the fact that no safe point exists on the requested segment
 3. Convert that result into a user-facing move summary.
 4. If the user also wants the open FreeCAD model updated, plan to rerun the same command with
@@ -66,16 +67,18 @@ Before mutation, determine and record:
 - if not, the closest safe move or maximum safe move
 - what constraints caused the adjustment
 
-## Step 4: Write YAML, sync CAD, and report the result
+## Step 4: Update YAML, save CAD, and report the result
 
 ### YAML branch execution
 
-1. Run `freecad-yaml-safe-move` so the safe move result is written to a new YAML file.
-2. If the target CAD document should be updated in place, run the same command with `--sync-cad --doc-name <doc>`.
-3. Do not create a new assembly by default. Use `freecad-create-assembly` only when the user explicitly asks for a rebuilt assembly file or document.
-4. Return:
-   - the new YAML path
-   - the updated document result when CAD sync was requested
+1. Run `freecad-yaml-safe-move` so the safe move result overwrites the source YAML file in place by using the same path for `--input` and `--output`.
+2. Run the same command with `--sync-cad --doc-name <doc>` so the target CAD document is updated in place.
+3. Save the updated FreeCAD document back to its existing `FCStd` file path before reporting success.
+4. Do not create a new assembly by default. Use `freecad-create-assembly` only when the user explicitly asks for a rebuilt assembly file or document.
+5. Return:
+   - the updated YAML path
+   - the updated `FCStd` path
+   - the updated document result
    - a short summary of the requested move and any safety adjustment
 
 ### FreeCAD document branch execution
@@ -83,10 +86,11 @@ Before mutation, determine and record:
 1. Apply the computed safe move using `freecad-move-obj` or an equivalent scripted operation.
 2. Re-run collision verification immediately after the move using the same global-shape method as the pre-check.
 3. If the post-move check reports any unexpected collision, surface that failure clearly and do not describe the move as successful.
-4. Reflect the final safe position back into the source YAML.
-5. Keep the existing document updated in place by default. Use `load-yaml-data` or `create-assembly` only when the user explicitly asks for a rebuild.
+4. Reflect the final safe position back into the source YAML by overwriting that same YAML file.
+5. Save the existing document back to its current `FCStd` file path by default. Use `load-yaml-data` or `create-assembly` only when the user explicitly asks for a rebuild.
 6. Return:
-   - the new YAML path
+   - the updated YAML path
+   - the updated `FCStd` path
    - the updated document result
    - a short summary of the requested move and any safety adjustment
 
@@ -96,8 +100,11 @@ Before mutation, determine and record:
 - Always analyze first.
 - Prefer the YAML branch whenever a configuration file exists.
 - For YAML-driven motion, use `freecad-yaml-safe-move` rather than reimplementing the logic manually.
-- Use `freecad-yaml-safe-move --sync-cad` to update CAD from the approved YAML result when possible.
+- Use `freecad-yaml-safe-move --sync-cad` to update CAD from the approved YAML result when possible, then save the same `FCStd` file before reporting success.
 - When the user wants to move a component to another envelope face, use `freecad-yaml-safe-move --install-face <0..5>` so the workflow explicitly rotates the component and keeps `mount_face` as the component's own face.
+- When the user wants to keep the component on the same envelope face but rotate it in place by `90`, `180`, or `270` degrees, use `freecad-yaml-safe-move --spin <degrees>`.
+- When the user wants both a face change and an additional in-plane rotation on the target face, combine `--install-face <0..5>` with `--spin <degrees>`.
+- For move and rotation requests, do not create sibling `.updated.yaml`, `.rotated.yaml`, or new `.FCStd` files by default; overwrite the source YAML and save the existing `FCStd` document in place.
 - For full regeneration from YAML, use `freecad-create-assembly` only when the user explicitly asks for a new assembly output.
 - For document collision analysis, use `freecad-check-collision` only as a fallback when the YAML source is unavailable.
 - If there is collision or overlap risk, compute and execute the safe movement scheme, then report the adjustment to the user.

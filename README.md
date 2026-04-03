@@ -47,8 +47,12 @@ freecad-create-assembly --input examples\sample.yaml --doc-name SampleYamlAssemb
 ### 4. Run a safe move and sync it back to CAD
 
 ```powershell
-freecad-yaml-safe-move --input examples\sample.yaml --output data\sample.updated.yaml --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name SampleYamlAssembly
+freecad-yaml-safe-move --input examples\sample.yaml --output examples\sample.yaml --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name SampleYamlAssembly
 ```
+
+In the current workspace skill workflow, move and rotation operations update the existing YAML in
+place and save the current `FCStd` document in place instead of creating sibling output files by
+default.
 
 ### 5. Batch-sync multiple placements
 
