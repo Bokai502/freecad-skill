@@ -80,7 +80,7 @@ pre-processing command, and it can also sync the approved result into a running 
 Use it when you want to:
 
 - move one component in a YAML assembly definition
-- detect box collisions against other components
+- detect component collisions against other components using their current bounded geometry
 - preserve the component's current orientation while moving it, or explicitly reorient it onto a
   different envelope face
 - keep the component inside `envelope.inner_size`
@@ -98,10 +98,10 @@ This command creates:
 
 - an `Assembly` container
 - an `Envelope_part` with an `EnvelopeShell` when YAML `envelope` data exists
-- one `App::Part` plus one `Part::Box` per component
+- one `App::Part` plus one solid per component, currently `Part::Box` or `Part::Cylinder`
 - an automatic fitted GUI view after generation
 
-The command treats `placement.position` as the box minimum corner and performs translation-only
+The command treats `placement.position` as the component local-bounds minimum corner and performs translation-only
 collision-safe moves for the component's current orientation by default. In the current YAML/CLI
 model, `placement.mount_face` is the component's own mounting face, `placement.envelope_face` is
 the envelope face it is installed onto, and `placement.rotation_matrix` captures the assembly

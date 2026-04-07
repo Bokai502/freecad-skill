@@ -52,6 +52,7 @@ def build_envelope(doc, assembly, data):
 
 
 __PLACEMENT_HELPERS__
+__COMPONENT_SHAPE_HELPERS__
 
 
 def set_view(doc_name):
@@ -80,6 +81,15 @@ def set_view(doc_name):
     return True
 
 
+def apply_color(obj, color):
+    if not color or len(color) < 3:
+        return
+    rgba = [float(c) / 255.0 for c in color[:4]]
+    while len(rgba) < 4:
+        rgba.append(1.0)
+    obj.ViewObject.ShapeColor = (rgba[0], rgba[1], rgba[2], rgba[3])
+
+
 path = Path(YAML_PATH)
 with path.open("r", encoding="utf-8") as handle:
     data = yaml.safe_load(handle)
@@ -101,31 +111,26 @@ for component_id, component in data.get("components", {}).items():
     part = doc.addObject("App::Part", f"{component_id}_part")
     assembly.addObject(part)
 
-    if component.get("shape", "box") != "box":
-        raise RuntimeError(
-            f"Unsupported shape for {component_id}: {component.get('shape')}"
-        )
+    shape_spec = build_component_shape_spec(component_id, component)
+    solid = doc.addObject(shape_spec["object_type"], component_id)
 
-    box = doc.addObject("Part::Box", component_id)
-    dims = component["dims"]
-    placement = component["placement"]
-    pos = placement["position"]
-    rotation_rows = placement.get("rotation_matrix") or [
-        [1, 0, 0],
-        [0, 1, 0],
-        [0, 0, 1],
-    ]
-    box.Length = float(dims[0])
-    box.Width = float(dims[1])
-    box.Height = float(dims[2])
-    box.Placement = make_placement(pos, rotation_rows)
-    color = component.get("color")
-    if color and len(color) >= 3:
-        rgba = [float(c) / 255.0 for c in color[:4]]
-        while len(rgba) < 4:
-            rgba.append(1.0)
-        box.ViewObject.ShapeColor = (rgba[0], rgba[1], rgba[2], rgba[3])
-    part.addObject(box)
+    if shape_spec["shape"] == "box":
+        solid.Length = shape_spec["length"]
+        solid.Width = shape_spec["width"]
+        solid.Height = shape_spec["height"]
+    elif shape_spec["shape"] == "cylinder":
+        solid.Radius = shape_spec["radius"]
+        solid.Height = shape_spec["height"]
+        solid.Angle = shape_spec["angle"]
+    else:
+        raise RuntimeError(f"Unsupported shape for {component_id}: {shape_spec['shape']}")
+
+    solid.Placement = make_placement(
+        shape_spec["placement_position"],
+        shape_spec["rotation_rows"],
+    )
+    apply_color(solid, component.get("color"))
+    part.addObject(solid)
     created.append(component_id)
 
 doc.recompute()

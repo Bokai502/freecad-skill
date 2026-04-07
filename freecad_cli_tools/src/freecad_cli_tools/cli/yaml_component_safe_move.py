@@ -29,6 +29,11 @@ IDENTITY_ROTATION = [
     [0, 1, 0],
     [0, 0, 1],
 ]
+CYLINDER_AXIS_ROTATIONS = {
+    0: [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+    1: [[1, 0, 0], [0, 0, 1], [0, -1, 0]],
+    2: IDENTITY_ROTATION,
+}
 POSITIVE_AXIS_QUARTER_TURNS = {
     0: [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
     1: [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
@@ -41,7 +46,7 @@ FALLBACK_BISECTION_STEPS = 24
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Move a box component inside a YAML assembly, detect collisions, "
+            "Move a component inside a YAML assembly, detect collisions, "
             "write an updated YAML file, and optionally sync the result to FreeCAD."
         )
     )
@@ -163,6 +168,10 @@ def rotation_power(matrix: list[list[int]], turns: int) -> list[list[int]]:
     return result
 
 
+def component_shape(component: dict) -> str:
+    return str(component.get("shape", "box")).strip().lower()
+
+
 def component_mount_face(component: dict) -> int:
     mount_face = component.get("placement", {}).get("mount_face")
     if mount_face not in FACE_DEFINITIONS:
@@ -193,6 +202,115 @@ def rotation_matrix_from_component(component: dict) -> list[list[int]]:
     if matrix is None:
         return [row[:] for row in IDENTITY_ROTATION]
     return [[int(value) for value in row] for row in matrix]
+
+
+def cylinder_axis_index(mount_face: int) -> int:
+    if mount_face not in FACE_DEFINITIONS:
+        raise ValueError(
+            f"Invalid or missing mount_face {mount_face!r}. Expected an integer in 0..5."
+        )
+    return mount_face // 2
+
+
+def infer_cylinder_radius_and_height(
+    component_id: str,
+    component: dict,
+    axis_index: int,
+) -> tuple[float, float]:
+    dims = component.get("dims")
+    dims_values = None if dims is None else [float(value) for value in dims]
+
+    if dims_values is not None and len(dims_values) not in (2, 3):
+        raise RuntimeError(
+            "Cylinder component "
+            f"{component_id} requires two or three dims values when dims are used."
+        )
+
+    radius = component.get("radius")
+    height = component.get("height")
+
+    if radius is None:
+        if dims_values is None:
+            raise RuntimeError(f"Cylinder component {component_id} requires radius or dims values.")
+        if len(dims_values) == 2:
+            radius = dims_values[0] / 2.0
+        else:
+            cross_section = [dims_values[index] for index in range(3) if index != axis_index]
+            radius = min(cross_section) / 2.0
+    else:
+        radius = float(radius)
+
+    if height is None:
+        if dims_values is None:
+            raise RuntimeError(f"Cylinder component {component_id} requires height or dims values.")
+        if len(dims_values) == 2:
+            height = dims_values[1]
+        else:
+            height = dims_values[axis_index]
+    else:
+        height = float(height)
+
+    if radius <= 0.0 or height <= 0.0:
+        raise RuntimeError(
+            f"Cylinder component {component_id} requires positive radius and height."
+        )
+
+    return radius, height
+
+
+def component_local_extents(component_id: str, component: dict) -> list[float]:
+    shape = component_shape(component)
+    dims = component.get("dims")
+
+    if shape == "box":
+        if dims is None or len(dims) != 3:
+            raise RuntimeError(f"Box component {component_id} requires three dims values.")
+        return [float(value) for value in dims]
+
+    if shape == "cylinder":
+        axis_index = cylinder_axis_index(component_mount_face(component))
+        radius, height = infer_cylinder_radius_and_height(component_id, component, axis_index)
+        diameter = radius * 2.0
+        extents = [diameter, diameter, diameter]
+        extents[axis_index] = height
+        return extents
+
+    raise RuntimeError(f"Unsupported shape for {component_id}: {shape}")
+
+
+def cylinder_base_center_offset(axis_index: int, radius: float) -> list[float]:
+    offsets = {
+        0: [0.0, radius, radius],
+        1: [radius, 0.0, radius],
+        2: [radius, radius, 0.0],
+    }
+    return offsets[axis_index]
+
+
+def component_solid_placement(
+    component_id: str,
+    component: dict,
+    position: list[float],
+    rotation_matrix: list[list[int]],
+) -> tuple[list[float], list[list[int]]]:
+    shape = component_shape(component)
+    if shape == "box":
+        return [float(value) for value in position], [
+            [int(value) for value in row] for row in rotation_matrix
+        ]
+
+    if shape == "cylinder":
+        axis_index = cylinder_axis_index(component_mount_face(component))
+        radius, _ = infer_cylinder_radius_and_height(component_id, component, axis_index)
+        offset = cylinder_base_center_offset(axis_index, radius)
+        solid_position = vector_add(position, apply_rotation(rotation_matrix, offset))
+        solid_rotation = multiply_rotation_matrices(
+            rotation_matrix,
+            CYLINDER_AXIS_ROTATIONS[axis_index],
+        )
+        return solid_position, solid_rotation
+
+    raise RuntimeError(f"Unsupported shape for {component_id}: {shape}")
 
 
 def local_face_centroid(dims: list[float], face_id: int) -> list[float]:
@@ -242,6 +360,29 @@ def bounds_overlap(
         a_bounds[i][0] < b_bounds[i][1] - EPSILON and b_bounds[i][0] < a_bounds[i][1] - EPSILON
         for i in range(3)
     )
+
+
+def translate_bounds(
+    bounds: list[tuple[float, float]],
+    offset: list[float],
+) -> list[tuple[float, float]]:
+    return [(bounds[i][0] + offset[i], bounds[i][1] + offset[i]) for i in range(3)]
+
+
+def swept_bounds(
+    start_bounds: list[tuple[float, float]],
+    move: list[float],
+    scale_low: float = 0.0,
+    scale_high: float = 1.0,
+) -> list[tuple[float, float]]:
+    swept = []
+    for axis in range(3):
+        low_start = start_bounds[axis][0] + move[axis] * scale_low
+        low_end = start_bounds[axis][0] + move[axis] * scale_high
+        high_start = start_bounds[axis][1] + move[axis] * scale_low
+        high_end = start_bounds[axis][1] + move[axis] * scale_high
+        swept.append((min(low_start, low_end), max(high_start, high_end)))
+    return swept
 
 
 def inside_envelope(
@@ -338,17 +479,24 @@ def position_for_mount_point(
     return [mount_point[i] - centroid_world[i] for i in range(3)]
 
 
-def mount_point_from_component(component: dict) -> list[float]:
+def mount_point_from_component(component_id: str, component: dict) -> list[float]:
     placement = component.get("placement", {})
-    mount_point = placement.get("mount_point")
-    if mount_point is not None:
-        return [float(value) for value in mount_point]
-    return compute_mount_point(
-        placement["position"],
-        component["dims"],
+    extents = component_local_extents(component_id, component)
+    computed_mount_point = compute_mount_point(
+        [float(value) for value in placement["position"]],
+        extents,
         component_mount_face(component),
         rotation_matrix_from_component(component),
     )
+    mount_point = placement.get("mount_point")
+    if mount_point is None:
+        return computed_mount_point
+    stored_mount_point = [float(value) for value in mount_point]
+    if any(
+        abs(stored_mount_point[index] - computed_mount_point[index]) > EPSILON for index in range(3)
+    ):
+        return computed_mount_point
+    return stored_mount_point
 
 
 def centered_face_position(
@@ -390,6 +538,7 @@ def build_analysis_context(
 ) -> dict:
     components = data["components"]
     target = components[component_id]
+    target_extents = component_local_extents(component_id, target)
     other_bounds = []
     for other_id, other in components.items():
         if other_id == component_id:
@@ -399,13 +548,13 @@ def build_analysis_context(
                 other_id,
                 box_bounds(
                     other["placement"]["position"],
-                    other["dims"],
+                    component_local_extents(other_id, other),
                     rotation_matrix_from_component(other),
                 ),
             )
         )
     return {
-        "target_dims": target["dims"],
+        "target_extents": target_extents,
         "inner_size": data["envelope"]["inner_size"],
         "other_bounds": other_bounds,
     }
@@ -414,11 +563,12 @@ def build_analysis_context(
 def analyze_bounds(
     context: dict,
     bounds: list[tuple[float, float]],
+    obstacle_bounds: list[tuple[str, list[tuple[float, float]]]] | None = None,
 ) -> tuple[bool, list[str]]:
     blockers: list[str] = []
     if not inside_envelope_bounds(bounds, context["inner_size"]):
         blockers.append("ENVELOPE_BOUNDARY")
-    for other_id, other_bounds in context["other_bounds"]:
+    for other_id, other_bounds in obstacle_bounds or context["other_bounds"]:
         if bounds_overlap(bounds, other_bounds):
             blockers.append(other_id)
     return len(blockers) == 0, blockers
@@ -429,8 +579,19 @@ def analyze_position(
     position: list[float],
     rotation_matrix: list[list[int]],
 ) -> tuple[bool, list[str]]:
-    bounds = box_bounds(position, context["target_dims"], rotation_matrix)
+    bounds = box_bounds(position, context["target_extents"], rotation_matrix)
     return analyze_bounds(context, bounds)
+
+
+def analyze_translated_bounds(
+    context: dict,
+    start_bounds: list[tuple[float, float]],
+    move: list[float],
+    scale: float,
+    obstacle_bounds: list[tuple[str, list[tuple[float, float]]]] | None = None,
+) -> tuple[bool, list[str]]:
+    candidate_bounds = translate_bounds(start_bounds, vector_scale(move, scale))
+    return analyze_bounds(context, candidate_bounds, obstacle_bounds=obstacle_bounds)
 
 
 def axis_overlap_interval(
@@ -520,21 +681,40 @@ def envelope_safe_interval(
     return (low, high)
 
 
+def broad_phase_obstacles(
+    context: dict,
+    start_bounds: list[tuple[float, float]],
+    move: list[float],
+    max_scale: float,
+) -> list[tuple[str, list[tuple[float, float]]]]:
+    path_bounds = swept_bounds(start_bounds, move, scale_high=max_scale)
+    return [
+        (other_id, other_bounds)
+        for other_id, other_bounds in context["other_bounds"]
+        if bounds_overlap(path_bounds, other_bounds)
+    ]
+
+
 def refine_safe_interval_end(
     context: dict,
-    start_position: list[float],
+    start_bounds: list[tuple[float, float]],
     move: list[float],
     safe_low: float,
     unsafe_high: float,
-    rotation_matrix: list[list[int]],
+    obstacle_bounds: list[tuple[str, list[tuple[float, float]]]] | None = None,
     steps: int = FALLBACK_BISECTION_STEPS,
 ) -> float:
     low = safe_low
     high = unsafe_high
     for _ in range(steps):
         mid = (low + high) / 2.0
-        candidate = vector_add(start_position, vector_scale(move, mid))
-        ok, _ = analyze_position(context, candidate, rotation_matrix)
+        ok, _ = analyze_translated_bounds(
+            context,
+            start_bounds,
+            move,
+            mid,
+            obstacle_bounds=obstacle_bounds,
+        )
         if ok:
             low = mid
         else:
@@ -544,15 +724,20 @@ def refine_safe_interval_end(
 
 def legacy_best_safe_scale(
     context: dict,
-    start: list[float],
+    start_bounds: list[tuple[float, float]],
     move: list[float],
-    rotation_matrix: list[list[int]],
+    obstacle_bounds: list[tuple[str, list[tuple[float, float]]]] | None = None,
 ) -> float | None:
     safe_samples: list[float] = []
     for index in range(FALLBACK_SAMPLE_COUNT + 1):
         scale = index / FALLBACK_SAMPLE_COUNT
-        candidate = vector_add(start, vector_scale(move, scale))
-        ok, _ = analyze_position(context, candidate, rotation_matrix)
+        ok, _ = analyze_translated_bounds(
+            context,
+            start_bounds,
+            move,
+            scale,
+            obstacle_bounds=obstacle_bounds,
+        )
         if ok:
             safe_samples.append(scale)
 
@@ -567,11 +752,11 @@ def legacy_best_safe_scale(
     unsafe_high = min(1.0, best_sample + step)
     return refine_safe_interval_end(
         context=context,
-        start_position=start,
+        start_bounds=start_bounds,
         move=move,
         safe_low=best_sample,
         unsafe_high=unsafe_high,
-        rotation_matrix=rotation_matrix,
+        obstacle_bounds=obstacle_bounds,
     )
 
 
@@ -581,10 +766,10 @@ def find_best_safe_scale(
     move: list[float],
     rotation_matrix: list[list[int]],
 ) -> float | None:
-    start_bounds = box_bounds(start, context["target_dims"], rotation_matrix)
+    start_bounds = box_bounds(start, context["target_extents"], rotation_matrix)
     start_ok, _ = analyze_bounds(context, start_bounds)
     if not start_ok:
-        return legacy_best_safe_scale(context, start, move, rotation_matrix)
+        return legacy_best_safe_scale(context, start_bounds, move)
 
     allowed_interval = envelope_safe_interval(start_bounds, move, context["inner_size"])
     if allowed_interval is None or allowed_interval[1] < 0.0:
@@ -593,10 +778,11 @@ def find_best_safe_scale(
     safe_low = max(0.0, allowed_interval[0])
     safe_high = min(1.0, allowed_interval[1])
     if not safe_low <= 0.0 <= safe_high:
-        return legacy_best_safe_scale(context, start, move, rotation_matrix)
+        return legacy_best_safe_scale(context, start_bounds, move)
 
+    candidate_obstacles = broad_phase_obstacles(context, start_bounds, move, safe_high)
     earliest_blocking_scale = safe_high
-    for _, obstacle_bounds in context["other_bounds"]:
+    for _, obstacle_bounds in candidate_obstacles:
         collision_interval = collision_interval_for_obstacle(start_bounds, move, obstacle_bounds)
         if collision_interval is None:
             continue
@@ -612,18 +798,23 @@ def find_best_safe_scale(
     if candidate_scale >= 1.0:
         return 1.0
 
-    candidate_position = vector_add(start, vector_scale(move, candidate_scale))
-    candidate_ok, _ = analyze_position(context, candidate_position, rotation_matrix)
+    candidate_ok, _ = analyze_translated_bounds(
+        context,
+        start_bounds,
+        move,
+        candidate_scale,
+        obstacle_bounds=candidate_obstacles,
+    )
     if candidate_ok:
         return candidate_scale
 
     return refine_safe_interval_end(
         context=context,
-        start_position=start,
+        start_bounds=start_bounds,
         move=move,
         safe_low=0.0,
         unsafe_high=candidate_scale,
-        rotation_matrix=rotation_matrix,
+        obstacle_bounds=candidate_obstacles,
     )
 
 
@@ -637,12 +828,13 @@ def update_component_placement(
 ) -> dict:
     updated = deepcopy(data)
     component = updated["components"][component_id]
+    extents = component_local_extents(component_id, component)
     component["placement"]["position"] = position
     component["placement"]["mount_face"] = component_mount_face
     component["placement"]["envelope_face"] = envelope_face_id
     component["placement"]["rotation_matrix"] = rotation_matrix
     component["placement"]["mount_point"] = compute_mount_point(
-        position, component["dims"], component_mount_face, rotation_matrix
+        position, extents, component_mount_face, rotation_matrix
     )
     return updated
 
@@ -650,14 +842,22 @@ def update_component_placement(
 def sync_yaml_result_to_cad(
     args: argparse.Namespace,
     output_path: Path,
-    position: list[float],
-    rotation_matrix: list[list[int]],
+    component_id: str,
+    component: dict,
 ) -> dict:
     if not args.sync_cad:
         return {"enabled": False, "success": False}
     if not args.doc_name:
         raise ValueError("--doc-name is required when --sync-cad is used.")
 
+    position = [float(value) for value in component["placement"]["position"]]
+    rotation_matrix = rotation_matrix_from_component(component)
+    solid_position, solid_rotation_matrix = component_solid_placement(
+        component_id,
+        component,
+        position,
+        rotation_matrix,
+    )
     solid_name = args.component_object or args.component
     part_name = args.part_object or f"{args.component}_part"
     try:
@@ -667,11 +867,13 @@ def sync_yaml_result_to_cad(
             args.doc_name,
             [
                 {
-                    "component": args.component,
+                    "component": component_id,
                     "solid_name": solid_name,
                     "part_name": part_name,
                     "position": position,
                     "rotation_matrix": rotation_matrix,
+                    "solid_position": solid_position,
+                    "solid_rotation_matrix": solid_rotation_matrix,
                 }
             ],
             recompute=False,
@@ -700,6 +902,7 @@ def main() -> int:
 
     target = components[args.component]
     component_face = component_mount_face(target)
+    target_extents = component_local_extents(args.component, target)
     original_envelope_face = envelope_face(target)
     original_rotation_matrix = rotation_matrix_from_component(target)
     target_envelope_face = (
@@ -709,7 +912,7 @@ def main() -> int:
 
     if args.install_face is not None:
         base_position, start_mount_point, base_rotation_matrix = centered_face_position(
-            target["dims"],
+            target_extents,
             data["envelope"]["inner_size"],
             component_face,
             target_envelope_face,
@@ -724,14 +927,14 @@ def main() -> int:
             if spin_quarter_turns == 0
             else position_for_mount_point(
                 start_mount_point,
-                target["dims"],
+                target_extents,
                 component_face,
                 target_rotation_matrix,
             )
         )
         start_position = constrain_position_to_envelope_face(
             start_position,
-            target["dims"],
+            target_extents,
             data["envelope"]["inner_size"],
             target_envelope_face,
             target_rotation_matrix,
@@ -741,13 +944,13 @@ def main() -> int:
             target_rotation_matrix = original_rotation_matrix
             start_position = constrain_position_to_envelope_face(
                 target["placement"]["position"],
-                target["dims"],
+                target_extents,
                 data["envelope"]["inner_size"],
                 target_envelope_face,
                 target_rotation_matrix,
             )
         else:
-            start_mount_point = mount_point_from_component(target)
+            start_mount_point = mount_point_from_component(args.component, target)
             target_rotation_matrix = apply_in_plane_spin(
                 original_rotation_matrix,
                 target_envelope_face,
@@ -755,13 +958,13 @@ def main() -> int:
             )
             start_position = position_for_mount_point(
                 start_mount_point,
-                target["dims"],
+                target_extents,
                 component_face,
                 target_rotation_matrix,
             )
             start_position = constrain_position_to_envelope_face(
                 start_position,
-                target["dims"],
+                target_extents,
                 data["envelope"]["inner_size"],
                 target_envelope_face,
                 target_rotation_matrix,
@@ -819,8 +1022,8 @@ def main() -> int:
         cad_sync = sync_yaml_result_to_cad(
             args,
             output_path,
-            final_position,
-            target_rotation_matrix,
+            args.component,
+            updated["components"][args.component],
         )
     except Exception as exc:
         cad_sync = {

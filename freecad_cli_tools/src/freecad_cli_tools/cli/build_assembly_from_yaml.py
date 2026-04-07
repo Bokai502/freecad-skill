@@ -7,7 +7,7 @@ from pathlib import Path
 
 from freecad_cli_tools import add_connection_args
 from freecad_cli_tools.cli_support import run_script_command, to_wsl_path
-from freecad_cli_tools.rpc_script_fragments import PLACEMENT_HELPERS
+from freecad_cli_tools.rpc_script_fragments import COMPONENT_SHAPE_HELPERS, PLACEMENT_HELPERS
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
 
 
@@ -50,6 +50,7 @@ def main() -> None:
         "assembly_from_yaml.py",
         {
             "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
+            "__COMPONENT_SHAPE_HELPERS__": COMPONENT_SHAPE_HELPERS,
             "__YAML_PATH__": json.dumps(to_wsl_path(input_path)),
             "__DOC_NAME__": json.dumps(args.doc_name),
             "__SAVE_PATH__": json.dumps(to_wsl_path(output_path)),

@@ -29,6 +29,32 @@ def test_normalize_sync_updates_accepts_wrapped_payload_and_defaults_names() -> 
     ]
 
 
+def test_normalize_sync_updates_accepts_optional_solid_placement() -> None:
+    updates = normalize_sync_updates(
+        [
+            {
+                "component": "P011",
+                "position": [1, 2, 3],
+                "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                "solid_position": [4, 5, 6],
+                "solid_rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+            }
+        ]
+    )
+
+    assert updates == [
+        {
+            "component": "P011",
+            "solid_name": "P011",
+            "part_name": "P011_part",
+            "position": [1.0, 2.0, 3.0],
+            "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+            "solid_position": [4.0, 5.0, 6.0],
+            "solid_rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+        }
+    ]
+
+
 def test_normalize_sync_updates_rejects_missing_component() -> None:
     with pytest.raises(ValueError, match="missing 'component'"):
         normalize_sync_updates(

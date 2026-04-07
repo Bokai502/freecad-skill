@@ -10,6 +10,23 @@ from .rpc_script_fragments import PLACEMENT_HELPERS
 from .rpc_script_loader import render_rpc_script
 
 
+def normalize_position_list(value: Any, *, field_name: str, index: int) -> list[float]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError(f"Sync update #{index} must include a 3-item '{field_name}' list.")
+    return [float(item) for item in value]
+
+
+def normalize_rotation_rows(value: Any, *, field_name: str, index: int) -> list[list[int]]:
+    if not isinstance(value, list) or len(value) != 3:
+        raise ValueError(f"Sync update #{index} must include a 3x3 '{field_name}' list.")
+    rows = []
+    for row in value:
+        if not isinstance(row, list) or len(row) != 3:
+            raise ValueError(f"Sync update #{index} must include a 3x3 '{field_name}' list.")
+        rows.append([int(item) for item in row])
+    return rows
+
+
 def normalize_sync_updates(raw_updates: Any) -> list[dict[str, Any]]:
     """Validate and normalize placement updates for batch CAD sync."""
     if isinstance(raw_updates, dict):
@@ -27,43 +44,40 @@ def normalize_sync_updates(raw_updates: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             raise ValueError(f"Sync update #{index} must be an object.")
 
-        component_id = str(
-            item.get("component") or item.get("component_id") or ""
-        ).strip()
+        component_id = str(item.get("component") or item.get("component_id") or "").strip()
         if not component_id:
             raise ValueError(f"Sync update #{index} is missing 'component'.")
 
-        position = item.get("position")
-        rotation_matrix = item.get("rotation_matrix")
-        if not isinstance(position, list) or len(position) != 3:
-            raise ValueError(
-                f"Sync update #{index} must include a 3-item 'position' list."
-            )
-        if not isinstance(rotation_matrix, list) or len(rotation_matrix) != 3:
-            raise ValueError(
-                f"Sync update #{index} must include a 3x3 'rotation_matrix' list."
-            )
-        for row in rotation_matrix:
-            if not isinstance(row, list) or len(row) != 3:
-                raise ValueError(
-                    f"Sync update #{index} must include a 3x3 'rotation_matrix' list."
-                )
+        normalized_update = {
+            "component": component_id,
+            "solid_name": item.get("solid_name") or item.get("component_object") or component_id,
+            "part_name": item.get("part_name") or item.get("part_object") or f"{component_id}_part",
+            "position": normalize_position_list(
+                item.get("position"),
+                field_name="position",
+                index=index,
+            ),
+            "rotation_matrix": normalize_rotation_rows(
+                item.get("rotation_matrix"),
+                field_name="rotation_matrix",
+                index=index,
+            ),
+        }
 
-        normalized.append(
-            {
-                "component": component_id,
-                "solid_name": item.get("solid_name")
-                or item.get("component_object")
-                or component_id,
-                "part_name": item.get("part_name")
-                or item.get("part_object")
-                or f"{component_id}_part",
-                "position": [float(value) for value in position],
-                "rotation_matrix": [
-                    [int(value) for value in row] for row in rotation_matrix
-                ],
-            }
-        )
+        if "solid_position" in item:
+            normalized_update["solid_position"] = normalize_position_list(
+                item.get("solid_position"),
+                field_name="solid_position",
+                index=index,
+            )
+        if "solid_rotation_matrix" in item:
+            normalized_update["solid_rotation_matrix"] = normalize_rotation_rows(
+                item.get("solid_rotation_matrix"),
+                field_name="solid_rotation_matrix",
+                index=index,
+            )
+
+        normalized.append(normalized_update)
     return normalized
 
 

@@ -35,7 +35,11 @@ try:
     applied = []
     for update in UPDATES:
         component_id = update["component"]
-        target_placement = make_placement(update["position"], update["rotation_matrix"])
+        part_placement = make_placement(update["position"], update["rotation_matrix"])
+        solid_placement = make_placement(
+            update.get("solid_position", update["position"]),
+            update.get("solid_rotation_matrix", update["rotation_matrix"]),
+        )
         solid_name = update.get("solid_name")
         part_name = update.get("part_name")
         solid = doc.getObject(solid_name) if solid_name else None
@@ -50,7 +54,7 @@ try:
         placements = []
         if solid is not None:
             old = solid.Placement
-            solid.Placement = target_placement
+            solid.Placement = solid_placement
             placements.append(
                 {
                     "object": solid.Name,
@@ -65,7 +69,7 @@ try:
             if solid is not None:
                 part.Placement = FreeCAD.Placement()
             else:
-                part.Placement = target_placement
+                part.Placement = part_placement
             placements.append(
                 {
                     "object": part.Name,
