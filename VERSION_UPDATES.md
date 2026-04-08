@@ -122,3 +122,30 @@ Date: 2026-04-03
 - Updated the workspace docs in [README.md](./README.md), [README.zh-CN.md](./README.zh-CN.md), and [ARCHITECTURE.md](./docs/ARCHITECTURE.md) to describe the default move/rotate workflow as: overwrite the source YAML and save the current `FCStd` document in place.
 - Refreshed the tracked FreeCAD skill backup under [skill_backups/freecad](./skill_backups/freecad) and retired the older `skill_backups/freecad_skill` path.
 - Bumped the package version from `0.5.0` to `0.7.0` in [pyproject.toml](./freecad_cli_tools/pyproject.toml) and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py).
+
+## v0.8.0 - Geometry Module Extraction And Schema Validation
+
+Date: 2026-04-08
+
+### Refactored
+
+- Extracted all 44 pure geometry functions and 8 constants from [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) into a new dedicated module [geometry.py](./freecad_cli_tools/src/freecad_cli_tools/geometry.py). The CLI file shrinks from 1081 to ~280 lines and now only handles CLI parsing, YAML I/O, CAD sync, and orchestration.
+- Added cross-reference comments in [rpc_script_fragments.py](./freecad_cli_tools/src/freecad_cli_tools/rpc_script_fragments.py) mapping each FreeCAD-side string fragment function to its `geometry.py` equivalent, with a sync test to prevent silent divergence.
+- Old import path `freecad_cli_tools.cli.yaml_component_safe_move` still works via backward-compatible re-exports; new code should import from `freecad_cli_tools.geometry`.
+
+### Added
+
+- New YAML assembly schema validation module [yaml_schema.py](./freecad_cli_tools/src/freecad_cli_tools/yaml_schema.py) with `validate_assembly()` and `AssemblyValidationError`. Called automatically after YAML loading in `freecad-yaml-safe-move`. Provides clear error messages including the component ID instead of cryptic `KeyError`.
+- New test [test_yaml_schema.py](./freecad_cli_tools/tests/test_yaml_schema.py) with 15 tests for schema validation covering boxes, cylinders, missing fields, wrong types, and boundary cases.
+- New test [test_fragment_sync.py](./freecad_cli_tools/tests/test_fragment_sync.py) cross-validating that `rpc_script_fragments.py` string fragments produce identical results to `geometry.py` functions for constants, rotation math, cylinder helpers, and position translation.
+- New test [test_rpc_script_templates.py](./freecad_cli_tools/tests/test_rpc_script_templates.py) rendering all 6 RPC script templates with dummy placeholders and verifying valid Python syntax via `compile()`.
+- Added [CHANGELOG.md](./freecad_cli_tools/CHANGELOG.md) to the package directory.
+
+### Fixed
+
+- Replaced manual `try/except/else` with `pytest.raises` in [test_yaml_component_safe_move.py](./freecad_cli_tools/tests/test_yaml_component_safe_move.py); also fixed a `AssertionError` typo in the original code.
+
+### Updated
+
+- Bumped the package version from `0.7.0` to `0.8.0` in [pyproject.toml](./freecad_cli_tools/pyproject.toml) and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py).
+- Updated Development Layout in [README.md](./freecad_cli_tools/README.md) and [README.zh-CN.md](./freecad_cli_tools/README.zh-CN.md) to include `geometry.py`, `yaml_schema.py`, and `tests/`.

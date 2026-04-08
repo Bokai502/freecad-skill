@@ -122,3 +122,30 @@
 - 更新 [README.md](./README.md)、[README.zh-CN.md](./README.zh-CN.md) 和 [ARCHITECTURE.md](./docs/ARCHITECTURE.md)，将默认移动/旋转流程明确为“覆盖源 YAML，并原地保存当前 `FCStd` 文档”。
 - 刷新已跟踪的 FreeCAD skill 备份到 [skill_backups/freecad](./skill_backups/freecad)，并移除旧的 `skill_backups/freecad_skill` 路径。
 - 在 [pyproject.toml](./freecad_cli_tools/pyproject.toml) 和 [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py) 中将包版本由 `0.5.0` 升到 `0.7.0`。
+
+## v0.8.0 - 几何模块提取与 YAML 格式校验
+
+日期：2026-04-08
+
+### 重构
+
+- 从 [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) 中提取全部 44 个纯几何函数和 8 个常量到新模块 [geometry.py](./freecad_cli_tools/src/freecad_cli_tools/geometry.py)。CLI 文件从 1081 行缩减到约 280 行，只保留 CLI 解析、YAML I/O、CAD 同步和主流程编排。
+- 在 [rpc_script_fragments.py](./freecad_cli_tools/src/freecad_cli_tools/rpc_script_fragments.py) 中添加交叉引用注释，将每个 FreeCAD 端字符串片段函数映射到对应的 `geometry.py` 实现，并配有同步测试防止两边逻辑悄悄分歧。
+- 旧的导入路径 `freecad_cli_tools.cli.yaml_component_safe_move` 通过向后兼容的 re-export 仍然可用；新代码应直接从 `freecad_cli_tools.geometry` 导入。
+
+### 新增
+
+- YAML 装配格式校验模块 [yaml_schema.py](./freecad_cli_tools/src/freecad_cli_tools/yaml_schema.py)，提供 `validate_assembly()` 和 `AssemblyValidationError`。在 `freecad-yaml-safe-move` 加载 YAML 后自动调用，缺少字段时给出包含组件 ID 的清晰错误信息，而非隐晦的 `KeyError`。
+- 新测试 [test_yaml_schema.py](./freecad_cli_tools/tests/test_yaml_schema.py)，包含 15 个格式校验测试，覆盖盒体、圆柱、缺失字段、错误类型和边界情况。
+- 新测试 [test_fragment_sync.py](./freecad_cli_tools/tests/test_fragment_sync.py)，交叉验证 `rpc_script_fragments.py` 字符串片段与 `geometry.py` 函数在常量、旋转运算、圆柱辅助函数和位置平移方面的一致性。
+- 新测试 [test_rpc_script_templates.py](./freecad_cli_tools/tests/test_rpc_script_templates.py)，用虚拟占位符渲染全部 6 个 RPC 脚本模板，通过 `compile()` 验证语法正确性。
+- 在包目录下新增 [CHANGELOG.md](./freecad_cli_tools/CHANGELOG.md)。
+
+### 修复
+
+- 将 [test_yaml_component_safe_move.py](./freecad_cli_tools/tests/test_yaml_component_safe_move.py) 中手写的 `try/except/else` 替换为 `pytest.raises`；同时修正原代码中 `AssertionError` 拼写错误。
+
+### 更新
+
+- 在 [pyproject.toml](./freecad_cli_tools/pyproject.toml) 和 [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py) 中将包版本由 `0.7.0` 升到 `0.8.0`。
+- 更新 [README.md](./freecad_cli_tools/README.md) 和 [README.zh-CN.md](./freecad_cli_tools/README.zh-CN.md) 的开发布局章节，补充 `geometry.py`、`yaml_schema.py` 和 `tests/` 说明。

@@ -147,11 +147,14 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 ## Development Layout
 
 - `src/freecad_cli_tools/cli/`: thin command entry points
+- `src/freecad_cli_tools/geometry.py`: pure geometry, collision detection, and component-shape helpers (no external dependencies)
+- `src/freecad_cli_tools/yaml_schema.py`: YAML assembly schema validation with descriptive error messages
 - `src/freecad_cli_tools/freecad_sync.py`: reusable placement sync helpers for single or batched CAD updates
 - `src/freecad_cli_tools/cli_support.py`: shared CLI-side helpers for RPC calls, output parsing, and file input
 - `src/freecad_cli_tools/rpc_scripts/`: FreeCAD-side Python scripts executed over XML-RPC
 - `src/freecad_cli_tools/rpc_script_loader.py`: packaged script loader and placeholder renderer
 - `src/freecad_cli_tools/rpc_script_fragments.py`: reusable FreeCAD-side code fragments injected into script templates
+- `tests/`: unit tests for geometry algorithms, schema validation, fragment sync verification, and RPC template syntax
 
 ## Requirements
 

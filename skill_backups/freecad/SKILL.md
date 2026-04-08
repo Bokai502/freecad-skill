@@ -7,108 +7,79 @@ allowed-tools: "Bash(*), Read, Write, Edit"
 
 # FreeCAD Unified Skill
 
-All-in-one skill for interacting with FreeCAD and related YAML layout files. This skill delegates to
-action guides based on the requested task.
-
 ## Context: $ARGUMENTS
 
 ## Prerequisites
 
-- FreeCAD must be running with the **FreeCADMCP addon** active (RPC server on `localhost:9875` by default) for RPC-based commands.
-- Use the Python environment where `freecad-cli-tools` is installed. On this machine that is currently `base`.
-- Prefer the packaged CLI entry points when they exist:
-  - `freecad-yaml-safe-move` for YAML-first move analysis, in-place YAML rewrite, and CAD sync
-  - `freecad-create-assembly` for regenerating CAD from YAML with envelope and automatic view fitting
-  - `freecad-check-collision` only when there is no YAML source of truth and a document-only analysis is needed
-  - `freecad-move-obj` only when there is no YAML source of truth and a document-only execution step is needed
-- If a CLI entry point exists but fails to start because its Python module is missing, treat that as an environment problem and fall back to the documented `freecad-exec-code` workflow only as a temporary workaround.
+- FreeCAD must be running with the **FreeCADMCP addon** active (RPC server on `localhost:9875`).
+- Python environment: `base` (where `freecad-cli-tools` is installed).
+- Prefer packaged CLI entry points over ad hoc Python. If a CLI fails with a missing-module error, treat it as an environment problem and fall back to `freecad-exec-code` only as a temporary workaround.
 
-## Available Actions
+## Action Routing
 
-Determine the user's intent and read the corresponding guide from the `guides/` folder for detailed instructions.
+Read the matching guide with the `Read` tool. Always prefer the highest-level workflow; use lower-level commands only as sub-steps.
 
-| Action | Script | When to Use |
-|--------|--------|-------------|
-| **Create Document** | `guides/create-document.md` | Start a new project, create a blank document |
-| **List Documents** | `guides/list-documents.md` | Find open document names |
-| **Create Object** | `guides/create-object.md` | Add 3D shapes, draft elements, FEM components |
-| **Edit Object** | `guides/edit-object.md` | Change dimensions, placement, color of an existing object |
-| **Delete Object** | `guides/delete-object.md` | Remove an object from a document |
-| **Get Object** | `guides/get-object.md` | Inspect a single object's properties |
-| **Get Objects** | `guides/get-objects.md` | List all objects in a document |
-| **Execute Code** | `guides/execute-code.md` | Run arbitrary Python in FreeCAD (boolean ops, batch, advanced) |
-| **Get View** | `guides/get-view.md` | Capture screenshots and visual review |
-| **Get Parts List** | `guides/get-parts-list.md` | Browse available parts in the library |
-| **Insert Part** | `guides/insert-part-from-library.md` | Insert a pre-made part from the library |
-| **Load YAML Data** | `guides/load-yaml-data.md` | Batch-create objects from a YAML spec file |
-| **YAML Safe Move** | `guides/yaml-safe-move.md` | Analyze and rewrite a YAML component move with collision and boundary checks |
-| **Safe Move Workflow** | `guides/safe-move-workflow.md` | Default workflow for analyzing a move, executing the safe result, and updating YAML/CAD without creating a new assembly by default |
-| **Create Assembly** | `guides/create-assembly.md` | Create an Assembly container with hierarchical sub-parts |
-| **Move Object** | `guides/move-object.md` | Apply an already computed safe move to a document object |
-| **Check Collision** | `guides/check-collision.md` | Analyze interference and compute safe move options before execution |
-
-## Routing Logic
-
-1. **Read the matching guide** based on the table above, use the `Read` tool to open the corresponding `guides/*.md` file.
-2. **Prefer the highest-level safe workflow** when multiple scripts seem relevant.
-3. **Use lower-level scripts only as substeps** of a larger workflow unless the user explicitly asks for that specific low-level operation.
+| Intent | Guide |
+|--------|-------|
+| Document / object CRUD, parts library | `guides/crud-reference.md` |
+| Run arbitrary Python in FreeCAD | `guides/execute-code.md` |
+| Capture screenshots / visual review | `guides/get-view.md` |
+| Batch-create objects from YAML | `guides/load-yaml-data.md` |
+| Create assembly from YAML | `guides/create-assembly.md` |
+| **Move a part** (default entry point) | `guides/safe-move-workflow.md` |
+| Document-only collision analysis (no YAML) | `guides/check-collision.md` |
 
 ## Common Patterns
 
-### New project from scratch
-1. `create-document` -> create a blank document
-2. `create-object` -> add shapes
-3. `get-view` -> capture screenshots and review
+- **New project**: `create-doc` → `create-obj` → `get-view`
+- **Move with safety**: → `safe-move-workflow.md` (handles YAML and document branches)
+- **Build / rebuild from YAML**: → `create-assembly.md` (only when user explicitly requests)
 
-### Build assembly from YAML
-1. `safe-move-workflow` -> analyze any requested part move first
-2. `yaml-safe-move` -> update the source YAML file in place with the safe move result
-3. keep the current CAD document synced and saved to the same `FCStd` file instead of creating a new assembly by default
-4. `create-assembly` only when the user explicitly wants a rebuilt assembly file
-5. `get-view` -> verify visually
+## Common CLI Flags
 
-### Move YAML with collision safety
-1. `safe-move-workflow` -> analyze the requested move
-2. `yaml-safe-move` -> overwrite the source YAML using the safe move result
-3. sync CAD from the written YAML, then save the current document back to the same `FCStd` file
-4. `create-assembly` only when the user explicitly asks for a rebuilt assembly file
-
-### Move a document object with collision safety
-1. `safe-move-workflow` -> locate the source YAML first
-2. `yaml-safe-move` -> compute the safe move from YAML and overwrite the source YAML
-3. `yaml-safe-move --sync-cad` or full YAML reload -> sync the updated result into FreeCAD and save the same `FCStd` document
-4. `create-assembly` only when the user explicitly asks for a full regenerated document
-5. Use document-only commands only if no YAML source exists
+All RPC commands accept `--host <host>` (default `localhost`) and `--port <port>` (default `9875`). When FreeCAD runs inside WSL, pass these explicitly if Windows `localhost` forwarding is unstable.
 
 ## Global Rules
 
-- For any request to move a part, prefer `safe-move-workflow` as the default entry point instead of directly calling `move-object`.
-- Default safety rule: analyze first, then execute the fully safe move or the closest safe result on the requested path, and report any adjustment clearly.
-- Prefer first-class CLI commands over handwritten ad hoc Python whenever the packaged command covers the task.
-- When a YAML layout file exists, treat that YAML file as the source of truth for move planning and execution.
-- For document-space collision checks, treat `getGlobalPlacement()` as the source of truth. Local `Shape` and local `BoundBox` can be stale or misleading when a parent container such as `App::Part` moves.
-- `freecad-yaml-safe-move` is the preferred YAML-first move command; for move/rotate requests in this skill, use it to overwrite the source YAML and sync/save the current CAD document instead of creating sibling output files.
-- In the intended data model, YAML `placement.mount_face` identifies the component's own mounting face, not the envelope face.
-- `freecad-yaml-safe-move` supports two YAML-first workflows:
-  - translation-only moves that preserve the current orientation
-  - reorientation moves that keep `placement.mount_face` as the component's own face while changing `placement.envelope_face` and `placement.rotation_matrix`
-- For reorientation, use `--install-face <0..5>` to rotate the component so its own `mount_face` is installed onto the requested envelope face. The command then applies the requested `--move` as an in-plane offset on that target face.
-- For in-place rotation on the same installed face, use `--spin <degrees>` with a multiple of `90`, such as `--spin 90`. This keeps the component on the same `envelope_face`, keeps the mount point fixed, and only changes the in-plane orientation.
-- `--install-face` and `--spin` can be combined when the user wants to move to another face and then rotate again within that target face.
-- When the target FreeCAD instance runs inside WSL, YAML-to-CAD sync may need a WSL-visible path and
-  an explicit RPC host if Windows `localhost` forwarding is flaky.
-- `freecad-create-assembly` is the preferred CLI only when a new CAD document from YAML is explicitly needed.
-- Generated assemblies should include the envelope when YAML provides one.
-- When only moving or rotating an existing layout, update the existing YAML file in place and save the existing `FCStd` document in place instead of creating new YAML or `FCStd` files.
-- After CAD generation, switch the GUI to a readable fitted view automatically.
-- `freecad-check-collision` is a document-only fallback CLI for FreeCAD document objects when no YAML source is available.
-- `freecad-move-obj` is a document-only fallback CLI for applying a computed safe move when no YAML source is available.
-- When verifying a YAML-to-CAD sync or regeneration result, avoid reading back document state in parallel with the mutation step; perform verification after the write completes.
-- `check-collision` is an analysis tool, not the final move step.
-- `move-object` is an execution tool and should be used only after the safe final move has been computed.
+### YAML as Source of Truth
+- When a YAML layout file exists, treat it as the source of truth for move planning and execution.
+- `freecad-yaml-safe-move` is the preferred YAML-first move command; use it to overwrite the source YAML and sync/save the current CAD document instead of creating sibling output files.
+- `placement.mount_face` identifies the component's own mounting face; `placement.envelope_face` identifies the envelope face the component is installed onto.
+
+### Move Safety
+- For any move request, prefer `safe-move-workflow.md` as the default entry point.
+- Analyze first, then execute the fully safe move or closest safe result. Report any adjustment clearly.
 - After any executed move, run a post-move collision verification before reporting success.
-- **Snap sandbox**: FreeCAD installed via Snap cannot access paths outside its home. Use `Path.home() / 'freecad_data'` for file I/O inside FreeCAD. Copy files in/out from the normal shell.
-- RPC-oriented commands usually return JSON output; check `"success": true`.
-- Common optional flags for RPC commands: `--host <host>`, `--port <port>` (defaults: `localhost`, `9875`).
-- Always call `doc.recompute()` after geometry changes in execute-code.
-- Never auto-execute destructive actions such as delete or unrelated overwrite operations without user confirmation. Safe move execution is allowed after analysis.
+- `freecad-check-collision` and `freecad-move-obj` are document-only fallbacks — use only when no YAML source exists.
+
+### Orientation & Rotation
+- `--install-face <0..5>` rotates a component onto a target envelope face.
+- `--spin <degrees>` (multiples of 90) rotates in-place on the same face.
+- Both flags can be combined.
+
+### CAD Generation
+- `freecad-create-assembly` is for explicit rebuild only — do not use it as the default after a move.
+- When only moving/rotating, update YAML in place and save the existing `FCStd` document in place.
+- Generated assemblies should include the envelope when YAML provides one.
+- Always call `doc.recompute()` after geometry changes.
+- After generation, switch the GUI to a fitted view automatically.
+
+### Document Collision Checks
+- Treat `getGlobalPlacement()` as the source of truth. Local `Shape` and `BoundBox` can be stale when a parent container moves.
+- For container targets (`App::Part`, etc.), analyze descendant solids in global coordinates.
+
+### File I/O
+- **Snap sandbox**: FreeCAD via Snap cannot access arbitrary paths. Use `Path.home() / 'freecad_data'` for file I/O inside FreeCAD.
+- Prefer first-class CLI commands over handwritten Python whenever the packaged command covers the task.
+- Prefer `--file` over inline code for complex scripts.
+
+### Safety
+- Never auto-execute destructive actions (delete, unrelated overwrite) without user confirmation. Safe move execution is allowed after analysis.
+- When verifying a YAML-to-CAD sync result, perform verification after the write completes — not in parallel.
+
+## Error Handling
+
+- **RPC connection failed**: Prompt user to check FreeCAD is running with the MCP addon active.
+- **CLI not found / import error**: Report environment problem; fall back to `freecad-exec-code` workflow.
+- **`"success": false`**: Display the returned error details to the user.
+- **Post-move collision detected**: Surface the failure clearly; do not describe the move as successful.

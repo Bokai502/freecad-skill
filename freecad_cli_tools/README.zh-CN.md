@@ -132,11 +132,14 @@ freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssemb
 ## 开发布局
 
 - `src/freecad_cli_tools/cli/`：轻量级命令入口
+- `src/freecad_cli_tools/geometry.py`：纯几何运算、碰撞检测和组件形状辅助函数（无外部依赖）
+- `src/freecad_cli_tools/yaml_schema.py`：YAML 装配格式校验，提供清晰的错误信息
 - `src/freecad_cli_tools/freecad_sync.py`：单组件和批量组件的位姿同步辅助逻辑
 - `src/freecad_cli_tools/cli_support.py`：CLI 侧共享工具，例如 RPC 调用、输出解析和文件输入
 - `src/freecad_cli_tools/rpc_scripts/`：通过 XML-RPC 在 FreeCAD 侧执行的 Python 脚本
 - `src/freecad_cli_tools/rpc_script_loader.py`：打包脚本加载和占位符渲染
 - `src/freecad_cli_tools/rpc_script_fragments.py`：可注入脚本模板的 FreeCAD 侧公共代码片段
+- `tests/`：几何算法、格式校验、片段同步验证和 RPC 模板语法的单元测试
 
 ## 依赖要求
 

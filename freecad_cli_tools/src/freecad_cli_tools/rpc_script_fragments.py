@@ -31,6 +31,21 @@ def make_placement(position, rotation_rows):
 
 
 COMPONENT_SHAPE_HELPERS = r"""
+# NOTE: Several functions in this fragment have canonical Python equivalents in
+# freecad_cli_tools.geometry.  The string versions here are required because
+# they execute inside FreeCAD's embedded Python, which cannot import CLI-side
+# modules.  See tests/test_fragment_sync.py for a cross-validation test.
+#
+# Fragment function                      -> geometry.py equivalent
+# -----------------------------------------------------------------------
+# IDENTITY_ROTATION_ROWS                 -> IDENTITY_ROTATION
+# CYLINDER_AXIS_ROTATION_ROWS            -> CYLINDER_AXIS_ROTATIONS
+# apply_rotation_rows()                  -> apply_rotation()
+# multiply_rotation_rows()               -> multiply_rotation_matrices()
+# cylinder_axis_index()                  -> cylinder_axis_index()
+# cylinder_base_center_offset()          -> cylinder_base_center_offset()
+# infer_cylinder_radius_and_height()     -> infer_cylinder_radius_and_height()
+# translate_position()                   -> vector_add + apply_rotation
 IDENTITY_ROTATION_ROWS = [
     [1.0, 0.0, 0.0],
     [0.0, 1.0, 0.0],

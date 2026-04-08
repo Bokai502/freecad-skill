@@ -3,7 +3,9 @@ from __future__ import annotations
 import math
 from copy import deepcopy
 
-from freecad_cli_tools.cli.yaml_component_safe_move import (
+import pytest
+
+from freecad_cli_tools.geometry import (
     IDENTITY_ROTATION,
     apply_in_plane_spin,
     box_bounds,
@@ -264,9 +266,5 @@ def test_in_plane_spin_keeps_mount_point_fixed_on_same_face() -> None:
 
 
 def test_normalize_spin_quarter_turns_rejects_non_right_angle_input() -> None:
-    try:
+    with pytest.raises(ValueError, match="multiple of 90"):
         normalize_spin_quarter_turns(45)
-    except ValueError as exc:
-        assert "--spin must be a multiple of 90 degrees." in str(exc)
-    else:
-        raise AssertionError("Expected ValueError for non-right-angle spin input.")
