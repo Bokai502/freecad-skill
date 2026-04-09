@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-_VALID_FACE_IDS = frozenset(range(6))
+_VALID_FACE_IDS = frozenset(range(12))
 _VALID_SHAPES = frozenset(("box", "cylinder"))
 
 
@@ -53,7 +53,7 @@ def _validate_envelope(data: dict) -> None:
     ef = envelope.get("envelope_face")
     if ef is not None and ef not in _VALID_FACE_IDS:
         raise AssemblyValidationError(
-            f"Envelope: 'envelope_face' must be an integer in 0..5 (got {ef!r})."
+            f"Envelope: 'envelope_face' must be an integer in 0..11 (got {ef!r})."
         )
 
 
@@ -113,12 +113,12 @@ def _validate_placement(comp_id: str, placement: Any) -> None:
     mf = placement.get("mount_face")
     if mf is not None and mf not in _VALID_FACE_IDS:
         raise AssemblyValidationError(
-            f"Component '{comp_id}': 'mount_face' must be an integer in 0..5 (got {mf!r})."
+            f"Component '{comp_id}': 'mount_face' must be an integer in 0..11 (got {mf!r})."
         )
     ef = placement.get("envelope_face")
     if ef is not None and ef not in _VALID_FACE_IDS:
         raise AssemblyValidationError(
-            f"Component '{comp_id}': 'envelope_face' must be an integer in 0..5 (got {ef!r})."
+            f"Component '{comp_id}': 'envelope_face' must be an integer in 0..11 (got {ef!r})."
         )
     mp = placement.get("mount_point")
     if mp is not None:

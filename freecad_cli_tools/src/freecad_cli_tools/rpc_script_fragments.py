@@ -97,9 +97,9 @@ def cylinder_axis_index(mount_face):
     if mount_face is None:
         return 2
     mount_face = int(mount_face)
-    if mount_face < 0 or mount_face > 5:
+    if mount_face < 0 or mount_face > 11:
         raise RuntimeError(f"Invalid mount_face for cylinder: {mount_face}")
-    return mount_face // 2
+    return (mount_face % 6) // 2
 
 
 def cylinder_base_center_offset(axis_index, radius):

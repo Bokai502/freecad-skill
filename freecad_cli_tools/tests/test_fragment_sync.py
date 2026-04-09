@@ -84,7 +84,7 @@ def test_multiply_rotation_rows_matches(
         assert result[row_idx] == pytest.approx(expected[row_idx], abs=1e-12)
 
 
-@pytest.mark.parametrize("mount_face", range(6))
+@pytest.mark.parametrize("mount_face", range(12))
 def test_cylinder_axis_index_matches(fragment_ns: dict, mount_face: int) -> None:
     assert fragment_ns["cylinder_axis_index"](mount_face) == cylinder_axis_index(mount_face)
 

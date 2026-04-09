@@ -103,7 +103,7 @@ def test_cylinder_missing_size_info_raises() -> None:
 
 def test_invalid_mount_face_raises() -> None:
     data = _minimal_assembly()
-    data["components"]["P001"]["placement"]["mount_face"] = 7
+    data["components"]["P001"]["placement"]["mount_face"] = 13
     with pytest.raises(AssemblyValidationError, match="mount_face"):
         validate_assembly(data)
 

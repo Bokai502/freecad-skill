@@ -555,6 +555,56 @@ components:
       - 23.465127928669524
       - -246.5032580075667
       - 4.04028941671281
+  P021:
+    shape: box
+    dims:
+    - 100.0
+    - 60.0
+    - 80.0
+    mass: 2.0
+    power: 15.0
+    category: avionics
+    color:
+    - 255
+    - 200
+    - 100
+    - 255
+    placement:
+      position:
+      - -50.0
+      - 251.35540092679645
+      - -40.0
+      bin_index: 0
+      mount_face: 9
+      mount_point:
+      - 0.0
+      - 251.35540092679645
+      - 0.0
+  P022:
+    shape: box
+    dims:
+    - 50.0
+    - 80.0
+    - 100.0
+    mass: 1.5
+    power: 20.0
+    category: power
+    color:
+    - 100
+    - 255
+    - 150
+    - 255
+    placement:
+      position:
+      - 271.91490443224975
+      - -40.0
+      - -50.0
+      bin_index: 0
+      mount_face: 7
+      mount_point:
+      - 271.91490443224975
+      - 0.0
+      - 0.0
 packing:
   clearance: 7.33991780504304
   multistart: 10

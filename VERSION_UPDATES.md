@@ -149,3 +149,22 @@ Date: 2026-04-08
 
 - Bumped the package version from `0.7.0` to `0.8.0` in [pyproject.toml](./freecad_cli_tools/pyproject.toml) and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py).
 - Updated Development Layout in [README.md](./freecad_cli_tools/README.md) and [README.zh-CN.md](./freecad_cli_tools/README.zh-CN.md) to include `geometry.py`, `yaml_schema.py`, and `tests/`.
+
+## v0.9.0 - External Envelope Face Support
+
+Date: 2026-04-09
+
+### Added
+
+- Extended `mount_face` range to 0–11 in [geometry.py](./freecad_cli_tools/src/freecad_cli_tools/geometry.py), [yaml_schema.py](./freecad_cli_tools/src/freecad_cli_tools/yaml_schema.py), and [rpc_script_fragments.py](./freecad_cli_tools/src/freecad_cli_tools/rpc_script_fragments.py). Faces 6–11 (`ext-x`, `ext+x`, `ext-y`, `ext+y`, `ext-z`, `ext+z`) mount components on the *outside* of the envelope shell using `envelope.outer_size` as the wall reference; faces 0–5 remain internal as before.
+- New helpers `is_external_face()` and `component_contact_face()` in `geometry.py`. `component_mount_face()` now always returns the physical contact face (0–5) whether the YAML stores an internal or external install face.
+- `build_analysis_context()` gains a `check_envelope` flag; `analyze_bounds()` and `find_best_safe_scale()` skip the envelope-boundary constraint for external-face moves and use obstacle-only collision search instead.
+- `freecad-yaml-safe-move --install-face` now accepts values 0–11. External faces resolve `outer_size` from the YAML envelope, disable the inner containment check, and orient the component outward (contact face points toward the center of the envelope).
+- Extended [examples/sample.yaml](./examples/sample.yaml) with two external-face components: `P021` on `mount_face: 9` (external +Y) and `P022` on `mount_face: 9` (external +Y, adjacent to P021).
+
+### Updated
+
+- Bumped package version from `0.8.0` to `0.9.0` in [pyproject.toml](./freecad_cli_tools/pyproject.toml) and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py).
+- Updated FreeCAD skill backup under [skill_backups/freecad](./skill_backups/freecad).
+- Updated FreeCAD skill docs (`SKILL.md`, `guides/safe-move-workflow.md`) to document `--install-face <0..11>`.
+- Updated [freecad_cli_tools/README.md](./freecad_cli_tools/README.md) and [freecad_cli_tools/CHANGELOG.md](./freecad_cli_tools/CHANGELOG.md) to reflect external face capabilities.

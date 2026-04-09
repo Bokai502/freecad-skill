@@ -51,7 +51,7 @@ freecad-yaml-safe-move \
 **Behavior:**
 - Treats each component as an axis-aligned box (`placement.position` + `dims`).
 - Without `--install-face`: preserves orientation, in-plane safe move on current face.
-- With `--install-face <0..5>`: rotates component onto the target envelope face, centers it, then applies `--move` as in-plane offset.
+- With `--install-face <0..11>`: rotates component onto the target envelope face, centers it, then applies `--move` as in-plane offset. Faces 0–5 are internal (uses `inner_size`); faces 6–11 are external (uses `outer_size`, no envelope-boundary constraint).
 - With `--spin <degrees>`: rotates in-place around envelope-face normal (multiples of 90), keeps mount point fixed.
 - If full move is safe → applies directly. If collision → searches for closest safe prefix.
 - If no safe point exists → writes the constrained result back to YAML (does not revert).

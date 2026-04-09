@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(freecad-yaml-safe-move:*)",
+      "Bash(python3:*)",
+      "Bash(read f:*)",
+      "Bash(grep -n \"install.face\\\\|mount_face\\\\|envelope_face\\\\|0\\\\.\\\\.5\\\\|0\\\\.\\\\.11\\\\|face.*6\\\\|face.*7\" /d/workspace/skills_test/freecad_cli_tools/tests/*.py)",
+      "Bash(python -m pytest tests/ -x -q)",
+      "Bash(python -m pytest tests/ -q)"
+    ]
+  }
+}

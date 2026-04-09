@@ -23,6 +23,7 @@ from freecad_cli_tools.geometry import (
     envelope_face,
     find_best_safe_scale,
     get_face_data,
+    is_external_face,
     mount_point_from_component,
     normalize_spin_quarter_turns,
     position_for_mount_point,
@@ -183,10 +184,22 @@ def main() -> int:
     )
     _, target_face_label, target_axis, _ = get_face_data(target_envelope_face)
 
+    # Choose the reference wall size: outer surface for external faces, inner for internal.
+    if is_external_face(target_envelope_face):
+        outer_size = data["envelope"].get("outer_size")
+        if outer_size is None:
+            raise ValueError(
+                f"envelope.outer_size is required to install a component on external face "
+                f"{target_envelope_face}."
+            )
+        wall_size = list(outer_size)
+    else:
+        wall_size = list(data["envelope"]["inner_size"])
+
     if args.install_face is not None:
         base_position, start_mount_point, base_rotation_matrix = centered_face_position(
             target_extents,
-            data["envelope"]["inner_size"],
+            wall_size,
             component_face,
             target_envelope_face,
         )
@@ -208,7 +221,7 @@ def main() -> int:
         start_position = constrain_position_to_envelope_face(
             start_position,
             target_extents,
-            data["envelope"]["inner_size"],
+            wall_size,
             target_envelope_face,
             target_rotation_matrix,
         )
@@ -218,7 +231,7 @@ def main() -> int:
             start_position = constrain_position_to_envelope_face(
                 target["placement"]["position"],
                 target_extents,
-                data["envelope"]["inner_size"],
+                wall_size,
                 target_envelope_face,
                 target_rotation_matrix,
             )
@@ -238,13 +251,18 @@ def main() -> int:
             start_position = constrain_position_to_envelope_face(
                 start_position,
                 target_extents,
-                data["envelope"]["inner_size"],
+                wall_size,
                 target_envelope_face,
                 target_rotation_matrix,
             )
 
     effective_move, normal_component_ignored = project_move_to_mount_plane(move, target_axis)
-    analysis_context = build_analysis_context(data, args.component, target_rotation_matrix)
+    analysis_context = build_analysis_context(
+        data,
+        args.component,
+        target_rotation_matrix,
+        check_envelope=not is_external_face(target_envelope_face),
+    )
     requested_position = vector_add(start_position, effective_move)
     requested_ok, requested_blockers = analyze_position(
         analysis_context, requested_position, target_rotation_matrix

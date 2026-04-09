@@ -123,6 +123,25 @@
 - 刷新已跟踪的 FreeCAD skill 备份到 [skill_backups/freecad](./skill_backups/freecad)，并移除旧的 `skill_backups/freecad_skill` 路径。
 - 在 [pyproject.toml](./freecad_cli_tools/pyproject.toml) 和 [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py) 中将包版本由 `0.5.0` 升到 `0.7.0`。
 
+## v0.9.0 - 外部安装面支持
+
+日期：2026-04-09
+
+### 新增
+
+- 将 `mount_face` 范围扩展至 0–11，更新 [geometry.py](./freecad_cli_tools/src/freecad_cli_tools/geometry.py)、[yaml_schema.py](./freecad_cli_tools/src/freecad_cli_tools/yaml_schema.py) 和 [rpc_script_fragments.py](./freecad_cli_tools/src/freecad_cli_tools/rpc_script_fragments.py)。面 6–11（`ext-x`、`ext+x`、`ext-y`、`ext+y`、`ext-z`、`ext+z`）将组件安装在包络体*外部*，以 `envelope.outer_size` 为墙面参考；面 0–5 仍为内部安装面。
+- 在 `geometry.py` 中新增 `is_external_face()` 和 `component_contact_face()` 辅助函数。`component_mount_face()` 现在无论 YAML 中存储的是内部还是外部安装面，始终返回物理接触面（0–5）。
+- `build_analysis_context()` 增加 `check_envelope` 参数；`analyze_bounds()` 和 `find_best_safe_scale()` 在外部面移动时跳过包络边界约束，改用仅基于障碍物的碰撞检测。
+- `freecad-yaml-safe-move --install-face` 现在接受 0–11。外部面从 YAML 中读取 `outer_size` 作为墙面参考，禁用内部包络约束，并将组件朝向调整为向外（接触面指向包络中心）。
+- 在 [examples/sample.yaml](./examples/sample.yaml) 中新增两个外部面组件：`P021`（`mount_face: 9`，外部 +Y 面）和 `P022`（`mount_face: 9`，外部 +Y 面，与 P021 并排）。
+
+### 更新
+
+- 在 [pyproject.toml](./freecad_cli_tools/pyproject.toml) 和 [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py) 中将包版本由 `0.8.0` 升至 `0.9.0`。
+- 刷新 FreeCAD skill 备份至 [skill_backups/freecad](./skill_backups/freecad)。
+- 更新 FreeCAD skill 文档（`SKILL.md`、`guides/safe-move-workflow.md`），将 `--install-face` 范围文档更新为 `<0..11>`。
+- 更新 [freecad_cli_tools/README.md](./freecad_cli_tools/README.md) 和 [freecad_cli_tools/CHANGELOG.md](./freecad_cli_tools/CHANGELOG.md)，补充外部面功能说明。
+
 ## v0.8.0 - 几何模块提取与 YAML 格式校验
 
 日期：2026-04-08

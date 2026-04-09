@@ -53,7 +53,7 @@ All RPC commands accept `--host <host>` (default `localhost`) and `--port <port>
 - `freecad-check-collision` and `freecad-move-obj` are document-only fallbacks — use only when no YAML source exists.
 
 ### Orientation & Rotation
-- `--install-face <0..5>` rotates a component onto a target envelope face.
+- `--install-face <0..11>` rotates a component onto a target envelope face. Faces 0–5 are internal (inside the envelope); faces 6–11 are external (outside the envelope, requires `envelope.outer_size` in YAML).
 - `--spin <degrees>` (multiples of 90) rotates in-place on the same face.
 - Both flags can be combined.
 

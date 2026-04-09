@@ -18,13 +18,40 @@ from copy import deepcopy
 EPSILON = 1e-9
 
 FACE_DEFINITIONS = {
+    # Internal faces (0–5): component is mounted inside the envelope.
     0: ("-x", 0, -1),
     1: ("x", 0, 1),
     2: ("-y", 1, -1),
     3: ("y", 1, 1),
     4: ("-z", 2, -1),
     5: ("z", 2, 1),
+    # External faces (6–11): component is mounted on the outside of the envelope.
+    # Each external face mirrors its internal counterpart (face N mirrors face N-6).
+    6: ("ext-x", 0, -1),
+    7: ("ext+x", 0, 1),
+    8: ("ext-y", 1, -1),
+    9: ("ext+y", 1, 1),
+    10: ("ext-z", 2, -1),
+    11: ("ext+z", 2, 1),
 }
+
+def is_external_face(face_id: int) -> bool:
+    """Return True if face_id refers to an external envelope face (6–11)."""
+    return face_id >= 6
+
+
+def component_contact_face(install_face: int) -> int:
+    """Return the component's own face (0–5) that physically contacts the wall.
+
+    For internal faces (0–5) the install face and contact face are the same.
+    For external faces (6–11) the component wraps around the outer wall, so the
+    contact face is the *opposite* of the corresponding internal face:
+    e.g. external +Y (9) → contact face is internal -Y (2).
+    """
+    if is_external_face(install_face):
+        return (install_face - 6) ^ 1
+    return install_face
+
 
 IDENTITY_ROTATION = [
     [1, 0, 0],
@@ -116,19 +143,26 @@ def component_shape(component: dict) -> str:
 
 
 def component_mount_face(component: dict) -> int:
+    """Return the component's own contact face (always 0–5).
+
+    The YAML ``mount_face`` field stores the *installation face* (0–11).
+    For external faces (6–11) this derives the component's physical contact
+    face via ``component_contact_face``.
+    """
     mount_face = component.get("placement", {}).get("mount_face")
     if mount_face not in FACE_DEFINITIONS:
         raise ValueError(
-            f"Invalid or missing mount_face {mount_face!r}. Expected an integer in 0..5."
+            f"Invalid or missing mount_face {mount_face!r}. Expected an integer in 0..11."
         )
-    return mount_face
+    return component_contact_face(mount_face)
 
 
 def envelope_face(component: dict) -> int:
+    """Return the envelope installation face (0–11) for a component."""
     placement = component.get("placement", {})
     face = placement.get("envelope_face", placement.get("mount_face"))
     if face not in FACE_DEFINITIONS:
-        raise ValueError(f"Invalid or missing envelope_face {face!r}. Expected an integer in 0..5.")
+        raise ValueError(f"Invalid or missing envelope_face {face!r}. Expected an integer in 0..11.")
     return face
 
 
@@ -155,9 +189,9 @@ def rotation_matrix_from_component(component: dict) -> list[list[int]]:
 def cylinder_axis_index(mount_face: int) -> int:
     if mount_face not in FACE_DEFINITIONS:
         raise ValueError(
-            f"Invalid or missing mount_face {mount_face!r}. Expected an integer in 0..5."
+            f"Invalid or missing mount_face {mount_face!r}. Expected an integer in 0..11."
         )
-    return mount_face // 2
+    return FACE_DEFINITIONS[mount_face][1]
 
 
 def infer_cylinder_radius_and_height(
@@ -388,14 +422,17 @@ def get_face_data(face_id: int) -> tuple[int, str, int, int]:
 def constrain_position_to_envelope_face(
     position: list[float],
     dims: list[float],
-    inner_size: list[float],
+    wall_size: list[float],
     face_id: int,
     rotation_matrix: list[list[int]],
 ) -> list[float]:
     _, axis, direction = FACE_DEFINITIONS[face_id]
-    target_contact = -inner_size[axis] / 2.0 if direction < 0 else inner_size[axis] / 2.0
+    target_contact = -wall_size[axis] / 2.0 if direction < 0 else wall_size[axis] / 2.0
     bounds = box_bounds(position, dims, rotation_matrix)
-    current_contact = bounds[axis][0] if direction < 0 else bounds[axis][1]
+    # For external faces the component sits *outside* the wall, so the near edge
+    # (opposite sign) is the one that must touch the outer surface.
+    effective_direction = -direction if is_external_face(face_id) else direction
+    current_contact = bounds[axis][0] if effective_direction < 0 else bounds[axis][1]
     constrained = list(position)
     constrained[axis] += target_contact - current_contact
     return constrained
@@ -469,14 +506,21 @@ def mount_point_from_component(component_id: str, component: dict) -> list[float
 
 def centered_face_position(
     dims: list[float],
-    inner_size: list[float],
+    wall_size: list[float],
     component_face: int,
     target_envelope_face: int,
 ) -> tuple[list[float], list[float], list[list[int]]]:
-    rotation = choose_rotation(component_face, target_envelope_face)
+    if is_external_face(target_envelope_face):
+        # For external installation the component's contact face has its normal
+        # pointing *inward* (opposite to the outward wall normal), so we rotate
+        # toward the mirrored internal face.
+        rotation_target = (target_envelope_face - 6) ^ 1
+    else:
+        rotation_target = target_envelope_face
+    rotation = choose_rotation(component_face, rotation_target)
     _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
     mount_point = [0.0, 0.0, 0.0]
-    mount_point[axis] = (-inner_size[axis] / 2.0) if direction < 0 else (inner_size[axis] / 2.0)
+    mount_point[axis] = (-wall_size[axis] / 2.0) if direction < 0 else (wall_size[axis] / 2.0)
     position = position_for_mount_point(mount_point, dims, component_face, rotation)
     return position, mount_point, rotation
 
@@ -508,6 +552,7 @@ def build_analysis_context(
     data: dict,
     component_id: str,
     rotation_matrix: list[list[int]],
+    check_envelope: bool = True,
 ) -> dict:
     components = data["components"]
     target = components[component_id]
@@ -530,6 +575,7 @@ def build_analysis_context(
         "target_extents": target_extents,
         "inner_size": data["envelope"]["inner_size"],
         "other_bounds": other_bounds,
+        "check_envelope": check_envelope,
     }
 
 
@@ -539,8 +585,9 @@ def analyze_bounds(
     obstacle_bounds: list[tuple[str, list[tuple[float, float]]]] | None = None,
 ) -> tuple[bool, list[str]]:
     blockers: list[str] = []
-    if not inside_envelope_bounds(bounds, context["inner_size"]):
-        blockers.append("ENVELOPE_BOUNDARY")
+    if context.get("check_envelope", True):
+        if not inside_envelope_bounds(bounds, context["inner_size"]):
+            blockers.append("ENVELOPE_BOUNDARY")
     for other_id, other_bounds in obstacle_bounds or context["other_bounds"]:
         if bounds_overlap(bounds, other_bounds):
             blockers.append(other_id)
@@ -749,14 +796,16 @@ def find_best_safe_scale(
     if not start_ok:
         return legacy_best_safe_scale(context, start_bounds, move)
 
-    allowed_interval = envelope_safe_interval(start_bounds, move, context["inner_size"])
-    if allowed_interval is None or allowed_interval[1] < 0.0:
-        return None
-
-    safe_low = max(0.0, allowed_interval[0])
-    safe_high = min(1.0, allowed_interval[1])
-    if not safe_low <= 0.0 <= safe_high:
-        return legacy_best_safe_scale(context, start_bounds, move)
+    if context.get("check_envelope", True):
+        allowed_interval = envelope_safe_interval(start_bounds, move, context["inner_size"])
+        if allowed_interval is None or allowed_interval[1] < 0.0:
+            return None
+        safe_low = max(0.0, allowed_interval[0])
+        safe_high = min(1.0, allowed_interval[1])
+        if not safe_low <= 0.0 <= safe_high:
+            return legacy_best_safe_scale(context, start_bounds, move)
+    else:
+        safe_high = 1.0
 
     candidate_obstacles = broad_phase_obstacles(context, start_bounds, move, safe_high)
     earliest_blocking_scale = safe_high

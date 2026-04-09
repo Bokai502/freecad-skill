@@ -52,6 +52,7 @@ freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssemb
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P021 --install-face 9 --move 60 0 0
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --spin 90 --move 0 0 0
 freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.json
 
@@ -83,7 +84,8 @@ Use it when you want to:
 - detect component collisions against other components using their current bounded geometry
 - preserve the component's current orientation while moving it, or explicitly reorient it onto a
   different envelope face
-- keep the component inside `envelope.inner_size`
+- keep internal components (faces 0–5) inside `envelope.inner_size`, or place external components
+  (faces 6–11) on the outside of the envelope using `envelope.outer_size`
 - write the updated YAML placement with the new position, `mount_point`, `envelope_face`, and optional
   `rotation_matrix`
 - optionally update the matching component in an open FreeCAD document
@@ -103,19 +105,21 @@ This command creates:
 
 The command treats `placement.position` as the component local-bounds minimum corner and performs translation-only
 collision-safe moves for the component's current orientation by default. In the current YAML/CLI
-model, `placement.mount_face` is the component's own mounting face, `placement.envelope_face` is
-the envelope face it is installed onto, and `placement.rotation_matrix` captures the assembly
-orientation. With `--spin`, the command rotates the component in place around the installed face
-normal in multiples of `90` degrees while keeping the mount point fixed. When `--install-face` is
-supplied, the command rotates the component so its own `mount_face` is installed onto the requested
-envelope face, starts from the centered position on that face, and applies the requested move as an
-in-plane offset there. `--install-face` and `--spin` can be combined when a component should move
-to another face and then rotate again within that target face. If the full requested move is safe,
-it applies it directly. If not, it finds the closest safe prefix on that segment. If no safe point
-exists on the requested segment, it reports that no solution was found and still writes an output
-YAML for the constrained placement state. When `--sync-cad` is supplied, it then updates the
-matching component object in the target FreeCAD document directly from the computed final
-placement.
+model, `placement.mount_face` stores the *installation face* (0–11): faces 0–5 are internal (inside
+the envelope, wall reference = `inner_size`); faces 6–11 are external (outside the envelope, wall
+reference = `outer_size`). `placement.envelope_face` is an optional explicit override for the
+envelope face. `placement.rotation_matrix` captures the assembly orientation. With `--spin`, the
+command rotates the component in place around the installed face normal in multiples of `90` degrees
+while keeping the mount point fixed. When `--install-face` is supplied (accepts 0–11), the command
+rotates the component so its own contact face is installed onto the requested envelope face, starts
+from the centered position on that face, and applies the requested move as an in-plane offset there.
+For external faces, the component is oriented outward (contact face points inward toward the
+envelope center) and the envelope-boundary containment check is skipped. `--install-face` and
+`--spin` can be combined. If the full requested move is safe, it applies it directly. If not, it
+finds the closest safe prefix on that segment. If no safe point exists on the requested segment, it
+reports that no solution was found and still writes an output YAML for the constrained placement
+state. When `--sync-cad` is supplied, it then updates the matching component object in the target
+FreeCAD document directly from the computed final placement.
 
 In the `skills_test` workspace workflow, move and rotation requests now default to overwriting the
 source YAML path and saving the existing `FCStd` document in place after sync unless the user
