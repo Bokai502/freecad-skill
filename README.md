@@ -14,7 +14,7 @@
 
 - Start FreeCAD in GUI or headless mode through WSL/WSLg.
 - Build FreeCAD assemblies from YAML definitions.
-- Move components safely with envelope and collision constraints.
+- Move components safely with inner-envelope, external-face boundary, and collision constraints.
 - Sync one or many computed placements into a live FreeCAD document.
 - Benchmark safe-move performance and validate behavior with tests and CI.
 
@@ -49,6 +49,10 @@ freecad-create-assembly --input examples\sample.yaml --doc-name SampleYamlAssemb
 ```powershell
 freecad-yaml-safe-move --input examples\sample.yaml --output examples\sample.yaml --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name SampleYamlAssembly
 ```
+
+For external-face placements, the same command uses `envelope.outer_size` as the wall reference,
+keeps the component on the outside of the shell, and still constrains motion to the selected face's
+2D footprint so it cannot slide past the wall edge.
 
 In the current workspace skill workflow, move and rotation operations update the existing YAML in
 place and save the current `FCStd` document in place instead of creating sibling output files by

@@ -6,6 +6,15 @@
 
 - `a31d64b` `【add】初始化项目`
 
+## v0.9.1 - 外部安装面边界约束与文档同步
+
+日期：2026-04-13
+
+- 在 [geometry.py](./freecad_cli_tools/src/freecad_cli_tools/geometry.py) 中新增外部安装面的面内边界辅助逻辑，使 6-11 号外部安装面的移动即使跳过内部包络包含约束，也仍然会限制在目标墙面的二维轮廓内。
+- 在 [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) 与几何分析上下文中补充 `envelope_face_id` 和 `wall_size`，让 `analyze_position()` 与 `find_best_safe_scale()` 能在外部安装面触碰边界时正确截断，并报告 `FACE_BOUNDARY`。
+- 在 [test_yaml_component_safe_move.py](./freecad_cli_tools/tests/test_yaml_component_safe_move.py) 中增加回归测试，覆盖外部安装面的允许/拒绝位置、在墙面边缘处截断安全前缀，以及内部安装面继续返回 `ENVELOPE_BOUNDARY` 的行为。
+- 清理了会阻塞 CI 的 Ruff / Black 问题，并同步更新工作区与包级 README，补充外部安装面移动的新约束说明。
+
 ## v0.1.0 - 初始基线
 
 日期：2026-04-01

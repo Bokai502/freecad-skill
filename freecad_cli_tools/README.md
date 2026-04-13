@@ -89,6 +89,8 @@ Use it when you want to:
 - write the updated YAML placement with the new position, `mount_point`, `envelope_face`, and optional
   `rotation_matrix`
 - optionally update the matching component in an open FreeCAD document
+- keep external-face moves inside the selected wall's in-plane 2D footprint and surface
+  `FACE_BOUNDARY` when a requested path would slide past the wall edge
 
 To build a new CAD document from the updated YAML, use:
 
@@ -120,6 +122,11 @@ finds the closest safe prefix on that segment. If no safe point exists on the re
 reports that no solution was found and still writes an output YAML for the constrained placement
 state. When `--sync-cad` is supplied, it then updates the matching component object in the target
 FreeCAD document directly from the computed final placement.
+
+External-face note: although faces `6-11` skip the inner-envelope containment check, they are still
+clamped to the selected wall's in-plane boundary using `envelope.outer_size`. When the requested
+segment would cross that footprint, the command truncates the move to the closest safe prefix and
+includes `FACE_BOUNDARY` in the blocker list.
 
 In the `skills_test` workspace workflow, move and rotation requests now default to overwriting the
 source YAML path and saving the existing `FCStd` document in place after sync unless the user

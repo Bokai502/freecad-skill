@@ -7,6 +7,7 @@ import pytest
 
 from freecad_cli_tools.geometry import (
     IDENTITY_ROTATION,
+    analyze_position,
     apply_in_plane_spin,
     box_bounds,
     broad_phase_obstacles,
@@ -15,6 +16,7 @@ from freecad_cli_tools.geometry import (
     component_solid_placement,
     compute_mount_point,
     find_best_safe_scale,
+    inside_face_in_plane_bounds,
     mount_point_from_component,
     normalize_spin_quarter_turns,
     position_for_mount_point,
@@ -268,3 +270,115 @@ def test_in_plane_spin_keeps_mount_point_fixed_on_same_face() -> None:
 def test_normalize_spin_quarter_turns_rejects_non_right_angle_input() -> None:
     with pytest.raises(ValueError, match="multiple of 90"):
         normalize_spin_quarter_turns(45)
+
+
+# ---------------------------------------------------------------------------
+# In-plane face boundary constraint tests
+# ---------------------------------------------------------------------------
+
+
+def make_external_layout() -> dict:
+    """Layout with outer_size for external face tests.
+
+    Envelope inner_size 100×100×100, outer_size 110×110×110.
+    Component P001 is a 10×10×10 box mounted on external +X face (face 7),
+    centered at origin in the YZ plane.  Position is set so the contact face
+    sits flush against the outer wall at x = 55 (outer_size[0]/2).
+    """
+    return {
+        "envelope": {
+            "inner_size": [100.0, 100.0, 100.0],
+            "outer_size": [110.0, 110.0, 110.0],
+        },
+        "components": {
+            "P001": {
+                "shape": "box",
+                "dims": [10.0, 10.0, 10.0],
+                "placement": {
+                    # x-min at 55 → component extends outward from x=55 to x=65
+                    "position": [55.0, -5.0, -5.0],
+                    "mount_face": 7,
+                    "envelope_face": 7,
+                    "rotation_matrix": IDENTITY_ROTATION,
+                    "mount_point": [55.0, 0.0, 0.0],
+                },
+            },
+        },
+    }
+
+
+def make_external_context(data: dict) -> dict:
+    outer_size = data["envelope"]["outer_size"]
+    return build_analysis_context(
+        data,
+        "P001",
+        IDENTITY_ROTATION,
+        check_envelope=False,
+        envelope_face_id=7,
+        wall_size=outer_size,
+    )
+
+
+def test_inside_face_in_plane_bounds_accepts_centered_component() -> None:
+    # 10×10 box centered at YZ origin on the +X face of a 110×110×110 outer envelope
+    bounds = box_bounds([55.0, -5.0, -5.0], [10.0, 10.0, 10.0], IDENTITY_ROTATION)
+    assert inside_face_in_plane_bounds(bounds, [110.0, 110.0, 110.0], face_id=7)
+
+
+def test_inside_face_in_plane_bounds_rejects_out_of_bounds_component() -> None:
+    # Move the component so its Z-max (5 + 60 = 65) exceeds outer_size[2]/2 = 55
+    bounds = box_bounds([55.0, -5.0, 55.0], [10.0, 10.0, 10.0], IDENTITY_ROTATION)
+    assert not inside_face_in_plane_bounds(bounds, [110.0, 110.0, 110.0], face_id=7)
+
+
+def test_external_face_move_blocked_at_face_boundary() -> None:
+    data = make_external_layout()
+    context = make_external_context(data)
+    # Requested position puts the component's Z-max at 5 + 60 = 65 > 55 → FACE_BOUNDARY
+    ok, blockers = analyze_position(context, [55.0, -5.0, 50.0], IDENTITY_ROTATION)
+    assert not ok
+    assert "FACE_BOUNDARY" in blockers
+
+
+def test_external_face_move_allowed_within_face_boundary() -> None:
+    data = make_external_layout()
+    context = make_external_context(data)
+    # Move within the face: Z-max = 5 + 40 = 45 < 55 → ok
+    ok, blockers = analyze_position(context, [55.0, -5.0, 40.0], IDENTITY_ROTATION)
+    assert ok
+    assert blockers == []
+
+
+def test_external_face_scale_search_stops_at_face_boundary() -> None:
+    data = make_external_layout()
+    context = make_external_context(data)
+    # Start centered at origin in YZ; move 60 units along +Z would exit the face
+    start = [55.0, -5.0, -5.0]
+    move = [0.0, 0.0, 60.0]
+    scale = find_best_safe_scale(context, start, move, IDENTITY_ROTATION)
+    assert scale is not None
+    # At scale 1.0 the component Z-max would be 65 > 55; scale must be < 1.0
+    assert scale < 1.0
+    # At the returned scale the component must still be within the face boundary
+    final_z = -5.0 + 60.0 * scale
+    final_bounds = box_bounds(
+        [55.0, -5.0, final_z], [10.0, 10.0, 10.0], IDENTITY_ROTATION
+    )
+    assert inside_face_in_plane_bounds(final_bounds, [110.0, 110.0, 110.0], face_id=7)
+
+
+def test_internal_face_envelope_boundary_still_enforced() -> None:
+    data = make_layout()
+    context = build_analysis_context(
+        data,
+        "P001",
+        IDENTITY_ROTATION,
+        check_envelope=True,
+        envelope_face_id=1,
+        wall_size=data["envelope"]["inner_size"],
+    )
+    # Move out of the inner envelope → ENVELOPE_BOUNDARY (not FACE_BOUNDARY)
+    ok, blockers = analyze_position(context, [100.0, 0.0, 0.0], IDENTITY_ROTATION)
+    assert not ok
+    assert "ENVELOPE_BOUNDARY" in blockers
+    assert "FACE_BOUNDARY" not in blockers

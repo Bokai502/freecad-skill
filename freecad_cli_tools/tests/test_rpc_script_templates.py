@@ -93,9 +93,9 @@ def test_rendered_script_has_valid_syntax(script_name: str) -> None:
     rendered = render_rpc_script(script_name, replacements)
 
     # Should not contain any unreplaced placeholders
-    assert "__" not in rendered or _no_unreplaced_placeholders(rendered), (
-        f"{script_name} still contains unreplaced __PLACEHOLDER__ tokens"
-    )
+    assert "__" not in rendered or _no_unreplaced_placeholders(
+        rendered
+    ), f"{script_name} still contains unreplaced __PLACEHOLDER__ tokens"
 
     # Must be valid Python
     compile(rendered, f"<rpc_scripts/{script_name}>", "exec")

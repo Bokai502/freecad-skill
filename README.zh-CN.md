@@ -14,7 +14,7 @@
 
 - 通过 WSL / WSLg 以 GUI 或无头模式启动 FreeCAD。
 - 根据 YAML 定义创建 FreeCAD 装配。
-- 在包络和碰撞约束下安全移动组件。
+- 在内部包络、外部安装面边界和碰撞约束下安全移动组件。
 - 将一个或多个计算后的位姿同步到正在运行的 FreeCAD 文档。
 - 通过测试、CI 和基准脚本验证功能与性能。
 
@@ -49,6 +49,9 @@ freecad-create-assembly --input examples\sample.yaml --doc-name SampleYamlAssemb
 ```powershell
 freecad-yaml-safe-move --input examples\sample.yaml --output examples\sample.yaml --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name SampleYamlAssembly
 ```
+
+对于外部安装面，同一条命令会以 `envelope.outer_size` 作为墙面参考，让组件保持在壳体外侧，
+同时继续约束它只能在目标安装面的二维边界内移动，避免沿墙面滑出边缘。
 
 在当前工作区的 skill 流程中，移动和旋转操作默认会原地更新 YAML，并将当前 `FCStd` 文档原地保存，而不是默认再生成旁路输出文件。
 

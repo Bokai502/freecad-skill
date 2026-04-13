@@ -93,7 +93,8 @@ def _validate_placement(comp_id: str, placement: Any) -> None:
     pos = placement["position"]
     if not isinstance(pos, list) or len(pos) != 3:
         raise AssemblyValidationError(
-            f"Component '{comp_id}': 'placement.position' must be a list of 3 numbers (got {pos!r})."
+            f"Component '{comp_id}': 'placement.position' must be a list of 3 numbers "
+            f"(got {pos!r})."
         )
     if not all(isinstance(v, (int, float)) for v in pos):
         raise AssemblyValidationError(

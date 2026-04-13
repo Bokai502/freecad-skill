@@ -84,7 +84,9 @@ def test_build_component_shape_spec_can_infer_cylinder_values_from_dims() -> Non
     assert spec["placement_position"] == [8.0, 8.0, 0.0]
 
 
-def test_build_component_shape_spec_supports_two_value_cylinder_dims_on_mount_axis() -> None:
+def test_build_component_shape_spec_supports_two_value_cylinder_dims_on_mount_axis() -> (
+    None
+):
     helpers = load_shape_helpers()
     build_component_shape_spec = helpers["build_component_shape_spec"]
     apply_rotation_rows = helpers["apply_rotation_rows"]
@@ -105,10 +107,16 @@ def test_build_component_shape_spec_supports_two_value_cylinder_dims_on_mount_ax
     assert spec["radius"] == 4.0
     assert spec["height"] == 20.0
     assert spec["placement_position"] == [1.0, 6.0, 7.0]
-    assert apply_rotation_rows(spec["rotation_rows"], [0.0, 0.0, 1.0]) == [1.0, 0.0, 0.0]
+    assert apply_rotation_rows(spec["rotation_rows"], [0.0, 0.0, 1.0]) == [
+        1.0,
+        0.0,
+        0.0,
+    ]
 
 
-def test_build_component_shape_spec_uses_mount_axis_for_legacy_three_value_cylinder_dims() -> None:
+def test_build_component_shape_spec_uses_mount_axis_for_legacy_three_value_cylinder_dims() -> (
+    None
+):
     helpers = load_shape_helpers()
     build_component_shape_spec = helpers["build_component_shape_spec"]
     apply_rotation_rows = helpers["apply_rotation_rows"]
@@ -128,7 +136,11 @@ def test_build_component_shape_spec_uses_mount_axis_for_legacy_three_value_cylin
     assert spec["radius"] == 5.0
     assert spec["height"] == 12.0
     assert spec["placement_position"] == [6.0, 2.0, 8.0]
-    assert apply_rotation_rows(spec["rotation_rows"], [0.0, 0.0, 1.0]) == [0.0, 1.0, 0.0]
+    assert apply_rotation_rows(spec["rotation_rows"], [0.0, 0.0, 1.0]) == [
+        0.0,
+        1.0,
+        0.0,
+    ]
 
 
 def test_updated_sample_yaml_cylinder_components_build_shape_specs() -> None:
@@ -140,29 +152,44 @@ def test_updated_sample_yaml_cylinder_components_build_shape_specs() -> None:
 
     expected = {
         "P005": {
-            "placement_position": [170.39544205001832, 18.63333898339918, -132.6849685999266],
+            "placement_position": [
+                170.39544205001832,
+                18.63333898339918,
+                -132.6849685999266,
+            ],
             "axis": [1.0, 0.0, 0.0],
         },
         "P010": {
-            "placement_position": [-193.44925497516803, -246.5032580075667, -60.670465703455946],
+            "placement_position": [
+                -193.44925497516803,
+                -246.5032580075667,
+                -60.670465703455946,
+            ],
             "axis": [0.0, 1.0, 0.0],
         },
         "P011": {
-            "placement_position": [-189.99231640981162, 163.5609819120264, 132.30312475973884],
+            "placement_position": [
+                -189.99231640981162,
+                163.5609819120264,
+                132.30312475973884,
+            ],
             "axis": [0.0, 1.0, 0.0],
         },
     }
 
     for component_id, expectations in expected.items():
-        spec = build_component_shape_spec(component_id, sample["components"][component_id])
+        spec = build_component_shape_spec(
+            component_id, sample["components"][component_id]
+        )
         assert spec["object_type"] == "Part::Cylinder"
         assert spec["placement_position"] == expectations["placement_position"]
-        assert apply_rotation_rows(spec["rotation_rows"], [0.0, 0.0, 1.0]) == expectations["axis"]
+        assert (
+            apply_rotation_rows(spec["rotation_rows"], [0.0, 0.0, 1.0])
+            == expectations["axis"]
+        )
 
 
-def test_main_injects_component_shape_helpers(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> None:
     captured: dict = {}
 
     def fake_render(script_name: str, replacements: dict) -> str:
@@ -196,5 +223,8 @@ def test_main_injects_component_shape_helpers(
 
     assert captured["script_name"] == "assembly_from_yaml.py"
     assert "__COMPONENT_SHAPE_HELPERS__" in captured["replacements"]
-    assert "build_component_shape_spec" in captured["replacements"]["__COMPONENT_SHAPE_HELPERS__"]
+    assert (
+        "build_component_shape_spec"
+        in captured["replacements"]["__COMPONENT_SHAPE_HELPERS__"]
+    )
     assert captured["code"] == "rendered-code"

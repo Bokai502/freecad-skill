@@ -116,7 +116,8 @@ def infer_cylinder_radius_and_height(component_id, dims, radius, height, axis_in
 
     if dims_values is not None and len(dims_values) not in (2, 3):
         raise RuntimeError(
-            f"Cylinder component {component_id} requires two or three dims values when dims are used."
+            "Cylinder component "
+            f"{component_id} requires two or three dims values when dims are used."
         )
 
     if radius is None:

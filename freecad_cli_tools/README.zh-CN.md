@@ -51,6 +51,7 @@ freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssemb
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P001 --move 50 50 0 --sync-cad --doc-name SampleYamlAssembly
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --install-face 4 --move 0 0 0
+freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P021 --install-face 9 --move 60 0 0
 freecad-yaml-safe-move --input examples/sample.yaml --output examples/sample.yaml --component P002 --spin 90 --move 0 0 0
 freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.json
 
@@ -82,6 +83,7 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 - 检测该组件与其它组件之间的盒体碰撞
 - 在移动时保持当前朝向，或显式将组件重定向安装到另一个包络面
 - 保证组件始终位于 `envelope.inner_size` 内
+- 让外部安装面（6-11）的移动继续受目标墙面二维边界约束，若请求路径越界则返回 `FACE_BOUNDARY`
 - 将新的位置、`mount_point`、`envelope_face` 和可选的 `rotation_matrix` 写回新的 YAML 文件
 - 可选地把更新后的结果同步到打开中的 FreeCAD 文档
 
@@ -105,6 +107,8 @@ freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssemb
 - `placement.rotation_matrix` 表示装配朝向
 
 当传入 `--install-face` 时，命令会把组件旋转到“自身 `mount_face` 安装到目标包络面”的姿态，从目标面的中心位置开始，再把请求的移动量当作该安装面内的偏移量来执行。如果完整请求安全，就直接采用；如果不安全，就选择这条路径上的最近安全前缀；如果请求路径上没有安全点，命令会报告“未找到解”，但仍会写出受约束后的 YAML 结果。传入 `--sync-cad` 时，它会把最终计算出的位姿直接同步到目标 FreeCAD 文档里的对应对象。
+
+补充说明：外部安装面（6-11）虽然会跳过内部包络包含约束，但仍会使用 `envelope.outer_size` 检查目标墙面的面内边界，避免组件沿墙面滑出边缘。如果请求路径跨出了这个二维轮廓，命令会截断到最近安全前缀，并在阻塞原因中包含 `FACE_BOUNDARY`。
 
 在当前这台机器上，FreeCAD 可能运行在 WSL 中，而 CLI 运行在 Windows 上。这种情况下：
 

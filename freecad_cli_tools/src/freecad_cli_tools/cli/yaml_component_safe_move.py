@@ -43,13 +43,17 @@ def parse_args() -> argparse.Namespace:
             "write an updated YAML file, and optionally sync the result to FreeCAD."
         )
     )
-    parser.add_argument("--input", default="data/sample.yaml", help="Path to the source YAML file.")
+    parser.add_argument(
+        "--input", default="data/sample.yaml", help="Path to the source YAML file."
+    )
     parser.add_argument(
         "--output",
         default="data/sample.updated.yaml",
         help="Path to the output YAML file.",
     )
-    parser.add_argument("--component", default="P001", help="Target component id to move.")
+    parser.add_argument(
+        "--component", default="P001", help="Target component id to move."
+    )
     parser.add_argument(
         "--move",
         nargs=3,
@@ -172,7 +176,9 @@ def main() -> int:
     components = data.get("components", {})
     if args.component not in components:
         available = ", ".join(sorted(components))
-        raise KeyError(f"Component {args.component} not found. Available components: {available}")
+        raise KeyError(
+            f"Component {args.component} not found. Available components: {available}"
+        )
 
     target = components[args.component]
     component_face = component_mount_face(target)
@@ -256,12 +262,16 @@ def main() -> int:
                 target_rotation_matrix,
             )
 
-    effective_move, normal_component_ignored = project_move_to_mount_plane(move, target_axis)
+    effective_move, normal_component_ignored = project_move_to_mount_plane(
+        move, target_axis
+    )
     analysis_context = build_analysis_context(
         data,
         args.component,
         target_rotation_matrix,
         check_envelope=not is_external_face(target_envelope_face),
+        envelope_face_id=target_envelope_face,
+        wall_size=wall_size,
     )
     requested_position = vector_add(start_position, effective_move)
     requested_ok, requested_blockers = analyze_position(
@@ -331,12 +341,15 @@ def main() -> int:
     print(f"component_mount_face: {component_face}")
     print(f"component_mount_face_label: {FACE_DEFINITIONS[component_face][0]}")
     print(f"original_envelope_face: {original_envelope_face}")
-    print(f"original_envelope_face_label: {FACE_DEFINITIONS[original_envelope_face][0]}")
+    print(
+        f"original_envelope_face_label: {FACE_DEFINITIONS[original_envelope_face][0]}"
+    )
     print(f"target_envelope_face: {target_envelope_face}")
     print(f"target_envelope_face_label: {target_face_label}")
     print("orientation_change_supported: True")
     print(
-        "orientation_change_applied: " f"{args.install_face is not None or spin_quarter_turns != 0}"
+        "orientation_change_applied: "
+        f"{args.install_face is not None or spin_quarter_turns != 0}"
     )
     print(f"in_plane_spin_degrees_requested: {args.spin}")
     print(f"in_plane_spin_quarter_turns_applied: {spin_quarter_turns}")
@@ -355,7 +368,8 @@ def main() -> int:
     print(f"applied_move: {applied_move}")
     print(f"final_position: {final_position}")
     print(
-        "final_mount_point: " f"{updated['components'][args.component]['placement']['mount_point']}"
+        "final_mount_point: "
+        f"{updated['components'][args.component]['placement']['mount_point']}"
     )
     print(f"final_blockers: {final_blockers}")
     print(f"cad_sync_enabled: {args.sync_cad}")
@@ -376,17 +390,8 @@ if __name__ == "__main__":
 # in new code.
 from freecad_cli_tools.geometry import (  # noqa: E402, F401
     IDENTITY_ROTATION,
-    apply_in_plane_spin,
     box_bounds,
     broad_phase_obstacles,
-    build_analysis_context,
-    component_local_extents,
-    component_solid_placement,
     compute_mount_point,
-    find_best_safe_scale,
-    mount_point_from_component,
-    normalize_spin_quarter_turns,
-    position_for_mount_point,
     translate_bounds,
-    update_component_placement,
 )

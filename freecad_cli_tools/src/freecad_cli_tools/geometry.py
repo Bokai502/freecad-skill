@@ -35,6 +35,7 @@ FACE_DEFINITIONS = {
     11: ("ext+z", 2, 1),
 }
 
+
 def is_external_face(face_id: int) -> bool:
     """Return True if face_id refers to an external envelope face (6–11)."""
     return face_id >= 6
@@ -119,7 +120,9 @@ def apply_rotation(matrix: list[list[int]], point: list[float]) -> list[float]:
     return [sum(matrix[row][col] * point[col] for col in range(3)) for row in range(3)]
 
 
-def multiply_rotation_matrices(left: list[list[int]], right: list[list[int]]) -> list[list[int]]:
+def multiply_rotation_matrices(
+    left: list[list[int]], right: list[list[int]]
+) -> list[list[int]]:
     return [
         [sum(left[row][k] * right[k][col] for k in range(3)) for col in range(3)]
         for row in range(3)
@@ -162,7 +165,9 @@ def envelope_face(component: dict) -> int:
     placement = component.get("placement", {})
     face = placement.get("envelope_face", placement.get("mount_face"))
     if face not in FACE_DEFINITIONS:
-        raise ValueError(f"Invalid or missing envelope_face {face!r}. Expected an integer in 0..11.")
+        raise ValueError(
+            f"Invalid or missing envelope_face {face!r}. Expected an integer in 0..11."
+        )
     return face
 
 
@@ -213,18 +218,24 @@ def infer_cylinder_radius_and_height(
 
     if radius is None:
         if dims_values is None:
-            raise RuntimeError(f"Cylinder component {component_id} requires radius or dims values.")
+            raise RuntimeError(
+                f"Cylinder component {component_id} requires radius or dims values."
+            )
         if len(dims_values) == 2:
             radius = dims_values[0] / 2.0
         else:
-            cross_section = [dims_values[index] for index in range(3) if index != axis_index]
+            cross_section = [
+                dims_values[index] for index in range(3) if index != axis_index
+            ]
             radius = min(cross_section) / 2.0
     else:
         radius = float(radius)
 
     if height is None:
         if dims_values is None:
-            raise RuntimeError(f"Cylinder component {component_id} requires height or dims values.")
+            raise RuntimeError(
+                f"Cylinder component {component_id} requires height or dims values."
+            )
         if len(dims_values) == 2:
             height = dims_values[1]
         else:
@@ -260,12 +271,16 @@ def component_local_extents(component_id: str, component: dict) -> list[float]:
 
     if shape == "box":
         if dims is None or len(dims) != 3:
-            raise RuntimeError(f"Box component {component_id} requires three dims values.")
+            raise RuntimeError(
+                f"Box component {component_id} requires three dims values."
+            )
         return [float(value) for value in dims]
 
     if shape == "cylinder":
         axis_index = cylinder_axis_index(component_mount_face(component))
-        radius, height = infer_cylinder_radius_and_height(component_id, component, axis_index)
+        radius, height = infer_cylinder_radius_and_height(
+            component_id, component, axis_index
+        )
         diameter = radius * 2.0
         extents = [diameter, diameter, diameter]
         extents[axis_index] = height
@@ -288,7 +303,9 @@ def component_solid_placement(
 
     if shape == "cylinder":
         axis_index = cylinder_axis_index(component_mount_face(component))
-        radius, _ = infer_cylinder_radius_and_height(component_id, component, axis_index)
+        radius, _ = infer_cylinder_radius_and_height(
+            component_id, component, axis_index
+        )
         offset = cylinder_base_center_offset(axis_index, radius)
         solid_position = vector_add(position, apply_rotation(rotation_matrix, offset))
         solid_rotation = multiply_rotation_matrices(
@@ -324,7 +341,8 @@ def box_bounds(
                 rotated = apply_rotation(rotation_matrix, [x, y, z])
                 corners.append([position[i] + rotated[i] for i in range(3)])
     return [
-        (min(point[i] for point in corners), max(point[i] for point in corners)) for i in range(3)
+        (min(point[i] for point in corners), max(point[i] for point in corners))
+        for i in range(3)
     ]
 
 
@@ -349,7 +367,8 @@ def bounds_overlap(
     b_bounds: list[tuple[float, float]],
 ) -> bool:
     return all(
-        a_bounds[i][0] < b_bounds[i][1] - EPSILON and b_bounds[i][0] < a_bounds[i][1] - EPSILON
+        a_bounds[i][0] < b_bounds[i][1] - EPSILON
+        and b_bounds[i][0] < a_bounds[i][1] - EPSILON
         for i in range(3)
     )
 
@@ -409,6 +428,30 @@ def inside_envelope_bounds(
     return True
 
 
+def inside_face_in_plane_bounds(
+    bounds: list[tuple[float, float]],
+    wall_size: list[float],
+    face_id: int,
+) -> bool:
+    """Return True if the component's in-plane extents fit within the face's 2D boundary.
+
+    Only the two axes perpendicular to the face normal are checked; the normal
+    axis (depth) is unconstrained by this function.
+    """
+    _, axis, _ = FACE_DEFINITIONS[face_id]
+    half_wall = [length / 2.0 for length in wall_size]
+    for in_plane_axis in range(3):
+        if in_plane_axis == axis:
+            continue
+        low, high = bounds[in_plane_axis]
+        if (
+            low < -half_wall[in_plane_axis] - EPSILON
+            or high > half_wall[in_plane_axis] + EPSILON
+        ):
+            return False
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Placement geometry
 # ---------------------------------------------------------------------------
@@ -441,10 +484,16 @@ def constrain_position_to_envelope_face(
 def choose_rotation(component_face: int, target_envelope_face: int) -> list[list[int]]:
     source = face_normal(component_face)
     target = face_normal(target_envelope_face)
-    candidates = [matrix for matrix in ROTATIONS if apply_rotation(matrix, source) == target]
+    candidates = [
+        matrix for matrix in ROTATIONS if apply_rotation(matrix, source) == target
+    ]
     if not candidates:
-        raise RuntimeError("No valid orthogonal rotation found for requested face change.")
-    candidates.sort(key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True)
+        raise RuntimeError(
+            "No valid orthogonal rotation found for requested face change."
+        )
+    candidates.sort(
+        key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True
+    )
     return candidates[0]
 
 
@@ -469,7 +518,9 @@ def apply_in_plane_spin(
 ) -> list[list[int]]:
     if spin_quarter_turns % 4 == 0:
         return [row[:] for row in base_rotation]
-    spin_matrix = spin_rotation_for_envelope_face(target_envelope_face, spin_quarter_turns)
+    spin_matrix = spin_rotation_for_envelope_face(
+        target_envelope_face, spin_quarter_turns
+    )
     return multiply_rotation_matrices(spin_matrix, base_rotation)
 
 
@@ -498,7 +549,8 @@ def mount_point_from_component(component_id: str, component: dict) -> list[float
         return computed_mount_point
     stored_mount_point = [float(value) for value in mount_point]
     if any(
-        abs(stored_mount_point[index] - computed_mount_point[index]) > EPSILON for index in range(3)
+        abs(stored_mount_point[index] - computed_mount_point[index]) > EPSILON
+        for index in range(3)
     ):
         return computed_mount_point
     return stored_mount_point
@@ -520,12 +572,16 @@ def centered_face_position(
     rotation = choose_rotation(component_face, rotation_target)
     _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
     mount_point = [0.0, 0.0, 0.0]
-    mount_point[axis] = (-wall_size[axis] / 2.0) if direction < 0 else (wall_size[axis] / 2.0)
+    mount_point[axis] = (
+        (-wall_size[axis] / 2.0) if direction < 0 else (wall_size[axis] / 2.0)
+    )
     position = position_for_mount_point(mount_point, dims, component_face, rotation)
     return position, mount_point, rotation
 
 
-def project_move_to_mount_plane(move: list[float], axis: int) -> tuple[list[float], bool]:
+def project_move_to_mount_plane(
+    move: list[float], axis: int
+) -> tuple[list[float], bool]:
     projected = list(move)
     ignored = abs(projected[axis]) > EPSILON
     projected[axis] = 0.0
@@ -553,6 +609,8 @@ def build_analysis_context(
     component_id: str,
     rotation_matrix: list[list[int]],
     check_envelope: bool = True,
+    envelope_face_id: int | None = None,
+    wall_size: list[float] | None = None,
 ) -> dict:
     components = data["components"]
     target = components[component_id]
@@ -576,6 +634,8 @@ def build_analysis_context(
         "inner_size": data["envelope"]["inner_size"],
         "other_bounds": other_bounds,
         "check_envelope": check_envelope,
+        "envelope_face_id": envelope_face_id,
+        "wall_size": wall_size,
     }
 
 
@@ -588,6 +648,15 @@ def analyze_bounds(
     if context.get("check_envelope", True):
         if not inside_envelope_bounds(bounds, context["inner_size"]):
             blockers.append("ENVELOPE_BOUNDARY")
+    envelope_face_id = context.get("envelope_face_id")
+    wall_size = context.get("wall_size")
+    if (
+        envelope_face_id is not None
+        and wall_size is not None
+        and is_external_face(envelope_face_id)
+        and not inside_face_in_plane_bounds(bounds, wall_size, envelope_face_id)
+    ):
+        blockers.append("FACE_BOUNDARY")
     for other_id, other_bounds in obstacle_bounds or context["other_bounds"]:
         if bounds_overlap(bounds, other_bounds):
             blockers.append(other_id)
@@ -706,6 +775,48 @@ def envelope_safe_interval(
     return (low, high)
 
 
+def face_in_plane_safe_interval(
+    start_bounds: list[tuple[float, float]],
+    move: list[float],
+    wall_size: list[float],
+    face_id: int,
+) -> tuple[float, float] | None:
+    """Return the [low, high] scale interval for staying inside the face boundary.
+
+    Only the two axes perpendicular to the face normal are constrained.
+    Returns None if the starting position already violates the boundary.
+    """
+    _, axis, _ = FACE_DEFINITIONS[face_id]
+    half_wall = [length / 2.0 for length in wall_size]
+    low = 0.0
+    high = 1.0
+
+    for in_plane_axis in range(3):
+        if in_plane_axis == axis:
+            continue
+        min_allowed = -half_wall[in_plane_axis]
+        max_allowed = half_wall[in_plane_axis]
+        bound_low = start_bounds[in_plane_axis][0]
+        bound_high = start_bounds[in_plane_axis][1]
+        delta = move[in_plane_axis]
+
+        if delta == 0.0:
+            if bound_low < min_allowed - EPSILON or bound_high > max_allowed + EPSILON:
+                return None
+            continue
+
+        limit_one = (min_allowed - bound_low) / delta
+        limit_two = (max_allowed - bound_high) / delta
+        axis_low = min(limit_one, limit_two)
+        axis_high = max(limit_one, limit_two)
+        low = max(low, axis_low)
+        high = min(high, axis_high)
+        if low > high:
+            return None
+
+    return (low, high)
+
+
 def broad_phase_obstacles(
     context: dict,
     start_bounds: list[tuple[float, float]],
@@ -796,8 +907,26 @@ def find_best_safe_scale(
     if not start_ok:
         return legacy_best_safe_scale(context, start_bounds, move)
 
+    envelope_face_id = context.get("envelope_face_id")
+    wall_size = context.get("wall_size")
     if context.get("check_envelope", True):
-        allowed_interval = envelope_safe_interval(start_bounds, move, context["inner_size"])
+        allowed_interval = envelope_safe_interval(
+            start_bounds, move, context["inner_size"]
+        )
+        if allowed_interval is None or allowed_interval[1] < 0.0:
+            return None
+        safe_low = max(0.0, allowed_interval[0])
+        safe_high = min(1.0, allowed_interval[1])
+        if not safe_low <= 0.0 <= safe_high:
+            return legacy_best_safe_scale(context, start_bounds, move)
+    elif (
+        envelope_face_id is not None
+        and wall_size is not None
+        and is_external_face(envelope_face_id)
+    ):
+        allowed_interval = face_in_plane_safe_interval(
+            start_bounds, move, wall_size, envelope_face_id
+        )
         if allowed_interval is None or allowed_interval[1] < 0.0:
             return None
         safe_low = max(0.0, allowed_interval[0])
@@ -810,7 +939,9 @@ def find_best_safe_scale(
     candidate_obstacles = broad_phase_obstacles(context, start_bounds, move, safe_high)
     earliest_blocking_scale = safe_high
     for _, obstacle_bounds in candidate_obstacles:
-        collision_interval = collision_interval_for_obstacle(start_bounds, move, obstacle_bounds)
+        collision_interval = collision_interval_for_obstacle(
+            start_bounds, move, obstacle_bounds
+        )
         if collision_interval is None:
             continue
         block_low = collision_interval[0]

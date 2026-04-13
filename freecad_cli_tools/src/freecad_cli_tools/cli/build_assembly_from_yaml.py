@@ -7,7 +7,10 @@ from pathlib import Path
 
 from freecad_cli_tools import add_connection_args
 from freecad_cli_tools.cli_support import run_script_command, to_wsl_path
-from freecad_cli_tools.rpc_script_fragments import COMPONENT_SHAPE_HELPERS, PLACEMENT_HELPERS
+from freecad_cli_tools.rpc_script_fragments import (
+    COMPONENT_SHAPE_HELPERS,
+    PLACEMENT_HELPERS,
+)
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
 
 

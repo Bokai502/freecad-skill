@@ -12,17 +12,25 @@ from .rpc_script_loader import render_rpc_script
 
 def normalize_position_list(value: Any, *, field_name: str, index: int) -> list[float]:
     if not isinstance(value, list) or len(value) != 3:
-        raise ValueError(f"Sync update #{index} must include a 3-item '{field_name}' list.")
+        raise ValueError(
+            f"Sync update #{index} must include a 3-item '{field_name}' list."
+        )
     return [float(item) for item in value]
 
 
-def normalize_rotation_rows(value: Any, *, field_name: str, index: int) -> list[list[int]]:
+def normalize_rotation_rows(
+    value: Any, *, field_name: str, index: int
+) -> list[list[int]]:
     if not isinstance(value, list) or len(value) != 3:
-        raise ValueError(f"Sync update #{index} must include a 3x3 '{field_name}' list.")
+        raise ValueError(
+            f"Sync update #{index} must include a 3x3 '{field_name}' list."
+        )
     rows = []
     for row in value:
         if not isinstance(row, list) or len(row) != 3:
-            raise ValueError(f"Sync update #{index} must include a 3x3 '{field_name}' list.")
+            raise ValueError(
+                f"Sync update #{index} must include a 3x3 '{field_name}' list."
+            )
         rows.append([int(item) for item in row])
     return rows
 
@@ -44,14 +52,20 @@ def normalize_sync_updates(raw_updates: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             raise ValueError(f"Sync update #{index} must be an object.")
 
-        component_id = str(item.get("component") or item.get("component_id") or "").strip()
+        component_id = str(
+            item.get("component") or item.get("component_id") or ""
+        ).strip()
         if not component_id:
             raise ValueError(f"Sync update #{index} is missing 'component'.")
 
         normalized_update = {
             "component": component_id,
-            "solid_name": item.get("solid_name") or item.get("component_object") or component_id,
-            "part_name": item.get("part_name") or item.get("part_object") or f"{component_id}_part",
+            "solid_name": item.get("solid_name")
+            or item.get("component_object")
+            or component_id,
+            "part_name": item.get("part_name")
+            or item.get("part_object")
+            or f"{component_id}_part",
             "position": normalize_position_list(
                 item.get("position"),
                 field_name="position",

@@ -6,6 +6,15 @@ Original baseline commit:
 
 - `a31d64b` `initial project setup`
 
+## v0.9.1 - External Face Boundary Guard And Documentation Sync
+
+Date: 2026-04-13
+
+- Added external-face in-plane boundary helpers in [geometry.py](./freecad_cli_tools/src/freecad_cli_tools/geometry.py) so moves on faces `6-11` stay within the selected wall footprint even when the inner-envelope containment check is disabled.
+- Threaded `envelope_face_id` and `wall_size` through [yaml_component_safe_move.py](./freecad_cli_tools/src/freecad_cli_tools/cli/yaml_component_safe_move.py) and the geometry analysis context, allowing `analyze_position()` and `find_best_safe_scale()` to stop at the face edge and report `FACE_BOUNDARY` for external-face moves.
+- Added regression coverage in [test_yaml_component_safe_move.py](./freecad_cli_tools/tests/test_yaml_component_safe_move.py) for accepted/rejected external placements, safe-scale truncation at the wall edge, and continued `ENVELOPE_BOUNDARY` behavior for internal faces.
+- Cleared CI-blocking Ruff/Black issues and synced the workspace/package README files to describe the refined external-face move behavior.
+
 ## v0.1.0 - Initial Baseline
 
 Date: 2026-04-01

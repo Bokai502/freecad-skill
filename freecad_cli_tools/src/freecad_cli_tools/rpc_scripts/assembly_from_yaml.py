@@ -125,7 +125,9 @@ for component_id, component in data.get("components", {}).items():
         solid.Height = shape_spec["height"]
         solid.Angle = shape_spec["angle"]
     else:
-        raise RuntimeError(f"Unsupported shape for {component_id}: {shape_spec['shape']}")
+        raise RuntimeError(
+            f"Unsupported shape for {component_id}: {shape_spec['shape']}"
+        )
 
     solid.Placement = make_placement(
         shape_spec["placement_position"],
