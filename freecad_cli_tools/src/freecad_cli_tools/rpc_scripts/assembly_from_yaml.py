@@ -45,8 +45,9 @@ def build_envelope(doc, assembly, data):
     assembly.addObject(envelope_part)
     envelope_shell = doc.addObject("Part::Feature", "EnvelopeShell")
     envelope_shell.Shape = shell_shape
-    envelope_shell.ViewObject.Transparency = 80
-    envelope_shell.ViewObject.ShapeColor = (0.75, 0.80, 0.85, 1.0)
+    envelope_shell.ViewObject.DisplayMode = "Wireframe"
+    envelope_shell.ViewObject.LineColor = (0.2, 0.5, 0.9, 0.0)
+    envelope_shell.ViewObject.LineWidth = 2.0
     envelope_part.addObject(envelope_shell)
     return envelope_shell.Name
 
@@ -88,6 +89,7 @@ def apply_color(obj, color):
     while len(rgba) < 4:
         rgba.append(1.0)
     obj.ViewObject.ShapeColor = (rgba[0], rgba[1], rgba[2], rgba[3])
+    obj.ViewObject.Transparency = 40
 
 
 path = Path(YAML_PATH)

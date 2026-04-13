@@ -223,7 +223,7 @@ components:
     - 255
     placement:
       position:
-      - -231.20645313057769
+      - -231.2064531305777
       - 163.5609819120264
       - 91.08898803897274
       bin_index: 0
@@ -596,15 +596,26 @@ components:
     - 255
     placement:
       position:
-      - 271.91490443224975
       - -40.0
+      - -251.35540092679645
       - -50.0
       bin_index: 0
-      mount_face: 7
+      mount_face: 0
       mount_point:
-      - 271.91490443224975
       - 0.0
+      - -251.35540092679645
       - 0.0
+      envelope_face: 8
+      rotation_matrix:
+      - - 0
+        - 1
+        - 0
+      - - -1
+        - 0
+        - 0
+      - - 0
+        - 0
+        - 1
 packing:
   clearance: 7.33991780504304
   multistart: 10

@@ -49,13 +49,24 @@ For each component:
 
 ### Step 4: Create envelope (when YAML provides one)
 
-If YAML contains `envelope.outer_size` / `envelope.inner_size`: create a semi-transparent shell
-under an `Envelope_part` container, centered at origin.
+If YAML contains `envelope.outer_size` / `envelope.inner_size`: create a wireframe shell under
+an `Envelope_part` container, centered at origin.
+
+```python
+envelope_shell.ViewObject.DisplayMode = "Wireframe"
+envelope_shell.ViewObject.LineColor = (0.2, 0.5, 0.9, 0.0)  # steel blue
+envelope_shell.ViewObject.LineWidth = 2.0
+```
 
 ### Step 5: Colors, recompute, fit view, save
 
-Set `ShapeColor` from category mappings or RGBA. Call `doc.recompute()`, switch to isometric,
-execute `fitAll()`, save to target path.
+Set `ShapeColor` from RGBA and `Transparency = 40` on each component solid. Call
+`doc.recompute()`, switch to isometric, execute `fitAll()`, save to target path.
+
+```python
+obj.ViewObject.ShapeColor = (r, g, b, a)
+obj.ViewObject.Transparency = 40
+```
 
 ## Rules
 

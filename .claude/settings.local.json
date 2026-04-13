@@ -6,7 +6,14 @@
       "Bash(read f:*)",
       "Bash(grep -n \"install.face\\\\|mount_face\\\\|envelope_face\\\\|0\\\\.\\\\.5\\\\|0\\\\.\\\\.11\\\\|face.*6\\\\|face.*7\" /d/workspace/skills_test/freecad_cli_tools/tests/*.py)",
       "Bash(python -m pytest tests/ -x -q)",
-      "Bash(python -m pytest tests/ -q)"
+      "Bash(python -m pytest tests/ -q)",
+      "Bash(freecad-exec-code:*)",
+      "Bash(grep -l \"Test002\\\\|P021\\\\|P022\" D:/workspace/skills_test/data/*.yaml D:/workspace/skills_test/examples/*.yaml)",
+      "Bash(freecad-check-collision \"Test002\")",
+      "Bash(freecad-check-collision Test002:*)",
+      "Bash(xargs grep:*)",
+      "Bash(find:*)",
+      "Skill(update-config)"
     ]
   }
 }
