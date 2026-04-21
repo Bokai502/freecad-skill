@@ -43,8 +43,8 @@ except Exception:
 For each component:
 1. Create `App::Part` sub-container, attach to assembly
 2. Create shape based on YAML `shape` field (`Part::Box` for box, `Part::Cylinder` for cylinder)
-3. Set dimensions from `dims` and position from `placement.position`
-4. If `placement.rotation_matrix` exists, apply it to the object placement
+3. Set dimensions from `dims` and position from `placement.position`. Boxes are axis-aligned; `dims[0..2]` map directly to world X/Y/Z extents.
+4. For cylinders, derive the axis rotation from `placement.mount_face` via the canonical `CYLINDER_AXIS_ROTATIONS` table.
 5. Attach shape to sub-part
 
 ### Step 4: Create envelope (when YAML provides one)
@@ -58,10 +58,11 @@ envelope_shell.ViewObject.LineColor = (0.2, 0.5, 0.9, 0.0)  # steel blue
 envelope_shell.ViewObject.LineWidth = 2.0
 ```
 
-### Step 5: Colors, recompute, fit view, save
+### Step 5: Colors, recompute, fit view, export
 
 Set `ShapeColor` from RGBA and `Transparency = 40` on each component solid. Call
-`doc.recompute()`, switch to isometric, execute `fitAll()`, save to target path.
+`doc.recompute()`, switch to isometric, execute `fitAll()`, export the assembly to the
+target `STEP` path via `Import.export([assembly], path)`.
 
 ```python
 obj.ViewObject.ShapeColor = (r, g, b, a)

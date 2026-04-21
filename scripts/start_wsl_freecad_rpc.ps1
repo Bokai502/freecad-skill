@@ -23,8 +23,9 @@ $scriptMap = @{
 
 $selectedScript = $scriptMap[$Mode]
 
-wsl -d Ubuntu-24.04 -- bash -lc @"
-cp '$($selectedScript.Source)' '$($selectedScript.Target)'
-chmod +x '$($selectedScript.Target)'
-'$($selectedScript.Target)'
-"@
+$src = $selectedScript.Source
+$tgt = $selectedScript.Target
+
+wsl -d Ubuntu-24.04 -u root -- bash -c "tr -d '\r' < '$src' > '$tgt'"
+wsl -d Ubuntu-24.04 -u root -- bash -c "chmod +x '$tgt'"
+wsl -d Ubuntu-24.04 -u root -- bash -l "$tgt"

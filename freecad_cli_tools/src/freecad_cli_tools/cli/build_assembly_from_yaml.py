@@ -24,7 +24,10 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        help="Optional output FCStd path. Defaults to '<doc-name>.FCStd' beside the YAML file.",
+        help=(
+            "Optional output STEP path. Defaults to '<doc-name>.step' beside the "
+            "YAML file, and also writes a sibling '<doc-name>.glb'."
+        ),
     )
     parser.add_argument(
         "--view",
@@ -46,7 +49,7 @@ def main() -> None:
     output_path = (
         Path(args.output)
         if args.output
-        else input_path.with_name(f"{args.doc_name}.FCStd")
+        else input_path.with_name(f"{args.doc_name}.step")
     )
 
     code = render_rpc_script(

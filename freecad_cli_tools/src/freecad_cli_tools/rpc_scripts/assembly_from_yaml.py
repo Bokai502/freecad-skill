@@ -3,6 +3,8 @@ from pathlib import Path
 
 import FreeCAD
 import FreeCADGui
+import Import
+import ImportGui
 import Part
 import yaml
 
@@ -92,14 +94,44 @@ def apply_color(obj, color):
     obj.ViewObject.Transparency = 40
 
 
+def export_step_and_glb(objects, step_path):
+    step_path = str(Path(step_path))
+    glb_path = str(Path(step_path).with_suffix(".glb"))
+
+    Import.export(objects, step_path)
+
+    export_options = None
+    if hasattr(ImportGui, "exportOptions"):
+        try:
+            export_options = ImportGui.exportOptions("glTF")
+        except Exception:
+            export_options = None
+
+    if export_options is None:
+        ImportGui.export(objects, glb_path)
+    else:
+        try:
+            ImportGui.export(objects, glb_path, export_options)
+        except TypeError:
+            ImportGui.export(objects, glb_path)
+
+    return step_path, glb_path
+
+
 path = Path(YAML_PATH)
 with path.open("r", encoding="utf-8") as handle:
     data = yaml.safe_load(handle)
 
-if DOC_NAME in FreeCAD.listDocuments():
-    FreeCAD.closeDocument(DOC_NAME)
+for _name, _d in list(FreeCAD.listDocuments().items()):
+    if _name == DOC_NAME or getattr(_d, "Label", "") == DOC_NAME:
+        try:
+            FreeCAD.closeDocument(_name)
+        except Exception:
+            pass
 
 doc = FreeCAD.newDocument(DOC_NAME)
+if doc.Label != DOC_NAME:
+    doc.Label = DOC_NAME
 FreeCAD.setActiveDocument(doc.Name)
 
 try:
@@ -138,7 +170,7 @@ for component_id, component in data.get("components", {}).items():
     created.append(component_id)
 
 doc.recompute()
-doc.saveAs(SAVE_PATH)
+save_path, glb_path = export_step_and_glb([assembly], SAVE_PATH)
 
 view_updated = False
 if FIT_VIEW:
@@ -148,8 +180,9 @@ print(
     json.dumps(
         {
             "success": True,
-            "document": DOC_NAME,
-            "save_path": SAVE_PATH,
+            "document": doc.Name,
+            "save_path": save_path,
+            "glb_path": glb_path,
             "component_count": len(created),
             "envelope_object": envelope_name,
             "view_name": VIEW_NAME,

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "freecad-cli-tools"
-version = "0.9.0"
+version = "0.10.0"
 description = "Command-line tools for FreeCAD RPC interaction"
 readme = "README.md"
 license = {text = "MIT"}
@@ -51,6 +51,8 @@ freecad-move-obj = "freecad_cli_tools.cli.move_document_object:main"
 freecad-check-collision = "freecad_cli_tools.cli.check_document_collisions:main"
 freecad-yaml-safe-move = "freecad_cli_tools.cli.yaml_component_safe_move:main"
 freecad-sync-placements = "freecad_cli_tools.cli.sync_component_placements:main"
+freecad-migrate-placement = "freecad_cli_tools.cli.migrate_placement_schema:main"
+freecad-replace-component = "freecad_cli_tools.cli.replace_component:main"
 
 [project.urls]
 Homepage = "https://github.com/freecad-mcp/freecad-cli-tools"

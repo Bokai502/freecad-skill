@@ -11,6 +11,8 @@ from typing import Any
 
 _VALID_FACE_IDS = frozenset(range(12))
 _VALID_SHAPES = frozenset(("box", "cylinder"))
+_VALID_AXES = frozenset(("x", "y", "z"))
+_VALID_FLANGE_SIGNS = frozenset((-1, 1))
 
 
 class AssemblyValidationError(ValueError):
@@ -79,6 +81,37 @@ def _validate_single_component(comp_id: str, comp: Any) -> None:
         )
     _validate_placement(comp_id, comp.get("placement"))
     _validate_dims(comp_id, comp, shape)
+    _validate_replacement(comp_id, comp.get("replacement"))
+
+
+def _validate_replacement(comp_id: str, replacement: Any) -> None:
+    if replacement is None:
+        return
+    if not isinstance(replacement, dict):
+        raise AssemblyValidationError(
+            f"Component '{comp_id}': 'replacement' must be a mapping (got "
+            f"{type(replacement).__name__})."
+        )
+    step_file = replacement.get("step_file")
+    if step_file is not None and not isinstance(step_file, str):
+        raise AssemblyValidationError(
+            f"Component '{comp_id}': 'replacement.step_file' must be a string "
+            f"(got {step_file!r})."
+        )
+    thrust_axis = replacement.get("thrust_axis")
+    if thrust_axis is not None:
+        if not isinstance(thrust_axis, str) or thrust_axis.lower() not in _VALID_AXES:
+            raise AssemblyValidationError(
+                f"Component '{comp_id}': 'replacement.thrust_axis' must be one of "
+                f"'x'/'y'/'z' (got {thrust_axis!r})."
+            )
+    flange_sign = replacement.get("flange_sign")
+    if flange_sign is not None:
+        if flange_sign not in _VALID_FLANGE_SIGNS:
+            raise AssemblyValidationError(
+                f"Component '{comp_id}': 'replacement.flange_sign' must be +1 or -1 "
+                f"(got {flange_sign!r})."
+            )
 
 
 def _validate_placement(comp_id: str, placement: Any) -> None:
@@ -100,26 +133,10 @@ def _validate_placement(comp_id: str, placement: Any) -> None:
         raise AssemblyValidationError(
             f"Component '{comp_id}': 'placement.position' values must be numbers (got {pos!r})."
         )
-    rm = placement.get("rotation_matrix")
-    if rm is not None:
-        if (
-            not isinstance(rm, list)
-            or len(rm) != 3
-            or not all(isinstance(row, list) and len(row) == 3 for row in rm)
-            or not all(isinstance(v, (int, float)) for row in rm for v in row)
-        ):
-            raise AssemblyValidationError(
-                f"Component '{comp_id}': 'rotation_matrix' must be a 3x3 list of numbers."
-            )
     mf = placement.get("mount_face")
     if mf is not None and mf not in _VALID_FACE_IDS:
         raise AssemblyValidationError(
             f"Component '{comp_id}': 'mount_face' must be an integer in 0..11 (got {mf!r})."
-        )
-    ef = placement.get("envelope_face")
-    if ef is not None and ef not in _VALID_FACE_IDS:
-        raise AssemblyValidationError(
-            f"Component '{comp_id}': 'envelope_face' must be an integer in 0..11 (got {ef!r})."
         )
     mp = placement.get("mount_point")
     if mp is not None:

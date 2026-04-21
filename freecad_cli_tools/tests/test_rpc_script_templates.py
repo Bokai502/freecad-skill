@@ -84,6 +84,14 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__RECOMPUTE__": "True",
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
     },
+    "replace_component.py": {
+        "__YAML_PATH__": _DUMMY_PATH,
+        "__ASSEMBLY_PATH__": _DUMMY_PATH,
+        "__REPLACEMENT_PATH__": _DUMMY_PATH,
+        "__COMPONENT_NAME__": _DUMMY_STR,
+        "__DOC_NAME__": _DUMMY_STR,
+        "__FIT_VIEW__": "True",
+    },
 }
 
 
@@ -99,6 +107,30 @@ def test_rendered_script_has_valid_syntax(script_name: str) -> None:
 
     # Must be valid Python
     compile(rendered, f"<rpc_scripts/{script_name}>", "exec")
+
+
+def test_replace_component_restores_scene_view_style() -> None:
+    rendered = render_rpc_script(
+        "replace_component.py", SCRIPT_REPLACEMENTS["replace_component.py"]
+    )
+
+    assert "def restore_replacement_style(obj, imported_style, fallback_color):" in rendered
+    assert "replacement_styles = capture_view_styles(new_objs)" in rendered
+    assert "replacement_styles.get(obj.Name)" in rendered
+    assert 'apply_color(obj, component_color, transparency=40)' in rendered
+    assert 'view.Transparency = 0' in rendered
+    assert "view.DiffuseColor = [rgba] * face_count" in rendered
+
+
+@pytest.mark.parametrize("script_name", ["assembly_from_yaml.py", "replace_component.py"])
+def test_exporting_scripts_also_emit_glb(script_name: str) -> None:
+    rendered = render_rpc_script(script_name, SCRIPT_REPLACEMENTS[script_name])
+
+    assert "def export_step_and_glb(objects, step_path):" in rendered
+    assert 'glb_path = str(Path(step_path).with_suffix(".glb"))' in rendered
+    assert "Import.export(objects, step_path)" in rendered
+    assert "ImportGui.export(objects, glb_path)" in rendered
+    assert '"glb_path": glb_path' in rendered
 
 
 def _no_unreplaced_placeholders(code: str) -> bool:

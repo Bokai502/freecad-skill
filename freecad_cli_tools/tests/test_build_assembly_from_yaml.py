@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -226,5 +227,9 @@ def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> No
     assert (
         "build_component_shape_spec"
         in captured["replacements"]["__COMPONENT_SHAPE_HELPERS__"]
+    )
+    expected_step = yaml_path.with_name("sample_0001.step")
+    assert captured["replacements"]["__SAVE_PATH__"] == json.dumps(
+        build_assembly_from_yaml.to_wsl_path(expected_step)
     )
     assert captured["code"] == "rendered-code"

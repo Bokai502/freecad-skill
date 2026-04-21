@@ -5,7 +5,7 @@
 - `scripts/`
   - 放启动和辅助脚本
 - `data/`
-  - 放 YAML、`FCStd`、截图等数据文件
+  - 放 YAML、`STEP`、截图等数据文件
 - `freecad_cli_tools/`
   - 放 CLI 工具源码
 - `skill_backups/`

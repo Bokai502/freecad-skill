@@ -7,7 +7,7 @@
 - `freecad_cli_tools/`: Python package that provides FreeCAD CLI commands, YAML-safe move logic, RPC helpers, tests, and package-level documentation.
 - `scripts/`: startup scripts, benchmarking utilities, and workspace-side helper scripts.
 - `examples/`: tracked example input files such as [sample.yaml](./examples/sample.yaml).
-- `data/`: runtime outputs such as generated FCStd files, updated YAML files, screenshots, and temporary verification artifacts. This directory is intentionally ignored by git.
+- `data/`: runtime outputs such as generated STEP files, updated YAML files, screenshots, and temporary verification artifacts. This directory is intentionally ignored by git.
 - `skill_backups/`: local backup of the current FreeCAD skill instructions.
 
 ## Key Capabilities
@@ -55,7 +55,7 @@ keeps the component on the outside of the shell, and still constrains motion to 
 2D footprint so it cannot slide past the wall edge.
 
 In the current workspace skill workflow, move and rotation operations update the existing YAML in
-place and save the current `FCStd` document in place instead of creating sibling output files by
+place and re-export the current `STEP` file in place instead of creating sibling output files by
 default.
 
 ### 5. Batch-sync multiple placements

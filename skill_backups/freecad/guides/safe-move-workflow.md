@@ -31,16 +31,6 @@ freecad-yaml-safe-move \
   --input data/sample.yaml --output data/sample.yaml \
   --component P002 --install-face 4 --move 0 0 0
 
-# In-place rotation on same face
-freecad-yaml-safe-move \
-  --input data/sample.yaml --output data/sample.yaml \
-  --component P002 --spin 90 --move 0 0 0
-
-# Combine face change + spin
-freecad-yaml-safe-move \
-  --input data/sample.yaml --output data/sample.yaml \
-  --component P002 --install-face 4 --spin 90 --move 0 0 0
-
 # With CAD sync
 freecad-yaml-safe-move \
   --input data/sample.yaml --output data/sample.yaml \
@@ -49,17 +39,16 @@ freecad-yaml-safe-move \
 ```
 
 **Behavior:**
-- Treats each component as an axis-aligned box (`placement.position` + `dims`).
-- Without `--install-face`: preserves orientation, in-plane safe move on current face.
-- With `--install-face <0..11>`: rotates component onto the target envelope face, centers it, then applies `--move` as in-plane offset. Faces 0–5 are internal (uses `inner_size`); faces 6–11 are external (uses `outer_size`).
-- With `--spin <degrees>`: rotates in-place around envelope-face normal (multiples of 90), keeps mount point fixed.
+- Treats each component as an axis-aligned box (`placement.position` + `dims`); `dims[0..2]` are world X/Y/Z extents.
+- Without `--install-face`: preserves current mount face, in-plane safe move on that face.
+- With `--install-face <0..11>`: moves the component onto the target envelope face and centers it, then applies `--move` as in-plane offset. Faces 0–5 are internal (uses `inner_size`); faces 6–11 are external (uses `outer_size`). To change in-plane orientation, reorder `dims` in the YAML — there is no `--spin` flag.
 - **Face boundary constraint**: the component's in-plane extents must stay within the face's 2D boundary (`±inner_size/2` for internal, `±outer_size/2` for external). Violations are reported as `ENVELOPE_BOUNDARY` (internal) or `FACE_BOUNDARY` (external) in the blockers list.
 - If full move is safe → applies directly. If collision or face boundary violation → searches for closest safe prefix.
 - If no safe point exists → writes the constrained result back to YAML (does not revert).
 - Without `--sync-cad`: pure offline YAML operation, no RPC needed.
 - With `--sync-cad`: pushes result into the live FreeCAD document after YAML write.
 
-**Output fields:** input/output paths, target component, requested move, safe status, blockers, `rotation_matrix`, `mount_point`, spin details, final position, CAD sync result.
+**Output fields:** input/output paths, target component, requested move, safe status, blockers, `mount_face`, `mount_point`, final position, CAD sync result.
 
 Read the output and convert it into a user-facing move summary.
 
@@ -80,10 +69,10 @@ Before mutation, record: the requested move, whether it can be applied exactly, 
 
 1. Run `freecad-yaml-safe-move` so the safe result overwrites the source YAML in place (same path for `--input` and `--output`).
 2. Run again with `--sync-cad --doc-name <doc>` to update the live CAD document.
-3. Save the FreeCAD document to its existing `FCStd` path.
+3. Re-export the FreeCAD document to its existing `STEP` path (`Import.export([assembly], path)`).
 4. Do **not** create a new assembly by default.
 
-Return: updated YAML path, updated FCStd path, document result, summary of move and any adjustment.
+Return: updated YAML path, updated STEP path, document result, summary of move and any adjustment.
 
 ### Document-Only Branch Execution
 
@@ -118,9 +107,9 @@ print(json.dumps({"old_position": old_pos, "new_position": [new.x, new.y, new.z]
 2. Re-run collision verification immediately after move (same global-shape method as pre-check).
 3. If post-move collision detected → surface failure, do not report success.
 4. Reflect final position back into source YAML if one exists.
-5. Save existing document to its current FCStd path.
+5. Re-export existing document to its current STEP path (`Import.export([assembly], path)`).
 
-Return: updated YAML path, updated FCStd path, document result, summary of move and any adjustment.
+Return: updated YAML path, updated STEP path, document result, summary of move and any adjustment.
 
 ## Step 4: Post-Move Verification
 

@@ -7,7 +7,7 @@
 - `freecad_cli_tools/`：Python 工具包，提供 FreeCAD CLI 命令、YAML 安全移动逻辑、RPC 辅助模块、测试和包级文档。
 - `scripts/`：启动脚本、性能基准脚本以及工作区级辅助脚本。
 - `examples/`：被版本控制跟踪的示例输入文件，例如 [sample.yaml](./examples/sample.yaml)。
-- `data/`：运行期输出目录，例如生成的 FCStd、更新后的 YAML、截图以及临时验证文件。该目录默认被 git 忽略。
+- `data/`：运行期输出目录，例如生成的 STEP、更新后的 YAML、截图以及临时验证文件。该目录默认被 git 忽略。
 - `skill_backups/`：当前 FreeCAD skill 指令的本地备份。
 
 ## 核心能力
@@ -53,7 +53,7 @@ freecad-yaml-safe-move --input examples\sample.yaml --output examples\sample.yam
 对于外部安装面，同一条命令会以 `envelope.outer_size` 作为墙面参考，让组件保持在壳体外侧，
 同时继续约束它只能在目标安装面的二维边界内移动，避免沿墙面滑出边缘。
 
-在当前工作区的 skill 流程中，移动和旋转操作默认会原地更新 YAML，并将当前 `FCStd` 文档原地保存，而不是默认再生成旁路输出文件。
+在当前工作区的 skill 流程中，移动和旋转操作默认会原地更新 YAML，并将当前 `STEP` 文件原地重新导出，而不是默认再生成旁路输出文件。
 
 ### 5. 批量同步多个位姿
 

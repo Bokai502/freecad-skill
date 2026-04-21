@@ -61,6 +61,9 @@ freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
 freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 ```
 
+`freecad-create-assembly` writes `<doc-name>.step` beside the YAML by default and also exports a
+same-stem `.glb` beside it. If you pass `--output`, the sibling `.glb` follows that STEP path.
+
 ## Recommended Move Workflow
 
 Use YAML as the source of truth whenever you have a configuration file:
@@ -103,6 +106,7 @@ This command creates:
 - an `Assembly` container
 - an `Envelope_part` with an `EnvelopeShell` when YAML `envelope` data exists
 - one `App::Part` plus one solid per component, currently `Part::Box` or `Part::Cylinder`
+- a `.step` export and a sibling `.glb` export for the assembly
 - an automatic fitted GUI view after generation
 
 The command treats `placement.position` as the component local-bounds minimum corner and performs translation-only
@@ -129,8 +133,8 @@ segment would cross that footprint, the command truncates the move to the closes
 includes `FACE_BOUNDARY` in the blocker list.
 
 In the `skills_test` workspace workflow, move and rotation requests now default to overwriting the
-source YAML path and saving the existing `FCStd` document in place after sync unless the user
-explicitly asks for a separate rebuilt output.
+source YAML path and re-exporting the existing `STEP` file in place, plus a sibling `.glb`, after
+sync unless the user explicitly asks for a separate rebuilt output.
 
 On this machine, FreeCAD may run inside WSL while the CLI runs on Windows. In that setup:
 

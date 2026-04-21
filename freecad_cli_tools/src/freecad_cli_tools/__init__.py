@@ -4,7 +4,7 @@ FreeCAD CLI Tools - A shared package for FreeCAD command-line utilities.
 This package provides common utilities for interacting with FreeCAD via XML-RPC.
 """
 
-__version__ = "0.9.0"
+__version__ = "0.10.0"
 __author__ = "FreeCAD MCP Team"
 
 from .rpc_client import (

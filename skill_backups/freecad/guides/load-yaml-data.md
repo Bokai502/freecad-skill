@@ -16,8 +16,9 @@ components:
       position: [x, y, z]
 ```
 
-Fields like `mass`, `power`, `mount_face`, `mount_point`, and `rotation_matrix` may be present in the YAML
-but are not all used directly for geometry generation.
+Fields like `mass`, `power`, `mount_face`, and `mount_point` may be present in the YAML
+but are not all used directly for geometry generation. Boxes are axis-aligned (no stored rotation);
+cylinder axis orientation is derived from `mount_face`.
 
 ## Workflow
 
@@ -44,9 +45,9 @@ Key patterns:
 - Create shapes based on `shape` field: `Part::Box` for `box`, `Part::Cylinder` for `cylinder`
 - For box: set `Length`, `Width`, `Height` from `dims`
 - For cylinder: set `Radius`, `Height` from `dims`
-- Apply `placement.position` to `Placement.Base`
-- Apply `placement.rotation_matrix` when present
+- Apply `placement.position` to `Placement.Base` (boxes remain axis-aligned)
+- For cylinders, apply rotation derived from `placement.mount_face` (canonical `CYLINDER_AXIS_ROTATIONS`)
 - Create envelope shell when YAML `envelope` data exists
 - Set `ShapeColor` from `color`
 - Fit GUI view after generation
-- Save the document
+- Export the assembly to a `STEP` file via `Import.export([assembly], path)`

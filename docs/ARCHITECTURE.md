@@ -55,7 +55,7 @@ flowchart TD
     N --> O["Render Batch Sync RPC Script"]
     O --> P["Update One Or More Objects In FreeCAD"]
     P --> Q["Optional Single Recompute"]
-    Q --> R["Save Existing FCStd Document"]
+    Q --> R["Re-export Existing STEP File"]
     R --> S["Return Final Result"]
 ```
 
@@ -88,7 +88,7 @@ sequenceDiagram
         F-->>X: Return JSON result
         X-->>S: Parsed payload
         S-->>C: Sync success/failure
-        C->>F: Save current FCStd document in place
+        C->>F: Re-export current STEP file in place
     end
 
     C-->>K: Safe move result and updated file paths
@@ -101,7 +101,7 @@ sequenceDiagram
 - `data/` stores generated files and verification outputs, and is intentionally ignored by git.
 - `freecad-yaml-safe-move` is the YAML-first path for collision-aware movement.
 - `freecad-sync-placements` is the reusable batch placement path for faster multi-component updates.
-- The current skill workflow overwrites the existing YAML and saves the existing `FCStd` document in place for move/rotate requests.
+- The current skill workflow overwrites the existing YAML and re-exports the existing `STEP` file in place for move/rotate requests.
 
 ## 中文说明
 

@@ -75,7 +75,7 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 
 `freecad-yaml-safe-move` 是面向 YAML 的主移动命令。它既可以离线处理 YAML，也可以把批准后的结果同步到正在运行的 FreeCAD 文档里。
 
-在 `skills_test` 工作区流程中，移动和旋转请求默认会覆盖源 YAML，并在同步后把现有 `FCStd` 文档原地保存；只有在用户明确要求时，才额外产出新的重建文件。
+在 `skills_test` 工作区流程中，移动和旋转请求默认会覆盖源 YAML，并在同步后把现有 `STEP` 文件原地重新导出；只有在用户明确要求时，才额外产出新的重建文件。
 
 适用场景包括：
 

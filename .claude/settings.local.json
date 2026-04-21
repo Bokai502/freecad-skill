@@ -13,7 +13,10 @@
       "Bash(freecad-check-collision Test002:*)",
       "Bash(xargs grep:*)",
       "Bash(find:*)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Skill(freecad)",
+      "Bash(freecad-get-view:*)",
+      "WebFetch(domain:zhuanlan.zhihu.com)"
     ]
   }
 }

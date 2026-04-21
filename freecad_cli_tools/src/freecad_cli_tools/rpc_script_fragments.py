@@ -155,7 +155,7 @@ def build_component_shape_spec(component_id, component):
         raise RuntimeError(f"Missing placement.position for {component_id}")
 
     position = [float(value) for value in placement["position"]]
-    rotation_rows = normalize_rotation_rows(placement.get("rotation_matrix"))
+    rotation_rows = normalize_rotation_rows(None)
     dims = component.get("dims")
 
     if shape == "box":

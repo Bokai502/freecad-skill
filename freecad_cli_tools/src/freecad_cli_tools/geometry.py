@@ -66,12 +66,6 @@ CYLINDER_AXIS_ROTATIONS = {
     2: IDENTITY_ROTATION,
 }
 
-POSITIVE_AXIS_QUARTER_TURNS = {
-    0: [[1, 0, 0], [0, 0, -1], [0, 1, 0]],
-    1: [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
-    2: [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
-}
-
 FALLBACK_SAMPLE_COUNT = 256
 FALLBACK_BISECTION_STEPS = 24
 
@@ -129,13 +123,6 @@ def multiply_rotation_matrices(
     ]
 
 
-def rotation_power(matrix: list[list[int]], turns: int) -> list[list[int]]:
-    result = [row[:] for row in IDENTITY_ROTATION]
-    for _ in range(turns % 4):
-        result = multiply_rotation_matrices(matrix, result)
-    return result
-
-
 # ---------------------------------------------------------------------------
 # Component data accessors
 # ---------------------------------------------------------------------------
@@ -161,12 +148,12 @@ def component_mount_face(component: dict) -> int:
 
 
 def envelope_face(component: dict) -> int:
-    """Return the envelope installation face (0–11) for a component."""
+    """Return the installation face (0–11) for a component."""
     placement = component.get("placement", {})
-    face = placement.get("envelope_face", placement.get("mount_face"))
+    face = placement.get("mount_face")
     if face not in FACE_DEFINITIONS:
         raise ValueError(
-            f"Invalid or missing envelope_face {face!r}. Expected an integer in 0..11."
+            f"Invalid or missing mount_face {face!r}. Expected an integer in 0..11."
         )
     return face
 
@@ -179,11 +166,15 @@ def face_normal(face_id: int) -> list[int]:
 
 
 def rotation_matrix_from_component(component: dict) -> list[list[int]]:
-    placement = component.get("placement", {})
-    matrix = placement.get("rotation_matrix")
-    if matrix is None:
-        return [row[:] for row in IDENTITY_ROTATION]
-    return [[int(value) for value in row] for row in matrix]
+    """Return the component's world-frame rotation matrix.
+
+    Under the current schema boxes are always axis-aligned with world axes;
+    ``dims[0..2]`` are the world X/Y/Z extents and ``mount_face`` only selects
+    which envelope wall the box touches. Orientation is therefore always the
+    identity matrix. The helper is kept so callers can stay symmetric with
+    cylinders, which still apply an axis-alignment rotation downstream.
+    """
+    return [row[:] for row in IDENTITY_ROTATION]
 
 
 # ---------------------------------------------------------------------------
@@ -495,33 +486,6 @@ def choose_rotation(component_face: int, target_envelope_face: int) -> list[list
         key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True
     )
     return candidates[0]
-
-
-def normalize_spin_quarter_turns(spin_degrees: int) -> int:
-    if spin_degrees % 90 != 0:
-        raise ValueError("--spin must be a multiple of 90 degrees.")
-    return (spin_degrees // 90) % 4
-
-
-def spin_rotation_for_envelope_face(
-    target_envelope_face: int, spin_quarter_turns: int
-) -> list[list[int]]:
-    _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
-    effective_turns = (spin_quarter_turns * direction) % 4
-    return rotation_power(POSITIVE_AXIS_QUARTER_TURNS[axis], effective_turns)
-
-
-def apply_in_plane_spin(
-    base_rotation: list[list[int]],
-    target_envelope_face: int,
-    spin_quarter_turns: int,
-) -> list[list[int]]:
-    if spin_quarter_turns % 4 == 0:
-        return [row[:] for row in base_rotation]
-    spin_matrix = spin_rotation_for_envelope_face(
-        target_envelope_face, spin_quarter_turns
-    )
-    return multiply_rotation_matrices(spin_matrix, base_rotation)
 
 
 def position_for_mount_point(
@@ -985,18 +949,18 @@ def update_component_placement(
     data: dict,
     component_id: str,
     position: list[float],
-    component_mount_face: int,
-    envelope_face_id: int,
-    rotation_matrix: list[list[int]],
+    install_face: int,
 ) -> dict:
     updated = deepcopy(data)
     component = updated["components"][component_id]
     extents = component_local_extents(component_id, component)
+    contact_face = component_contact_face(install_face)
+    rotation_matrix = rotation_matrix_from_component(component)
     component["placement"]["position"] = position
-    component["placement"]["mount_face"] = component_mount_face
-    component["placement"]["envelope_face"] = envelope_face_id
-    component["placement"]["rotation_matrix"] = rotation_matrix
+    component["placement"]["mount_face"] = install_face
+    component["placement"].pop("envelope_face", None)
+    component["placement"].pop("rotation_matrix", None)
     component["placement"]["mount_point"] = compute_mount_point(
-        position, extents, component_mount_face, rotation_matrix
+        position, extents, contact_face, rotation_matrix
     )
     return updated

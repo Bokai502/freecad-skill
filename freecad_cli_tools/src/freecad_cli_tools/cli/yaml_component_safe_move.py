@@ -13,7 +13,6 @@ from freecad_cli_tools.freecad_sync import execute_batch_sync
 from freecad_cli_tools.geometry import (
     FACE_DEFINITIONS,
     analyze_position,
-    apply_in_plane_spin,
     build_analysis_context,
     centered_face_position,
     component_local_extents,
@@ -24,9 +23,6 @@ from freecad_cli_tools.geometry import (
     find_best_safe_scale,
     get_face_data,
     is_external_face,
-    mount_point_from_component,
-    normalize_spin_quarter_turns,
-    position_for_mount_point,
     project_move_to_mount_plane,
     rotation_matrix_from_component,
     update_component_placement,
@@ -70,16 +66,6 @@ def parse_args() -> argparse.Namespace:
             "Optional target envelope face for reorientation. When supplied, the component is "
             "rotated so its own mount_face is installed onto the specified envelope face and "
             "placed at the center of that face."
-        ),
-    )
-    parser.add_argument(
-        "--spin",
-        type=int,
-        default=0,
-        help=(
-            "Optional in-plane rotation in degrees around the installed face normal. "
-            "Must be a multiple of 90. Keeps the mount point fixed and may be used "
-            "with or without --install-face."
         ),
     )
     parser.add_argument(
@@ -169,7 +155,6 @@ def main() -> int:
     input_path = Path(args.input)
     output_path = Path(args.output)
     move = [float(value) for value in args.move]
-    spin_quarter_turns = normalize_spin_quarter_turns(args.spin)
 
     data = load_yaml(input_path)
     validate_assembly(data)
@@ -184,7 +169,6 @@ def main() -> int:
     component_face = component_mount_face(target)
     target_extents = component_local_extents(args.component, target)
     original_envelope_face = envelope_face(target)
-    original_rotation_matrix = rotation_matrix_from_component(target)
     target_envelope_face = (
         args.install_face if args.install_face is not None else original_envelope_face
     )
@@ -202,65 +186,29 @@ def main() -> int:
     else:
         wall_size = list(data["envelope"]["inner_size"])
 
+    target_rotation_matrix = rotation_matrix_from_component(target)
     if args.install_face is not None:
-        base_position, start_mount_point, base_rotation_matrix = centered_face_position(
+        base_position, _, _ = centered_face_position(
             target_extents,
             wall_size,
             component_face,
             target_envelope_face,
         )
-        target_rotation_matrix = apply_in_plane_spin(
-            base_rotation_matrix,
-            target_envelope_face,
-            spin_quarter_turns,
-        )
-        start_position = (
-            base_position
-            if spin_quarter_turns == 0
-            else position_for_mount_point(
-                start_mount_point,
-                target_extents,
-                component_face,
-                target_rotation_matrix,
-            )
-        )
         start_position = constrain_position_to_envelope_face(
-            start_position,
+            base_position,
             target_extents,
             wall_size,
             target_envelope_face,
             target_rotation_matrix,
         )
     else:
-        if spin_quarter_turns == 0:
-            target_rotation_matrix = original_rotation_matrix
-            start_position = constrain_position_to_envelope_face(
-                target["placement"]["position"],
-                target_extents,
-                wall_size,
-                target_envelope_face,
-                target_rotation_matrix,
-            )
-        else:
-            start_mount_point = mount_point_from_component(args.component, target)
-            target_rotation_matrix = apply_in_plane_spin(
-                original_rotation_matrix,
-                target_envelope_face,
-                spin_quarter_turns,
-            )
-            start_position = position_for_mount_point(
-                start_mount_point,
-                target_extents,
-                component_face,
-                target_rotation_matrix,
-            )
-            start_position = constrain_position_to_envelope_face(
-                start_position,
-                target_extents,
-                wall_size,
-                target_envelope_face,
-                target_rotation_matrix,
-            )
+        start_position = constrain_position_to_envelope_face(
+            target["placement"]["position"],
+            target_extents,
+            wall_size,
+            target_envelope_face,
+            target_rotation_matrix,
+        )
 
     effective_move, normal_component_ignored = project_move_to_mount_plane(
         move, target_axis
@@ -313,9 +261,7 @@ def main() -> int:
         data,
         args.component,
         final_position,
-        component_face,
         target_envelope_face,
-        target_rotation_matrix,
     )
     save_yaml(output_path, updated)
 
@@ -347,13 +293,7 @@ def main() -> int:
     print(f"target_envelope_face: {target_envelope_face}")
     print(f"target_envelope_face_label: {target_face_label}")
     print("orientation_change_supported: True")
-    print(
-        "orientation_change_applied: "
-        f"{args.install_face is not None or spin_quarter_turns != 0}"
-    )
-    print(f"in_plane_spin_degrees_requested: {args.spin}")
-    print(f"in_plane_spin_quarter_turns_applied: {spin_quarter_turns}")
-    print(f"original_rotation_matrix: {original_rotation_matrix}")
+    print(f"orientation_change_applied: {args.install_face is not None}")
     print(f"rotation_matrix: {target_rotation_matrix}")
     print(f"normal_move_component_ignored: {normal_component_ignored}")
     print(f"original_position: {target['placement']['position']}")

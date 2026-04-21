@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(freecad-replace-component --yaml \"D:\\\\workspace\\\\skills_test\\\\examples\\\\sample_modified.yaml\" --assembly \"D:\\\\workspace\\\\skills_test\\\\examples\\\\SampleModifiedAssembly.step\" --replacement \"D:\\\\workspace\\\\skills_test\\\\DawnAerospace_B1_Thruster.STEP\" --name P022)",
+      "Bash(freecad-get-objs --doc-name SampleModifiedAssembly)",
+      "Bash(freecad-get-objs SampleModifiedAssembly)",
+      "Edit(~/.claude/skills/freecad/**)",
+      "Bash(freecad-replace-component --yaml \"D:\\\\workspace\\\\skills_test\\\\examples\\\\sample_modified.yaml\" --assembly \"D:\\\\workspace\\\\skills_test\\\\examples\\\\SampleModifiedAssembly.step\" --replacement \"D:\\\\workspace\\\\skills_test\\\\DawnAerospace_B1_Thruster.STEP\" --name P099)",
+      "Bash(freecad-create-assembly --input \"D:\\\\workspace\\\\skills_test\\\\examples\\\\sample_modified.yaml\" --doc-name SampleModifiedAssembly --output \"D:\\\\workspace\\\\skills_test\\\\examples\\\\SampleModifiedAssembly.step\")",
+      "Bash(freecad-create-assembly --yaml \"D:\\\\workspace\\\\skills_test\\\\examples\\\\sample_modified.yaml\" --output \"D:\\\\workspace\\\\skills_test\\\\examples\\\\SampleModifiedAssembly.step\" --doc-name SampleModifiedAssembly)",
+      "Bash(freecad-create-assembly --input \"D:\\\\workspace\\\\skills_test\\\\examples\\\\sample_modified.yaml\" --output \"D:\\\\workspace\\\\skills_test\\\\examples\\\\SampleModifiedAssembly.step\" --doc-name SampleModifiedAssembly)",
+      "Bash(freecad-get-objs)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\dell\\.claude\\skills\\freecad\\guides"
+    ]
+  }
+}
