@@ -13,7 +13,6 @@ from freecad_cli_tools.artifact_registry import (
 from freecad_cli_tools.cli_support import (
     describe_rpc_failure,
     extract_output_payload,
-    load_json_input,
     normalize_runtime_path,
 )
 from freecad_cli_tools.runtime_config import (
@@ -21,15 +20,6 @@ from freecad_cli_tools.runtime_config import (
     get_default_runtime_data_dir,
     parse_runtime_config,
 )
-
-
-def test_load_json_input_accepts_utf8_bom_file(tmp_path: Path) -> None:
-    json_path = tmp_path / "updates.json"
-    json_path.write_text('[{"component": "P001"}]', encoding="utf-8-sig")
-
-    payload = load_json_input(file_path=str(json_path))
-
-    assert payload == [{"component": "P001"}]
 
 
 def test_parse_runtime_config_ignores_comments_and_blank_lines(tmp_path: Path) -> None:

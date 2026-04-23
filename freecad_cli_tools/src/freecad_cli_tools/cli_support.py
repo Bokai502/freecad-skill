@@ -2,18 +2,14 @@
 
 from __future__ import annotations
 
-import base64
 import errno
 import json
 import socket
-import sys
 import xmlrpc.client
 from pathlib import Path
 from typing import Any
 
 from .rpc_client import get_connection
-from .rpc_client import print_result as print_json
-from .runtime_config import get_runtime_setting
 
 OUTPUT_MARKER = "Output:"
 
@@ -86,25 +82,6 @@ def call_rpc_method(
     conn = get_connection(host, port, verify=verify_connection)
     method = getattr(conn, method_name)
     return method(*method_args)
-
-
-def call_rpc_from_args(args: Any, method_name: str, *method_args: Any) -> Any:
-    """Call a named RPC method using a CLI namespace with host/port attributes."""
-    return call_rpc_method(args.host, args.port, method_name, *method_args)
-
-
-def run_rpc_command(
-    args: Any,
-    method_name: str,
-    *method_args: Any,
-    require_success: bool = False,
-) -> Any:
-    """Run an RPC method, print the JSON result, and optionally fail on success=false."""
-    result = call_rpc_from_args(args, method_name, *method_args)
-    print_json(result)
-    if require_success:
-        exit_on_failure(result)
-    return result
 
 
 def describe_rpc_failure(result: Any) -> str:
@@ -181,60 +158,6 @@ def execute_script_payload(host: str, port: int, code: str) -> dict:
     return extract_output_payload(result)
 
 
-def run_script_command(args: Any, code: str, require_success: bool = True) -> dict:
-    """Execute a Python script in FreeCAD, print the parsed payload, and optionally fail."""
-    try:
-        payload = execute_script_payload(args.host, args.port, code)
-    except Exception as exc:
-        print(f"ERROR: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
-
-    print_json(payload)
-    if require_success:
-        exit_on_failure(payload)
-    return payload
-
-
-def load_json_input(raw_value: str = "{}", *, file_path: str | None = None) -> Any:
-    """Load JSON either from an inline string or from a file."""
-    if file_path:
-        with Path(file_path).open("r", encoding="utf-8-sig") as handle:
-            return json.load(handle)
-    return json.loads(raw_value)
-
-
-def read_text_input(
-    raw_value: str | None = None,
-    *,
-    file_path: str | None = None,
-    allow_stdin: bool = False,
-) -> str:
-    """Read text from a file, an inline value, or stdin."""
-    if file_path:
-        return Path(file_path).read_text(encoding="utf-8")
-    if raw_value is not None:
-        return raw_value
-    if allow_stdin:
-        return sys.stdin.read()
-    return ""
-
-
-def require_non_empty_text(text: str, *, error_message: str) -> str:
-    """Exit with a friendly error when required text input is empty."""
-    if text.strip():
-        return text
-    print(error_message, file=sys.stderr)
-    raise SystemExit(1)
-
-
 def normalize_runtime_path(path: Path) -> str:
     """Return a resolved path string visible to the local FreeCAD runtime."""
     return str(path.resolve())
-
-
-def write_base64_file(encoded_data: str, output_path: str | Path) -> Path:
-    """Decode a base64 payload and write it to disk."""
-    target = Path(output_path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(base64.b64decode(encoded_data))
-    return target

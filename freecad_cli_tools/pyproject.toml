@@ -34,24 +34,8 @@ dev = [
 ]
 
 [project.scripts]
-# CLI commands will be added here
-freecad-create-doc = "freecad_cli_tools.cli.create_document:main"
-freecad-list-docs = "freecad_cli_tools.cli.list_documents:main"
-freecad-create-obj = "freecad_cli_tools.cli.create_object:main"
-freecad-edit-obj = "freecad_cli_tools.cli.edit_object:main"
-freecad-del-obj = "freecad_cli_tools.cli.delete_object:main"
-freecad-get-objs = "freecad_cli_tools.cli.get_objects:main"
-freecad-get-obj = "freecad_cli_tools.cli.get_object:main"
-freecad-get-parts = "freecad_cli_tools.cli.get_parts_list:main"
-freecad-insert-part = "freecad_cli_tools.cli.insert_part:main"
-freecad-exec-code = "freecad_cli_tools.cli.execute_code:main"
-freecad-get-view = "freecad_cli_tools.cli.get_view:main"
 freecad-create-assembly = "freecad_cli_tools.cli.build_assembly_from_yaml:main"
-freecad-move-obj = "freecad_cli_tools.cli.move_document_object:main"
-freecad-check-collision = "freecad_cli_tools.cli.check_document_collisions:main"
 freecad-yaml-safe-move = "freecad_cli_tools.cli.yaml_component_safe_move:main"
-freecad-sync-placements = "freecad_cli_tools.cli.sync_component_placements:main"
-freecad-migrate-placement = "freecad_cli_tools.cli.migrate_placement_schema:main"
 freecad-replace-component = "freecad_cli_tools.cli.replace_component:main"
 
 [project.urls]

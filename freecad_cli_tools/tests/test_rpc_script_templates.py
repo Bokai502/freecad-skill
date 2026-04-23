@@ -19,8 +19,6 @@ from freecad_cli_tools.rpc_script_loader import render_rpc_script
 
 _DUMMY_STR = json.dumps("dummy")
 _DUMMY_PATH = json.dumps("/tmp/dummy.yaml")
-_DUMMY_POS = json.dumps([0.0, 0.0, 0.0])
-_DUMMY_MATRIX = json.dumps([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
 _DUMMY_UPDATES = json.dumps(
     [
         {
@@ -42,48 +40,6 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__VIEW_NAME__": _DUMMY_STR,
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
         "__COMPONENT_SHAPE_HELPERS__": COMPONENT_SHAPE_HELPERS,
-    },
-    "check_document_collisions.py": {
-        "__DOC_NAME__": _DUMMY_STR,
-        "__OBJ_NAME__": _DUMMY_STR,
-        "__DX__": "0.0",
-        "__DY__": "0.0",
-        "__DZ__": "0.0",
-        "__VOLUME_EPS__": "1e-6",
-    },
-    "get_object.py": {
-        "__DOC_NAME__": _DUMMY_STR,
-        "__OBJ_NAME__": _DUMMY_STR,
-    },
-    "get_objects.py": {
-        "__DOC_NAME__": _DUMMY_STR,
-    },
-    "move_document_object.py": {
-        "__DOC_NAME__": _DUMMY_STR,
-        "__OBJ_NAME__": _DUMMY_STR,
-        "__MODE__": _DUMMY_STR,
-        "__X__": "0.0",
-        "__Y__": "0.0",
-        "__Z__": "0.0",
-    },
-    "sync_component_from_yaml.py": {
-        "__DOC_NAME__": _DUMMY_STR,
-        "__YAML_PATH__": _DUMMY_PATH,
-        "__COMPONENT_ID__": _DUMMY_STR,
-        "__SOLID_NAME__": _DUMMY_STR,
-        "__PART_NAME__": _DUMMY_STR,
-        "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
-    },
-    "sync_component_placement.py": {
-        "__DOC_NAME__": _DUMMY_STR,
-        "__YAML_PATH__": _DUMMY_PATH,
-        "__COMPONENT_ID__": _DUMMY_STR,
-        "__SOLID_NAME__": _DUMMY_STR,
-        "__PART_NAME__": _DUMMY_STR,
-        "__TARGET_POSITION__": _DUMMY_POS,
-        "__ROTATION_ROWS__": _DUMMY_MATRIX,
-        "__RECOMPUTE__": "True",
-        "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
     },
     "sync_component_placements.py": {
         "__DOC_NAME__": _DUMMY_STR,
@@ -127,6 +83,18 @@ def test_replace_component_restores_scene_view_style() -> None:
     assert 'apply_color(obj, component_color, transparency=40)' in rendered
     assert 'view.Transparency = 0' in rendered
     assert "view.DiffuseColor = [rgba] * face_count" in rendered
+
+
+def test_replace_component_preserves_non_target_placements() -> None:
+    rendered = render_rpc_script(
+        "replace_component.py", SCRIPT_REPLACEMENTS["replace_component.py"]
+    )
+
+    assert "def capture_assembly_placements(container, skip_names=None):" in rendered
+    assert "preserved_placements = capture_assembly_placements(" in rendered
+    assert 'skip_names={target_part.Name}' in rendered
+    assert "restored_placements = restore_captured_placements(doc, preserved_placements)" in rendered
+    assert '"restored_placements_count": len(restored_placements)' in rendered
 
 
 @pytest.mark.parametrize("script_name", ["assembly_from_yaml.py", "replace_component.py"])

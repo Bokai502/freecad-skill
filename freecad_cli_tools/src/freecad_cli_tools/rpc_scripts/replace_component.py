@@ -212,6 +212,72 @@ def create_component_part(doc, label):
     return part
 
 
+def serialize_placement(placement):
+    base = placement.Base
+    rotation = placement.Rotation.Q
+    return {
+        "base": [float(base.x), float(base.y), float(base.z)],
+        "rotation_q": [
+            float(rotation[0]),
+            float(rotation[1]),
+            float(rotation[2]),
+            float(rotation[3]),
+        ],
+    }
+
+
+def deserialize_placement(payload):
+    placement = FreeCAD.Placement()
+    base = payload.get("base", [0.0, 0.0, 0.0])
+    rotation_q = payload.get("rotation_q", [0.0, 0.0, 0.0, 1.0])
+    placement.Base = FreeCAD.Vector(
+        float(base[0]),
+        float(base[1]),
+        float(base[2]),
+    )
+    placement.Rotation = FreeCAD.Rotation(
+        float(rotation_q[0]),
+        float(rotation_q[1]),
+        float(rotation_q[2]),
+        float(rotation_q[3]),
+    )
+    return placement
+
+
+def capture_assembly_placements(container, skip_names=None):
+    skip_names = set(skip_names or ())
+    placements = {}
+    stack = [container]
+    while stack:
+        obj = stack.pop()
+        if obj is None:
+            continue
+        name = getattr(obj, "Name", "")
+        if name in skip_names:
+            continue
+        try:
+            placements[name] = serialize_placement(obj.Placement)
+        except Exception:
+            pass
+        children = list(getattr(obj, "Group", []) or [])
+        stack.extend(reversed(children))
+    return placements
+
+
+def restore_captured_placements(doc, placements):
+    restored = []
+    for name, payload in placements.items():
+        obj = doc.getObject(name)
+        if obj is None:
+            continue
+        try:
+            obj.Placement = deserialize_placement(payload)
+            restored.append(name)
+        except Exception:
+            pass
+    return restored
+
+
 def normalize_rgba(color):
     if not color or len(color) < 3:
         return None
@@ -512,6 +578,10 @@ try:
             f"Component '{COMPONENT_NAME}' not found in Assembly. "
             f"Available components: {available}"
         )
+    preserved_placements = capture_assembly_placements(
+        assembly,
+        skip_names={target_part.Name},
+    )
 
     # Import replacement STEP into the main document BEFORE removing the old
     # component. Validation, rotation, and translation are all computed while
@@ -638,6 +708,9 @@ try:
     assembly.addObject(container)
 
     doc.recompute()
+    restored_placements = restore_captured_placements(doc, preserved_placements)
+    if restored_placements:
+        doc.recompute()
 
     apply_scene_view_style(
         assembly,
@@ -673,6 +746,8 @@ try:
                 "removed_objects": removed_objects,
                 "new_objects": [o.Name for o in new_objs],
                 "container": container.Name,
+                "preserved_placements_count": len(preserved_placements),
+                "restored_placements_count": len(restored_placements),
                 "mount_face": mount_face,
                 "mount_axis": mount_axis,
                 "external": external,

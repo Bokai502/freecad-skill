@@ -1,6 +1,6 @@
 ---
 name: freecad
-description: "Unified FreeCAD skill for 3D modeling via RPC. Covers document management, object CRUD, Python code execution, view capture, parts library operations, YAML layout pre-processing, replace-component workflows, and safe move workflows."
+description: "Unified FreeCAD skill for YAML-first assembly generation, replace-component workflows, and safe move workflows."
 argument-hint: "[action] [args...]"
 allowed-tools: "Bash(*), Read, Write, Edit"
 ---
@@ -13,7 +13,7 @@ allowed-tools: "Bash(*), Read, Write, Edit"
 
 - FreeCAD must be running with the **FreeCADMCP addon** active, using the RPC host/port configured in `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` (currently `localhost:9876`).
 - Python environment: `base` (where `freecad-cli-tools` is installed).
-- Prefer packaged CLI entry points over ad hoc Python. If a CLI fails with a missing-module error, treat it as an environment problem and fall back to `freecad-exec-code` only as a temporary workaround.
+- Prefer packaged CLI entry points over ad hoc Python.
 
 ## Action Routing
 
@@ -21,18 +21,12 @@ Read the matching guide with the `Read` tool. Always prefer the highest-level wo
 
 | Intent | Guide |
 |--------|-------|
-| Document / object CRUD, parts library | `guides/crud-reference.md` |
-| Run arbitrary Python in FreeCAD | `guides/execute-code.md` |
-| Capture screenshots / visual review | `guides/get-view.md` |
-| Batch-create objects from YAML | `guides/load-yaml-data.md` |
 | Create assembly from YAML | `guides/create-assembly.md` |
 | Replace a placeholder component with a real STEP part | `guides/replace-component.md` |
 | **Move a part** (default entry point) | `guides/safe-move-workflow.md` |
-| Document-only collision analysis (no YAML) | `guides/check-collision.md` |
 
 ## Common Patterns
 
-- **New project**: `create-doc` -> `create-obj` -> `get-view`
 - **Move with safety**: `safe-move-workflow.md` (handles YAML and document branches)
 - **Build / rebuild from YAML**: `create-assembly.md` (only when user explicitly requests)
 - **Swap in a real CAD part**: `replace-component.md` (replaces one `<NAME>_part` in an existing assembly STEP)
@@ -52,12 +46,10 @@ All RPC commands accept `--host <host>` and `--port <port>`. Their defaults come
 - For any move request, prefer `safe-move-workflow.md` as the default entry point.
 - Analyze first, then execute the fully safe move or closest safe result. Report any adjustment clearly.
 - After any executed move, run a post-move collision verification before reporting success.
-- `freecad-check-collision` and `freecad-move-obj` are document-only fallbacks; use only when no YAML source exists.
 
 ### Orientation & Rotation
 - `--install-face <0..11>` places a component on a target envelope face. Faces `0..5` are internal (inside the envelope); faces `6..11` are external (outside the envelope, requires `envelope.outer_size` in YAML).
 - Boxes are always axis-aligned; `dims[0]`, `dims[1]`, `dims[2]` are world X/Y/Z extents. To reorient a box, reorder its `dims`.
-- Migrate legacy YAMLs carrying `envelope_face` or `rotation_matrix` with `freecad-migrate-placement --input <yaml> --in-place`.
 
 ### CAD Generation
 - `freecad-create-assembly` is for explicit rebuild only; do not use it as the default after a move.
@@ -67,15 +59,10 @@ All RPC commands accept `--host <host>` and `--port <port>`. Their defaults come
 - Always call `doc.recompute()` after geometry changes.
 - After generation, switch the GUI to a fitted view automatically.
 
-### Document Collision Checks
-- Treat `getGlobalPlacement()` as the source of truth. Local `Shape` and `BoundBox` can be stale when a parent container moves.
-- For container targets (`App::Part`, etc.), analyze descendant solids in global coordinates.
-
 ### File I/O
 - Use the shared runtime directory configured by `FREECAD_RUNTIME_DATA_DIR` in `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` for YAML inputs and generated artifacts (`STEP`, `GLB`, screenshots).
 - `freecad-create-assembly` stages YAML into the shared runtime directory automatically before RPC execution, then copies generated exports back to the requested output path.
 - Prefer first-class CLI commands over handwritten Python whenever the packaged command covers the task.
-- Prefer `--file` over inline code for complex scripts.
 
 ### Safety
 - Never auto-execute destructive actions (delete, unrelated overwrite) without user confirmation. Safe move execution is allowed after analysis.
@@ -84,6 +71,6 @@ All RPC commands accept `--host <host>` and `--port <port>`. Their defaults come
 ## Error Handling
 
 - **RPC connection failed**: Prompt user to check FreeCAD is running with the MCP addon active.
-- **CLI not found / import error**: Report environment problem; fall back to `freecad-exec-code` workflow.
+- **CLI not found / import error**: Report environment problem.
 - **`"success": false`**: Display the returned error details to the user.
 - **Post-move collision detected**: Surface the failure clearly; do not describe the move as successful.
