@@ -4,19 +4,22 @@ Provides connection management and result formatting for FreeCAD RPC calls.
 """
 
 import json
-import os
 import sys
 import xmlrpc.client
 from typing import Any, Dict, Optional
 
-DEFAULT_HOST = os.getenv("FREECAD_RPC_HOST", "localhost")
-DEFAULT_PORT = int(os.getenv("FREECAD_RPC_PORT", "9875"))
+from .runtime_config import get_default_rpc_host, get_default_rpc_port
+
+DEFAULT_HOST = get_default_rpc_host()
+DEFAULT_PORT = get_default_rpc_port()
 
 
 class FreeCADConnection:
     """Connection manager for FreeCAD RPC server."""
 
-    def __init__(self, host: str = DEFAULT_HOST, port: int = DEFAULT_PORT):
+    def __init__(self, host: str | None = None, port: int | None = None):
+        host = get_default_rpc_host() if host is None else host
+        port = get_default_rpc_port() if port is None else port
         self.server = xmlrpc.client.ServerProxy(
             f"http://{host}:{port}", allow_none=True
         )
@@ -79,26 +82,30 @@ class FreeCADConnection:
 
 def add_connection_args(parser: Any) -> None:
     """Add common FreeCAD RPC connection args to an argparse parser."""
+    default_host = get_default_rpc_host()
+    default_port = get_default_rpc_port()
     parser.add_argument(
         "--host",
-        default=DEFAULT_HOST,
-        help=f"FreeCAD RPC host (default: {DEFAULT_HOST})",
+        default=default_host,
+        help=f"FreeCAD RPC host (default: {default_host})",
     )
     parser.add_argument(
         "--port",
         type=int,
-        default=DEFAULT_PORT,
-        help=f"FreeCAD RPC port (default: {DEFAULT_PORT})",
+        default=default_port,
+        help=f"FreeCAD RPC port (default: {default_port})",
     )
 
 
 def get_connection(
-    host: str = DEFAULT_HOST,
-    port: int = DEFAULT_PORT,
+    host: str | None = None,
+    port: int | None = None,
     *,
     verify: bool = True,
 ) -> FreeCADConnection:
     """Create a connection to the FreeCAD RPC server, optionally verifying with ping."""
+    host = get_default_rpc_host() if host is None else host
+    port = get_default_rpc_port() if port is None else port
     conn = FreeCADConnection(host, port)
     if verify:
         try:

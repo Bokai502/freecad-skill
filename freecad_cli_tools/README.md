@@ -10,17 +10,17 @@ Chinese version: [README.zh-CN.md](./README.zh-CN.md)
 ### Method 1: Install from source
 
 ```bash
-cd D:\workspace\skills_test\freecad_cli_tools
-conda run -n base pip install -e .
+cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+python -m pip install -e .
 ```
 
 ### Method 2: Build and install wheel
 
 ```bash
-cd D:\workspace\skills_test\freecad_cli_tools
-conda run -n base pip install build
-conda run -n base python -m build
-conda run -n base pip install dist/freecad_cli_tools-*.whl
+cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+python -m pip install build
+python -m build
+python -m pip install dist/freecad_cli_tools-*.whl
 ```
 
 ## Usage
@@ -136,11 +136,7 @@ In the `skills_test` workspace workflow, move and rotation requests now default 
 source YAML path and re-exporting the existing `STEP` file in place, plus a sibling `.glb`, after
 sync unless the user explicitly asks for a separate rebuilt output.
 
-On this machine, FreeCAD may run inside WSL while the CLI runs on Windows. In that setup:
-
-- use the normal Windows path for `--input` and `--output`
-- the CLI still writes a YAML result to disk, but `--sync-cad` no longer requires FreeCAD to reopen that YAML file
-- if Windows `localhost:9875` forwarding is unstable, pass `--host <current-wsl-ip> --port 9875`
+RPC defaults are centralized in [../config/freecad_runtime.conf](../config/freecad_runtime.conf).
 
 For multi-component placement updates, `freecad-sync-placements` accepts a JSON list like:
 
@@ -173,7 +169,7 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 
 ## Requirements
 
-- For RPC commands: FreeCAD with the MCP addon running (RPC server on localhost:9875)
+- For RPC commands: FreeCAD with the MCP addon running on the host/port configured in [../config/freecad_runtime.conf](../config/freecad_runtime.conf) (currently `localhost:9876`)
 - For offline YAML-only use of `freecad-yaml-safe-move`: Python 3.9+ only
 - Python 3.9+
 

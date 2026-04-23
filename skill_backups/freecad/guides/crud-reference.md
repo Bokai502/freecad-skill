@@ -7,7 +7,7 @@ Quick reference for document management, object CRUD, and parts library operatio
 | Command | Usage | Description |
 |---------|-------|-------------|
 | `freecad-create-doc` | `freecad-create-doc "<name>"` | Create a new empty document |
-| `freecad-list-docs` | `freecad-list-docs` | List all open document names (JSON array) |
+| `freecad-list-docs` | `freecad-list-docs` | List open documents as `[{name, label}, ...]` |
 | `freecad-get-objs` | `freecad-get-objs "<doc>"` | List all objects in a document (JSON array) |
 | `freecad-get-obj` | `freecad-get-obj "<doc>" "<obj>"` | Get detailed properties of one object (JSON) |
 | `freecad-create-obj` | `freecad-create-obj "<doc>" "<type>" "<name>" -p '<json>'` | Create a new object |

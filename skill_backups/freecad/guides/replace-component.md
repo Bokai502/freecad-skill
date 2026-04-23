@@ -40,8 +40,8 @@ Both fields are optional; omit them to use the auto-detected defaults (bbox matc
 
 ```bash
 freecad-replace-component \
-  --yaml data/sample.yaml \
-  --assembly data/SampleAssembly.step \
+  --yaml <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
+  --assembly <FREECAD_RUNTIME_DATA_DIR>/SampleAssembly.step \
   --replacement parts/RealThruster.STEP \
   --name P022
 ```

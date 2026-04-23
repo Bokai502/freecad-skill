@@ -5,14 +5,13 @@
 ## What This Workspace Contains
 
 - `freecad_cli_tools/`: Python package that provides FreeCAD CLI commands, YAML-safe move logic, RPC helpers, tests, and package-level documentation.
-- `scripts/`: startup scripts, benchmarking utilities, and workspace-side helper scripts.
 - `examples/`: tracked example input files such as [sample.yaml](./examples/sample.yaml).
 - `data/`: runtime outputs such as generated STEP files, updated YAML files, screenshots, and temporary verification artifacts. This directory is intentionally ignored by git.
 - `skill_backups/`: local backup of the current FreeCAD skill instructions.
 
 ## Key Capabilities
 
-- Start FreeCAD in GUI or headless mode through WSL/WSLg.
+- Connect CLI tools to a locally running FreeCAD MCP/XML-RPC service.
 - Build FreeCAD assemblies from YAML definitions.
 - Move components safely with inner-envelope, external-face boundary, and collision constraints.
 - Sync one or many computed placements into a live FreeCAD document.
@@ -22,20 +21,16 @@
 
 ### 1. Start the FreeCAD RPC service
 
-```powershell
-& "D:\workspace\skills_test\scripts\start_wsl_freecad_rpc.ps1" -Gui
+```bash
+freecad
 ```
 
-For headless mode:
-
-```powershell
-& "D:\workspace\skills_test\scripts\start_wsl_freecad_rpc.ps1" -Mode Headless
-```
+Make sure the FreeCADMCP addon is installed and has started the XML-RPC service using the host/port configured in [config/freecad_runtime.conf](./config/freecad_runtime.conf) (currently `localhost:9876`).
 
 ### 2. Install the CLI package
 
-```powershell
-python -m pip install -e .\freecad_cli_tools[dev]
+```bash
+python -m pip install -e ./freecad_cli_tools[dev]
 ```
 
 ### 3. Create an assembly from YAML
@@ -71,16 +66,13 @@ freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.jso
 - Package guide (English): [freecad_cli_tools/README.md](./freecad_cli_tools/README.md)
 - Package guide (Chinese): [freecad_cli_tools/README.zh-CN.md](./freecad_cli_tools/README.zh-CN.md)
 - Architecture and workflow diagrams: [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md)
-- Startup guides:
-  - [FreeCAD Startup Overview (Chinese)](./FreeCAD_启动总览.md)
-  - [WSL_FreeCAD_Startup_Guide.md](./WSL_FreeCAD_Startup_Guide.md)
+- Startup guide: [FreeCAD Startup Overview (Chinese)](./FreeCAD_启动总览.md)
 
 ## Workspace Layout
 
 ```text
 skills_test/
 |-- freecad_cli_tools/      # CLI package, RPC helpers, tests
-|-- scripts/                # startup and benchmark scripts
 |-- examples/               # tracked sample inputs
 |-- data/                   # runtime outputs, ignored by git
 |-- docs/                   # architecture and flow diagrams

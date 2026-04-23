@@ -51,6 +51,13 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__DZ__": "0.0",
         "__VOLUME_EPS__": "1e-6",
     },
+    "get_object.py": {
+        "__DOC_NAME__": _DUMMY_STR,
+        "__OBJ_NAME__": _DUMMY_STR,
+    },
+    "get_objects.py": {
+        "__DOC_NAME__": _DUMMY_STR,
+    },
     "move_document_object.py": {
         "__DOC_NAME__": _DUMMY_STR,
         "__OBJ_NAME__": _DUMMY_STR,

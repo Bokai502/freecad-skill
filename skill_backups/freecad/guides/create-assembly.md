@@ -6,10 +6,16 @@ explicitly requests a rebuilt assembly.
 ## Preferred CLI
 
 ```bash
-freecad-create-assembly --input data/sample.yaml --doc-name SampleYamlAssembly
+freecad-create-assembly \
+  --input <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
+  --doc-name SampleYamlAssembly
 ```
 
 If unavailable, fall back to `freecad-exec-code --file`.
+
+The CLI stages the YAML into the shared runtime directory automatically and writes generated
+artifacts under `FREECAD_RUNTIME_DATA_DIR` from `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` by default
+unless `--output` is supplied.
 
 ## Target Hierarchy
 

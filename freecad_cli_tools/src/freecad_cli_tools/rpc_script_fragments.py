@@ -173,6 +173,9 @@ def build_component_shape_spec(component_id, component):
         }
 
     if shape == "cylinder":
+        placement_rotation_rows = normalize_rotation_rows(
+            placement.get("rotation_matrix")
+        )
         axis_index = cylinder_axis_index(placement.get("mount_face"))
         radius, height = infer_cylinder_radius_and_height(
             component_id,
@@ -189,11 +192,11 @@ def build_component_shape_spec(component_id, component):
 
         placement_position = translate_position(
             position,
-            rotation_rows,
+            placement_rotation_rows,
             cylinder_base_center_offset(axis_index, radius),
         )
         placement_rotation_rows = multiply_rotation_rows(
-            rotation_rows,
+            placement_rotation_rows,
             CYLINDER_AXIS_ROTATION_ROWS[axis_index],
         )
         return {

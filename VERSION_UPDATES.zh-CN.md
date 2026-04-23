@@ -27,8 +27,8 @@
 
 日期：2026-04-02
 
-- 在 [start_wsl_freecad_rpc.ps1](./scripts/start_wsl_freecad_rpc.ps1) 中加入 GUI / Headless 启动模式切换。
-- 新增 WSLg GUI 启动脚本 [start_freecad_gui_wsl.sh](./scripts/start_freecad_gui_wsl.sh)。
+- 在现已退役的 WSL 启动链路中加入 GUI / Headless 启动模式切换。
+- 在现已退役的启动链路中加入 WSLg GUI 启动路径。
 - 更新 FreeCAD skill 的移动规则：
   - 先分析，再直接执行，不再额外等待用户确认
   - 默认更新当前 CAD / YAML，不再自动新建新的装配文件
@@ -99,7 +99,7 @@
 - 在 [pyproject.toml](./freecad_cli_tools/pyproject.toml) 与 [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py) 中将版本从 `0.1.0` 升到 `0.4.0`。
 - 将被跟踪的示例 YAML 从 `data/` 挪到 [examples/sample.yaml](./examples/sample.yaml)，使 `data/` 仅保留为运行期输出目录。
 - 增加 Python 缓存忽略规则，并从版本控制中移除已跟踪的 `__pycache__` 产物。
-- 新增可复用基准脚本 [benchmark_yaml_safe_move.py](./scripts/benchmark_yaml_safe_move.py)。
+- 在旧的工作区 `scripts/` 目录中新增过可复用基准脚本。
 
 ## v0.5.0 - 可复用同步模块与批量 CAD 更新
 

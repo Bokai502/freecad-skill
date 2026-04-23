@@ -199,11 +199,29 @@ def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> No
         return "rendered-code"
 
     monkeypatch.setattr(build_assembly_from_yaml, "render_rpc_script", fake_render)
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        captured["host"] = host
+        captured["port"] = port
+        captured["code"] = code
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "sample_0001",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 0,
+        }
+
     monkeypatch.setattr(
         build_assembly_from_yaml,
-        "run_script_command",
-        lambda args, code: captured.update({"args": args, "code": code}),
+        "execute_script_payload",
+        fake_execute_script_payload,
     )
+    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
 
     yaml_path = tmp_path / "sample.yaml"
     yaml_path.write_text("components: {}\n", encoding="utf-8")
@@ -229,7 +247,132 @@ def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> No
         in captured["replacements"]["__COMPONENT_SHAPE_HELPERS__"]
     )
     expected_step = yaml_path.with_name("sample_0001.step")
-    assert captured["replacements"]["__SAVE_PATH__"] == json.dumps(
-        build_assembly_from_yaml.to_wsl_path(expected_step)
-    )
+    staged_step = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+    assert staged_step.name == expected_step.name
     assert captured["code"] == "rendered-code"
+
+
+def test_main_stages_runtime_files_and_rewrites_export_paths(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["script_name"] = script_name
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        assert code == "rendered-code"
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "SampleYamlAssembly",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 0,
+        }
+
+    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setattr(build_assembly_from_yaml, "render_rpc_script", fake_render)
+    monkeypatch.setattr(
+        build_assembly_from_yaml,
+        "execute_script_payload",
+        fake_execute_script_payload,
+    )
+
+    yaml_path = tmp_path / "sample.yaml"
+    yaml_path.write_text("components: {}\n", encoding="utf-8")
+    output_path = tmp_path / "exports" / "sample.step"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly",
+            "--input",
+            str(yaml_path),
+            "--doc-name",
+            "SampleYamlAssembly",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    build_assembly_from_yaml.main()
+
+    staged_input = Path(json.loads(captured["replacements"]["__YAML_PATH__"]))
+    assert staged_input.read_text(encoding="utf-8") == "components: {}\n"
+    assert output_path.read_text(encoding="utf-8") == "step-data"
+    assert output_path.with_suffix(".glb").read_text(encoding="utf-8") == "glb-data"
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["save_path"] == str(output_path)
+    assert payload["glb_path"] == str(output_path.with_suffix(".glb"))
+
+
+def test_main_writes_artifact_registry_record(
+    monkeypatch, tmp_path: Path
+) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "SampleYamlAssembly",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 0,
+        }
+
+    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(tmp_path / "registry"))
+    monkeypatch.setattr(build_assembly_from_yaml, "render_rpc_script", fake_render)
+    monkeypatch.setattr(
+        build_assembly_from_yaml,
+        "execute_script_payload",
+        fake_execute_script_payload,
+    )
+
+    yaml_path = tmp_path / "sample.yaml"
+    yaml_path.write_text("components: {}\n", encoding="utf-8")
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly",
+            "--input",
+            str(yaml_path),
+            "--doc-name",
+            "SampleYamlAssembly",
+            "--run-id",
+            "assembly-run",
+            "--session-id",
+            "assembly-session",
+        ],
+    )
+
+    build_assembly_from_yaml.main()
+
+    manifest = json.loads(
+        (tmp_path / "registry" / "runs" / "assembly-run.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    expected_step = yaml_path.with_name("SampleYamlAssembly.step")
+    assert manifest["operation"]["status"] == "success"
+    assert manifest["session_id"] == "assembly-session"
+    assert manifest["outputs"]["step_path"] == str(expected_step)
+    assert manifest["outputs"]["glb_path"] == str(expected_step.with_suffix(".glb"))

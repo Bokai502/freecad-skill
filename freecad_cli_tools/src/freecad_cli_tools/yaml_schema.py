@@ -148,6 +148,22 @@ def _validate_placement(comp_id: str, placement: Any) -> None:
             raise AssemblyValidationError(
                 f"Component '{comp_id}': 'mount_point' must be a list of 3 numbers (got {mp!r})."
             )
+    rotation_matrix = placement.get("rotation_matrix")
+    if rotation_matrix is not None:
+        if (
+            not isinstance(rotation_matrix, list)
+            or len(rotation_matrix) != 3
+            or not all(
+                isinstance(row, list)
+                and len(row) == 3
+                and all(isinstance(value, (int, float)) for value in row)
+                for row in rotation_matrix
+            )
+        ):
+            raise AssemblyValidationError(
+                f"Component '{comp_id}': 'rotation_matrix' must be a 3x3 numeric matrix "
+                f"(got {rotation_matrix!r})."
+            )
 
 
 def _validate_dims(comp_id: str, comp: dict, shape: str) -> None:

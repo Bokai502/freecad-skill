@@ -27,8 +27,8 @@ Date: 2026-04-01
 
 Date: 2026-04-02
 
-- Added GUI/headless startup switching in [start_wsl_freecad_rpc.ps1](./scripts/start_wsl_freecad_rpc.ps1).
-- Added WSLg GUI startup script [start_freecad_gui_wsl.sh](./scripts/start_freecad_gui_wsl.sh).
+- Added GUI/headless startup switching in the now-retired WSL launcher flow.
+- Added a WSLg GUI startup path in the now-retired launcher flow.
 - Updated the FreeCAD skill rules so move requests:
   - analyze first, then execute directly without waiting for an extra confirmation step
   - update the current CAD/YAML by default instead of rebuilding a new assembly automatically
@@ -99,7 +99,7 @@ Date: 2026-04-03
 - Bumped the package version from `0.1.0` to `0.4.0` in [pyproject.toml](./freecad_cli_tools/pyproject.toml) and [__init__.py](./freecad_cli_tools/src/freecad_cli_tools/__init__.py).
 - Moved the tracked example YAML out of `data/` into [examples/sample.yaml](./examples/sample.yaml) so `data/` can remain a runtime/output-only directory.
 - Added Python cache ignores and removed tracked `__pycache__` artifacts from version control.
-- Added a reusable benchmark utility in [benchmark_yaml_safe_move.py](./scripts/benchmark_yaml_safe_move.py).
+- Added a reusable benchmark utility in the old workspace `scripts/` directory.
 
 ## v0.5.0 - Reusable Sync Module And Batch CAD Updates
 

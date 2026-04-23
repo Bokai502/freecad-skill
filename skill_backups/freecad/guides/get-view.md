@@ -21,9 +21,11 @@ freecad-get-view --all --width 1920 --height 1080
 freecad-get-view --all --focus "Box001"
 ```
 
-Saves to `./freecad_views/<YYYYMMDD_HHMMSS>/` with a `manifest.json`.
+Single-view captures default to `<FREECAD_RUNTIME_DATA_DIR>/freecad_view.png`.
+Multi-view captures default to `<FREECAD_RUNTIME_DATA_DIR>/freecad_views/<YYYYMMDD_HHMMSS>/`
+with a `manifest.json`, where `FREECAD_RUNTIME_DATA_DIR` comes from `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf`.
 
-**Available views:** `Isometric`, `Front`, `Top`, `Right`, `Back`, `Left`, `Bottom`, `Dimetric`, `Trimetric`
+**Available views:** `Isometric`, `Front`, `Top`, `Right`, `Left`, `Bottom`, `Dimetric`, `Trimetric`
 
 ## Review Workflow
 
@@ -36,4 +38,4 @@ Saves to `./freecad_views/<YYYYMMDD_HHMMSS>/` with a `manifest.json`.
 ## Rules
 
 - Screenshots are unavailable in non-3D views (TechDraw, Spreadsheet).
-- Each run creates a new timestamped subfolder to preserve history.
+- Each multi-view run creates a new timestamped subfolder to preserve history.

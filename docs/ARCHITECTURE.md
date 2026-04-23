@@ -9,18 +9,16 @@ This document provides a visual overview of the `skills_test` workspace and the 
 ```mermaid
 flowchart LR
     U["User / Codex Request"]
-    S["Workspace Scripts<br/>start_wsl_freecad_rpc.ps1<br/>start_freecad_gui_wsl.sh"]
     I["Tracked Inputs<br/>examples/sample.yaml<br/>updates.json"]
     C["CLI Layer<br/>freecad-create-assembly<br/>freecad-yaml-safe-move<br/>freecad-sync-placements"]
     H["Shared Helpers<br/>cli_support.py<br/>rpc_client.py<br/>freecad_sync.py"]
     R["Script Rendering<br/>rpc_script_loader.py<br/>rpc_script_fragments.py"]
     X["XML-RPC Channel"]
-    F["FreeCAD Runtime In WSL/WSLg"]
+    F["FreeCAD Runtime On Linux"]
     P["FreeCAD RPC Scripts<br/>assembly_from_yaml.py<br/>sync_component_placements.py<br/>check_document_collisions.py"]
     D["FreeCAD Documents<br/>GUI State<br/>Runtime Outputs In data/"]
     T["Quality Layer<br/>pytest<br/>ruff<br/>black<br/>GitHub Actions CI"]
 
-    U --> S
     U --> I
     U --> C
     I --> C

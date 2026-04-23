@@ -9,8 +9,14 @@ from pathlib import Path
 
 from freecad_cli_tools import add_connection_args, get_connection
 from freecad_cli_tools.cli_support import write_base64_file
+from freecad_cli_tools.runtime_config import get_default_runtime_data_dir
 
 ALL_VIEWS = ["Isometric", "Front", "Top", "Right", "Back", "Left", "Bottom"]
+
+
+def default_output_root() -> Path:
+    """Return the shared default output directory for FreeCAD screenshots."""
+    return get_default_runtime_data_dir()
 
 
 def capture_one(conn, view_name, output_path, width=None, height=None, focus=None):
@@ -76,7 +82,9 @@ def main() -> None:
 
     # Single view mode
     if len(views) == 1 and not args.all:
-        output_path = Path(args.output or args.output_dir or "freecad_view.png")
+        output_path = Path(
+            args.output or args.output_dir or default_output_root() / "freecad_view.png"
+        )
         if output_path.is_dir():
             output_path = output_path / f"{views[0].lower()}.png"
         path = capture_one(
@@ -91,7 +99,9 @@ def main() -> None:
     # Multi-view mode
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = (
-        Path(args.output_dir) if args.output_dir else Path("freecad_views") / timestamp
+        Path(args.output_dir)
+        if args.output_dir
+        else default_output_root() / "freecad_views" / timestamp
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 

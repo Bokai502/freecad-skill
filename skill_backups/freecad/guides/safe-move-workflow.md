@@ -23,17 +23,20 @@ Collect before execution:
 ```bash
 # Translation only
 freecad-yaml-safe-move \
-  --input data/sample.yaml --output data/sample.yaml \
+  --input <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
+  --output <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
   --component P001 --move 50 50 0
 
 # Move to another envelope face
 freecad-yaml-safe-move \
-  --input data/sample.yaml --output data/sample.yaml \
+  --input <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
+  --output <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
   --component P002 --install-face 4 --move 0 0 0
 
 # With CAD sync
 freecad-yaml-safe-move \
-  --input data/sample.yaml --output data/sample.yaml \
+  --input <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
+  --output <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
   --component P001 --move 50 50 0 \
   --sync-cad --doc-name SampleYamlAssembly
 ```

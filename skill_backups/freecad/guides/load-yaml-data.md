@@ -22,13 +22,16 @@ cylinder axis orientation is derived from `mount_face`.
 
 ## Workflow
 
-### Step 1: Stage YAML into Snap-accessible path
+### Step 1: Use the shared runtime directory
 
 ```bash
-freecad-exec-code "import os; print(os.path.join(os.path.expanduser('~'), 'freecad_data'))"
+ls <FREECAD_RUNTIME_DATA_DIR>/sample.yaml
 ```
 
-Copy the YAML from the normal shell into that directory.
+Place the YAML in the directory configured as `FREECAD_RUNTIME_DATA_DIR` in
+`/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` so both the shell and the FreeCAD RPC process can read it.
+Write generated `STEP`/`GLB` artifacts to the same directory unless the user explicitly asks for a
+different output path.
 
 ### Step 2: Write and execute a loader script
 
@@ -39,7 +42,7 @@ freecad-exec-code --file /tmp/load_yaml.py
 ```
 
 Key patterns:
-- Read YAML from `Path.home() / 'freecad_data' / ...`
+- Read YAML from `<FREECAD_RUNTIME_DATA_DIR>/...`
 - Parse with `yaml.safe_load`
 - Loop `components.items()`
 - Create shapes based on `shape` field: `Part::Box` for `box`, `Part::Cylinder` for `cylinder`
@@ -50,4 +53,4 @@ Key patterns:
 - Create envelope shell when YAML `envelope` data exists
 - Set `ShapeColor` from `color`
 - Fit GUI view after generation
-- Export the assembly to a `STEP` file via `Import.export([assembly], path)`
+- Export the assembly to a `STEP` file via `Import.export([assembly], path)` inside `FREECAD_RUNTIME_DATA_DIR` unless another path is requested

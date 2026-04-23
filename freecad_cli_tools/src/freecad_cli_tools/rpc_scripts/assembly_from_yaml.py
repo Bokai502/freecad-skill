@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import sys
 
 import FreeCAD
 import FreeCADGui
@@ -118,75 +119,79 @@ def export_step_and_glb(objects, step_path):
     return step_path, glb_path
 
 
-path = Path(YAML_PATH)
-with path.open("r", encoding="utf-8") as handle:
-    data = yaml.safe_load(handle)
-
-for _name, _d in list(FreeCAD.listDocuments().items()):
-    if _name == DOC_NAME or getattr(_d, "Label", "") == DOC_NAME:
-        try:
-            FreeCAD.closeDocument(_name)
-        except Exception:
-            pass
-
-doc = FreeCAD.newDocument(DOC_NAME)
-if doc.Label != DOC_NAME:
-    doc.Label = DOC_NAME
-FreeCAD.setActiveDocument(doc.Name)
-
 try:
-    assembly = doc.addObject("Assembly::AssemblyObject", "Assembly")
-except Exception:
-    assembly = doc.addObject("App::Part", "Assembly")
+    path = Path(YAML_PATH)
+    with path.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle)
 
-envelope_name = build_envelope(doc, assembly, data)
-created = []
-for component_id, component in data.get("components", {}).items():
-    part = doc.addObject("App::Part", f"{component_id}_part")
-    assembly.addObject(part)
+    for _name, _d in list(FreeCAD.listDocuments().items()):
+        if _name == DOC_NAME or getattr(_d, "Label", "") == DOC_NAME:
+            try:
+                FreeCAD.closeDocument(_name)
+            except Exception:
+                pass
 
-    shape_spec = build_component_shape_spec(component_id, component)
-    solid = doc.addObject(shape_spec["object_type"], component_id)
+    doc = FreeCAD.newDocument(DOC_NAME)
+    if doc.Label != DOC_NAME:
+        doc.Label = DOC_NAME
+    FreeCAD.setActiveDocument(doc.Name)
 
-    if shape_spec["shape"] == "box":
-        solid.Length = shape_spec["length"]
-        solid.Width = shape_spec["width"]
-        solid.Height = shape_spec["height"]
-    elif shape_spec["shape"] == "cylinder":
-        solid.Radius = shape_spec["radius"]
-        solid.Height = shape_spec["height"]
-        solid.Angle = shape_spec["angle"]
-    else:
-        raise RuntimeError(
-            f"Unsupported shape for {component_id}: {shape_spec['shape']}"
+    try:
+        assembly = doc.addObject("Assembly::AssemblyObject", "Assembly")
+    except Exception:
+        assembly = doc.addObject("App::Part", "Assembly")
+
+    envelope_name = build_envelope(doc, assembly, data)
+    created = []
+    for component_id, component in data.get("components", {}).items():
+        part = doc.addObject("App::Part", f"{component_id}_part")
+        assembly.addObject(part)
+
+        shape_spec = build_component_shape_spec(component_id, component)
+        solid = doc.addObject(shape_spec["object_type"], component_id)
+
+        if shape_spec["shape"] == "box":
+            solid.Length = shape_spec["length"]
+            solid.Width = shape_spec["width"]
+            solid.Height = shape_spec["height"]
+        elif shape_spec["shape"] == "cylinder":
+            solid.Radius = shape_spec["radius"]
+            solid.Height = shape_spec["height"]
+            solid.Angle = shape_spec["angle"]
+        else:
+            raise RuntimeError(
+                f"Unsupported shape for {component_id}: {shape_spec['shape']}"
+            )
+
+        solid.Placement = make_placement(
+            shape_spec["placement_position"],
+            shape_spec["rotation_rows"],
         )
+        apply_color(solid, component.get("color"))
+        part.addObject(solid)
+        created.append(component_id)
 
-    solid.Placement = make_placement(
-        shape_spec["placement_position"],
-        shape_spec["rotation_rows"],
+    doc.recompute()
+    save_path, glb_path = export_step_and_glb([assembly], SAVE_PATH)
+
+    view_updated = False
+    if FIT_VIEW:
+        view_updated = set_view(doc.Name)
+
+    print(
+        json.dumps(
+            {
+                "success": True,
+                "document": doc.Name,
+                "save_path": save_path,
+                "glb_path": glb_path,
+                "component_count": len(created),
+                "envelope_object": envelope_name,
+                "view_name": VIEW_NAME,
+                "view_updated": view_updated,
+            }
+        )
     )
-    apply_color(solid, component.get("color"))
-    part.addObject(solid)
-    created.append(component_id)
-
-doc.recompute()
-save_path, glb_path = export_step_and_glb([assembly], SAVE_PATH)
-
-view_updated = False
-if FIT_VIEW:
-    view_updated = set_view(doc.Name)
-
-print(
-    json.dumps(
-        {
-            "success": True,
-            "document": doc.Name,
-            "save_path": save_path,
-            "glb_path": glb_path,
-            "component_count": len(created),
-            "envelope_object": envelope_name,
-            "view_name": VIEW_NAME,
-            "view_updated": view_updated,
-        }
-    )
-)
+except Exception as exc:
+    print(json.dumps({"success": False, "error": str(exc)}))
+    sys.exit(1)

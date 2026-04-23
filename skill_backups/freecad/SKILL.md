@@ -11,7 +11,7 @@ allowed-tools: "Bash(*), Read, Write, Edit"
 
 ## Prerequisites
 
-- FreeCAD must be running with the **FreeCADMCP addon** active (RPC server on `localhost:9875`).
+- FreeCAD must be running with the **FreeCADMCP addon** active, using the RPC host/port configured in `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` (currently `localhost:9876`).
 - Python environment: `base` (where `freecad-cli-tools` is installed).
 - Prefer packaged CLI entry points over ad hoc Python. If a CLI fails with a missing-module error, treat it as an environment problem and fall back to `freecad-exec-code` only as a temporary workaround.
 
@@ -39,7 +39,7 @@ Read the matching guide with the `Read` tool. Always prefer the highest-level wo
 
 ## Common CLI Flags
 
-All RPC commands accept `--host <host>` (default `localhost`) and `--port <port>` (default `9875`). When FreeCAD runs inside WSL, pass these explicitly if Windows `localhost` forwarding is unstable.
+All RPC commands accept `--host <host>` and `--port <port>`. Their defaults come from `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` (currently `localhost:9876`). When FreeCAD runs inside WSL, pass these explicitly if Windows `localhost` forwarding is unstable.
 
 ## Global Rules
 
@@ -72,7 +72,8 @@ All RPC commands accept `--host <host>` (default `localhost`) and `--port <port>
 - For container targets (`App::Part`, etc.), analyze descendant solids in global coordinates.
 
 ### File I/O
-- **Snap sandbox**: FreeCAD via Snap cannot access arbitrary paths. Use `Path.home() / 'freecad_data'` for file I/O inside FreeCAD.
+- Use the shared runtime directory configured by `FREECAD_RUNTIME_DATA_DIR` in `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` for YAML inputs and generated artifacts (`STEP`, `GLB`, screenshots).
+- `freecad-create-assembly` stages YAML into the shared runtime directory automatically before RPC execution, then copies generated exports back to the requested output path.
 - Prefer first-class CLI commands over handwritten Python whenever the packaged command covers the task.
 - Prefer `--file` over inline code for complex scripts.
 

@@ -123,6 +123,49 @@ def multiply_rotation_matrices(
     ]
 
 
+def normalize_spin_quarter_turns(angle_degrees: float) -> int:
+    """Convert a spin angle in degrees to quarter turns."""
+    quarter_turns = angle_degrees / 90.0
+    rounded = round(quarter_turns)
+    if not math.isclose(quarter_turns, rounded, abs_tol=EPSILON):
+        raise ValueError("Spin angle must be a multiple of 90 degrees.")
+    return int(rounded) % 4
+
+
+def rotation_about_axis(axis_index: int, quarter_turns: int) -> list[list[int]]:
+    """Return a right-handed quarter-turn rotation matrix around a world axis."""
+    turns = quarter_turns % 4
+    if turns == 0:
+        return [row[:] for row in IDENTITY_ROTATION]
+
+    if axis_index == 0:
+        step = [[1, 0, 0], [0, 0, -1], [0, 1, 0]]
+    elif axis_index == 1:
+        step = [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]
+    elif axis_index == 2:
+        step = [[0, -1, 0], [1, 0, 0], [0, 0, 1]]
+    else:
+        raise ValueError(f"Invalid rotation axis index {axis_index!r}.")
+
+    result = [row[:] for row in IDENTITY_ROTATION]
+    for _ in range(turns):
+        result = multiply_rotation_matrices(step, result)
+    return result
+
+
+def apply_in_plane_spin(
+    *,
+    base_rotation: list[list[int]],
+    target_envelope_face: int,
+    spin_quarter_turns: int,
+) -> list[list[int]]:
+    """Apply an in-plane quarter-turn spin around the target face normal."""
+    _, axis_index, direction = FACE_DEFINITIONS[target_envelope_face]
+    signed_turns = spin_quarter_turns if direction > 0 else -spin_quarter_turns
+    spin_rotation = rotation_about_axis(axis_index, signed_turns)
+    return multiply_rotation_matrices(spin_rotation, base_rotation)
+
+
 # ---------------------------------------------------------------------------
 # Component data accessors
 # ---------------------------------------------------------------------------
@@ -949,17 +992,49 @@ def update_component_placement(
     data: dict,
     component_id: str,
     position: list[float],
-    install_face: int,
+    install_face: int | None = None,
+    *,
+    component_mount_face: int | None = None,
+    envelope_face_id: int | None = None,
+    rotation_matrix: list[list[int]] | None = None,
 ) -> dict:
+    """Return a copy of the assembly with one component's placement updated.
+
+    The preferred call shape is ``update_component_placement(data, component_id, position,
+    install_face)``. Legacy keyword arguments remain supported for older callers and tests:
+    ``component_mount_face``, ``envelope_face_id``, and ``rotation_matrix``.
+    """
     updated = deepcopy(data)
     component = updated["components"][component_id]
     extents = component_local_extents(component_id, component)
-    contact_face = component_contact_face(install_face)
-    rotation_matrix = rotation_matrix_from_component(component)
+    legacy_mode = any(
+        value is not None
+        for value in (component_mount_face, envelope_face_id, rotation_matrix)
+    )
+    if install_face is None:
+        if envelope_face_id is None:
+            raise ValueError("install_face or envelope_face_id is required.")
+        install_face = envelope_face_id
+
+    contact_face = (
+        component_mount_face
+        if component_mount_face is not None
+        else component_contact_face(install_face)
+    )
+    rotation_matrix = (
+        rotation_matrix_from_component(component)
+        if rotation_matrix is None
+        else [[int(value) for value in row] for row in rotation_matrix]
+    )
     component["placement"]["position"] = position
-    component["placement"]["mount_face"] = install_face
-    component["placement"].pop("envelope_face", None)
-    component["placement"].pop("rotation_matrix", None)
+    component["placement"]["mount_face"] = contact_face
+    if legacy_mode:
+        if envelope_face_id is not None:
+            component["placement"]["envelope_face"] = envelope_face_id
+        component["placement"]["rotation_matrix"] = rotation_matrix
+    else:
+        component["placement"].pop("envelope_face", None)
+        component["placement"].pop("rotation_matrix", None)
     component["placement"]["mount_point"] = compute_mount_point(
         position, extents, contact_face, rotation_matrix
     )

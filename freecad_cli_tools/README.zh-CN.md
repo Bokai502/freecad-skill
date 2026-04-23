@@ -9,17 +9,17 @@
 ### 方式一：从源码安装
 
 ```bash
-cd D:\workspace\skills_test\freecad_cli_tools
-conda run -n base pip install -e .
+cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+python -m pip install -e .
 ```
 
 ### 方式二：构建并安装 wheel
 
 ```bash
-cd D:\workspace\skills_test\freecad_cli_tools
-conda run -n base pip install build
-conda run -n base python -m build
-conda run -n base pip install dist/freecad_cli_tools-*.whl
+cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+python -m pip install build
+python -m build
+python -m pip install dist/freecad_cli_tools-*.whl
 ```
 
 ## 使用方式
@@ -110,11 +110,7 @@ freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssemb
 
 补充说明：外部安装面（6-11）虽然会跳过内部包络包含约束，但仍会使用 `envelope.outer_size` 检查目标墙面的面内边界，避免组件沿墙面滑出边缘。如果请求路径跨出了这个二维轮廓，命令会截断到最近安全前缀，并在阻塞原因中包含 `FACE_BOUNDARY`。
 
-在当前这台机器上，FreeCAD 可能运行在 WSL 中，而 CLI 运行在 Windows 上。这种情况下：
-
-- `--input` 和 `--output` 仍然使用普通 Windows 路径
-- CLI 仍会把 YAML 结果写到磁盘，但 `--sync-cad` 不再要求 FreeCAD 重新打开该 YAML
-- 如果 Windows 到 `localhost:9875` 的转发不稳定，可以传 `--host <当前 WSL IP> --port 9875`
+RPC 默认值已集中到 [../config/freecad_runtime.conf](../config/freecad_runtime.conf)。
 
 对于多组件位姿更新，`freecad-sync-placements` 接受如下 JSON 列表：
 
@@ -147,7 +143,7 @@ freecad-create-assembly --input examples/sample.yaml --doc-name SampleYamlAssemb
 
 ## 依赖要求
 
-- 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务默认监听 `localhost:9875`
+- 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务使用 [../config/freecad_runtime.conf](../config/freecad_runtime.conf) 中配置的主机和端口（当前为 `localhost:9876`）
 - 对于离线 YAML 模式的 `freecad-yaml-safe-move`：只需要 Python 3.9+
 - Python 3.9+
 
