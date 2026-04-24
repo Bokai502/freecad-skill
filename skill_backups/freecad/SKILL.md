@@ -1,76 +1,46 @@
 ---
 name: freecad
-description: "Unified FreeCAD skill for layout-dataset assembly generation, replace-component workflows, and safe move workflows."
-argument-hint: "[action] [args...]"
-allowed-tools: "Bash(*), Read, Write, Edit"
+description: "FreeCAD workflow for layout_topology.json plus geom.json assembly generation, safe component moves, and component replacement. Use when Codex needs to operate the FreeCAD CLI or RPC workflow in this repo to build an assembly from ./01_layout, move a component safely and optionally sync CAD, or replace one placeholder part with a real STEP model."
 ---
 
-# FreeCAD Unified Skill
-
-## Context: $ARGUMENTS
+# FreeCAD
 
 ## Prerequisites
 
-- FreeCAD must be running with the **FreeCADMCP addon** active, using the RPC host/port configured in `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` (currently `localhost:9876`).
-- Python environment: `base` (where `freecad-cli-tools` is installed).
-- Prefer packaged CLI entry points over ad hoc Python.
+- Use the packaged CLI entry points under `/data/lbk/freecad_skills/freecad-skill/freecad_cli_tools` instead of ad hoc Python when a command already exists.
+- Resolve relative paths from `FREECAD_WORKSPACE_DIR` in `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf`.
+- Expect FreeCAD RPC at the host and port configured in that file. If RPC is unavailable, report the connection problem clearly instead of guessing.
 
-## Action Routing
+## Route The Request
 
-Read the matching guide with the `Read` tool. Always prefer the highest-level workflow; use lower-level commands only as sub-steps.
+- Read exactly one guide first unless the user request truly spans multiple workflows.
+- Use `guides/safe-move-workflow.md` for generic move, rotate, re-seat, collision-check, or "adjust this part" requests. Treat this as the default entry point.
+- Use `guides/create-assembly.md` only when the user explicitly asks to build or rebuild an assembly from the dataset.
+- Use `guides/replace-component.md` only when the user wants to swap one generated placeholder with a real STEP component in an existing assembly.
 
-| Intent | Guide |
-|--------|-------|
-| Create assembly from layout dataset | `guides/create-assembly.md` |
-| Replace a placeholder component with a real STEP part | `guides/replace-component.md` |
-| **Move a part** (default entry point) | `guides/safe-move-workflow.md` |
+## Hard Rules
 
-## Common Patterns
+- Treat `layout_topology.json` plus `geom.json` as the only source of truth. Do not use `sample.yaml`; it is backup-only.
+- Default dataset input paths are `./01_layout/layout_topology.json` and `./01_layout/geom.json` under `FREECAD_WORKSPACE_DIR`.
+- Default output paths live under `./02_geometry_edit` under `FREECAD_WORKSPACE_DIR`.
+- Generated CAD artifacts must be named `geometry_after.step` and `geometry_after.glb`. If a CLI accepts an output path, use it only to choose the directory or parent path unless the guide says otherwise.
+- `freecad-layout-safe-move` writes non-destructive dataset outputs such as `geometry_after.layout_topology.json` and `geometry_after.geom.json`. Do not overwrite the source dataset unless the workflow explicitly says to.
+- Preserve the component-local contact face when changing the installation face. Use `placement.rotation_matrix` to keep that same component face seated on the new envelope face.
+- Prefer first-class commands:
+  - `freecad-create-assembly`
+  - `freecad-layout-safe-move`
+  - `freecad-replace-component`
+- After CAD geometry changes, recompute and fit the view unless the active command exposes and uses an explicit opt-out such as `--no-fit-view`.
+- Verify outputs after execution. If the dataset update succeeds but STEP or GLB export is missing, report partial success rather than full success.
 
-- **Move with safety**: `safe-move-workflow.md` (handles layout-dataset and document branches)
-- **Build / rebuild from layout dataset**: `create-assembly.md` (only when user explicitly requests)
-- **Swap in a real CAD part**: `replace-component.md` (replaces one `<NAME>_part` in an existing assembly STEP)
+## Workflow Notes
 
-## Common CLI Flags
-
-All RPC commands accept `--host <host>` and `--port <port>`. Their defaults come from `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` (currently `localhost:9876`). When FreeCAD runs inside WSL, pass these explicitly if Windows `localhost` forwarding is unstable.
-
-## Global Rules
-
-### Layout Dataset as Source of Truth
-- Use `layout_topology.json + geom.json` as the source of truth for move planning and execution.
-- Prefer `freecad-layout-safe-move`. It expects `--layout-topology` and `--geom` and should overwrite those dataset files in place unless explicit output paths are provided.
-- Normalized `placement.mount_face` identifies the envelope face the component is installed onto (`0..5` internal, `6..11` external). When moving to a new install face, preserve the original component-local contact face and store `placement.rotation_matrix` if rotation is needed to seat that same component face on the new envelope face.
-
-### Move Safety
-- For any move request, prefer `safe-move-workflow.md` as the default entry point.
-- Analyze first, then execute the fully safe move or closest safe result. Report any adjustment clearly.
-- After any executed move, run a post-move collision verification before reporting success.
-
-### Orientation & Rotation
-- `--install-face <0..11>` places a component on a target envelope face. Faces `0..5` are internal (inside the envelope); faces `6..11` are external (outside the envelope, requires `geom.outer_shell.outer_bbox` / normalized `envelope.outer_size`).
-- Boxes use `dims[0]`, `dims[1]`, `dims[2]` as local X/Y/Z extents. When `placement.rotation_matrix` is present, apply it to keep the intended component-local contact face seated on the selected envelope face.
-
-### CAD Generation
-- `freecad-create-assembly` is for explicit rebuild only; do not use it as the default after a move.
-- `freecad-replace-component` is for swapping one generated placeholder with a detailed STEP part in an existing assembly.
-- When only moving or rotating, update `layout_topology.json` and `geom.json` in place and re-export the existing `STEP` file and sibling `GLB` in place.
-- Generated assemblies should include the envelope when the layout dataset provides one.
-- Always call `doc.recompute()` after geometry changes.
-- After generation, switch the GUI to a fitted view automatically.
-
-### File I/O
-- Use the shared runtime directory configured by `FREECAD_RUNTIME_DATA_DIR` in `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` for dataset inputs and generated artifacts (`STEP`, `GLB`, screenshots).
-- `freecad-create-assembly` normalizes `layout_topology.json + geom.json` into the shared runtime directory before RPC execution, then copies generated exports back to the requested output path.
-- Prefer first-class CLI commands over handwritten Python whenever the packaged command covers the task.
-
-### Safety
-- Never auto-execute destructive actions (delete, unrelated overwrite) without user confirmation. Safe move execution is allowed after analysis.
-- When verifying a dataset-to-CAD sync result, perform verification after the write completes, not in parallel.
+- Build workflow: normalize the dataset into the internal spec, create the assembly hierarchy, include the envelope when available, then export `geometry_after.step` and `geometry_after.glb`.
+- Safe-move workflow: solve in normalized coordinates, project the move into the active face plane, preserve the component contact face, write updated dataset files, and only then sync CAD when requested.
+- Replace-component workflow: use the normalized dataset for placement truth, import the source assembly STEP as input only, replace `<NAME>_part`, and export new CAD artifacts to `geometry_after.step` and `geometry_after.glb`.
 
 ## Error Handling
 
-- **RPC connection failed**: Prompt user to check FreeCAD is running with the MCP addon active.
-- **CLI not found / import error**: Report environment problem.
-- **`"success": false`**: Display the returned error details to the user.
-- **Post-move collision detected**: Surface the failure clearly; do not describe the move as successful.
+- If RPC connection fails, tell the user to check the running FreeCAD instance and MCP/RPC setup.
+- If the CLI returns `"success": false`, surface the returned error details.
+- If a move or replace operation yields STEP without GLB, report partial success and include the artifact paths that do exist.

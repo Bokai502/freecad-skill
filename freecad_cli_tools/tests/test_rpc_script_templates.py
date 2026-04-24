@@ -49,8 +49,9 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
     },
     "replace_component.py": {
-        "__YAML_PATH__": _DUMMY_PATH,
-        "__ASSEMBLY_PATH__": _DUMMY_PATH,
+        "__INPUT_PATH__": _DUMMY_PATH,
+        "__ASSEMBLY_INPUT_PATH__": _DUMMY_PATH,
+        "__EXPORT_PATH__": _DUMMY_PATH,
         "__REPLACEMENT_PATH__": _DUMMY_PATH,
         "__COMPONENT_NAME__": _DUMMY_STR,
         "__DOC_NAME__": _DUMMY_STR,
@@ -106,19 +107,20 @@ def test_replace_component_prefers_reusable_document_before_step_import() -> Non
     assert "def find_reusable_document(doc_name):" in rendered
     assert "doc, assembly = find_reusable_document(DOC_NAME)" in rendered
     assert "document_reused = doc is not None" in rendered
-    assert "doc, assembly = create_or_import_document(DOC_NAME, ASSEMBLY_PATH)" in rendered
+    assert "doc, assembly = create_or_import_document(DOC_NAME, ASSEMBLY_INPUT_PATH)" in rendered
+    assert "export_step_and_glb([assembly], EXPORT_PATH)" in rendered
     assert '"document_reused": document_reused' in rendered
     assert '"assembly_imported": assembly_imported' in rendered
 
 
-def test_replace_component_applies_yaml_rotation_matrix() -> None:
+def test_replace_component_applies_layout_dataset_rotation_matrix() -> None:
     rendered = render_rpc_script(
         "replace_component.py", SCRIPT_REPLACEMENTS["replace_component.py"]
     )
 
     assert 'placement.get("rotation_matrix")' in rendered
     assert "component_contact_face_from_placement(" in rendered
-    assert "yaml_component_center(" in rendered
+    assert "component_center(" in rendered
     assert "local_rotation = rotation_to_align(src_flange_dir, local_flange_dir)" in rendered
     assert "rotation = placement_rotation.multiply(local_rotation)" in rendered
     assert '"component_contact_face": component_contact_face_id' in rendered

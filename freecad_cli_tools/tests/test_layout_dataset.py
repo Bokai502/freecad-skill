@@ -25,6 +25,189 @@ from freecad_cli_tools.layout_dataset import (
 )
 
 
+def sample_realistic_layout_dataset() -> tuple[dict, dict]:
+    p000_position = [-144.89511395585285, 50.628016611469434, -89.10051419349894]
+    e000_dims = [66.33270638512315, 91.51587519468295, 47.89472116237455]
+    e000_position = [-81.4401644502338, -28.004797658047018, -100.98845651238274]
+    e000_bbox_min = [
+        e000_position[0] - e000_dims[0],
+        e000_position[1],
+        e000_position[2] - e000_dims[2],
+    ]
+
+    layout_topology = {
+        "schema_version": "1.0",
+        "layout_id": "layout3dcube_910001",
+        "source_design_id": "910001",
+        "outer_shell": {"id": "outer_shell", "source_ref": "outer_shell"},
+        "cabins": [
+            {
+                "id": "cabin_auto_1",
+                "parent": "outer_shell",
+                "role": "internal_compartment",
+            }
+        ],
+        "walls": [],
+        "install_faces": [
+            {
+                "id": "cabin_auto_1.ymax",
+                "owner_id": "cabin_auto_1",
+                "side": "inner",
+                "face_role": "mount",
+                "plane_axis": 1,
+                "plane_value": 142.1372262179226,
+                "normal_sign": 1,
+            },
+            {
+                "id": "outer.zmin_outer",
+                "owner_id": "outer_shell",
+                "side": "outer",
+                "face_role": "mount",
+                "plane_axis": 2,
+                "plane_value": -100.98845651238273,
+                "normal_sign": -1,
+            },
+        ],
+        "placements": [
+            {
+                "component_id": "P000",
+                "semantic_name": "P_000_internal",
+                "kind": "internal",
+                "cabin_id": "cabin_auto_1",
+                "component_mount_face_id": "P000.local_ymax",
+                "mount_face_id": "cabin_auto_1.ymax",
+                "alignment": {
+                    "normal_alignment": "opposite",
+                    "component_u_axis_to_target_u_axis": True,
+                    "in_plane_rotation_deg": 0.0,
+                },
+                "geometry_id": "G001",
+                "thermal_id": "T001",
+                "source_ref": {
+                    "layout3dcube_component_id": "P_000_internal",
+                },
+            },
+            {
+                "component_id": "E000",
+                "semantic_name": "E_000_external",
+                "kind": "external",
+                "cabin_id": None,
+                "component_mount_face_id": "E000.local_zmin",
+                "mount_face_id": "outer.zmin_outer",
+                "alignment": {
+                    "normal_alignment": "opposite",
+                    "component_u_axis_to_target_u_axis": True,
+                    "in_plane_rotation_deg": 0.0,
+                },
+                "geometry_id": "G002",
+                "thermal_id": "T002",
+                "source_ref": {
+                    "layout3dcube_component_id": "E_000_external",
+                },
+            },
+        ],
+    }
+    geom = {
+        "schema_version": "2.0",
+        "units": {"length": "mm", "mass": "kg", "power": "W"},
+        "meta": {},
+        "outer_shell": {
+            "id": "outer_shell",
+            "outer_bbox": {
+                "min": [-156.78305627473662, -145.0149830974267, -100.98845651238273],
+                "max": [156.78305627473662, 145.0149830974267, 100.98845651238273],
+            },
+            "inner_bbox": {
+                "min": [-153.90529939523253, -142.1372262179226, -98.11069963287862],
+                "max": [153.90529939523253, 142.1372262179226, 98.11069963287862],
+            },
+            "thickness": 2.877756879504105,
+        },
+        "install_faces": {
+            "cabin_auto_1.ymax": {
+                "id": "cabin_auto_1.ymax",
+                "belongs_to": "cabin_auto_1",
+                "side": "inner",
+                "cabin_face_tag": "ymax",
+                "plane_axis": 1,
+                "plane_value": 142.1372262179226,
+                "normal_sign": 1,
+                "bbox_2d": [
+                    -153.90529939523253,
+                    153.90529939523253,
+                    -98.11069963287862,
+                    98.11069963287862,
+                ],
+                "center_xyz": [0.0, 142.1372262179226, 0.0],
+                "extents_xyz": [307.81059879046506, 0.0, 196.22139926575724],
+            },
+            "outer.zmin_outer": {
+                "id": "outer.zmin_outer",
+                "belongs_to": "outer_shell",
+                "side": "outer",
+                "cabin_face_tag": "zmin",
+                "plane_axis": 2,
+                "plane_value": -100.98845651238273,
+                "normal_sign": -1,
+                "bbox_2d": [
+                    -156.78305627473662,
+                    156.78305627473662,
+                    -145.0149830974267,
+                    145.0149830974267,
+                ],
+                "center_xyz": [0.0, 0.0, -100.98845651238273],
+                "extents_xyz": [313.56611254947325, 290.0299661948534, 0.0],
+            },
+        },
+        "components": {
+            "P_000_internal": {
+                "id": "P_000_internal",
+                "kind": "internal",
+                "category": "avionics",
+                "dims": [10.0, 20.0, 30.0],
+                "mass": 1.0,
+                "power": 2.0,
+                "color": [255, 200, 100, 255],
+                "shape": "box",
+                "model": "",
+                "mount_face_id": "cabin_auto_1.ymax",
+                "position": p000_position,
+                "install_pos": p000_position,
+            },
+            "E_000_external": {
+                "id": "E_000_external",
+                "kind": "external",
+                "category": "payload",
+                "dims": e000_dims,
+                "mass": 3.0,
+                "power": 4.0,
+                "color": [100, 180, 255, 255],
+                "shape": "box",
+                "model": "",
+                "mount_face_id": "outer.zmin_outer",
+                "position": e000_bbox_min,
+                "install_pos": e000_bbox_min,
+            },
+        },
+    }
+
+    normalized = normalize_layout_dataset(layout_topology, geom)
+    updated_layout_topology, updated_geom = update_layout_dataset_component_placement(
+        layout_topology,
+        geom,
+        "P000",
+        normalized["components"]["P000"],
+    )
+    normalized = normalize_layout_dataset(updated_layout_topology, updated_geom)
+    updated_layout_topology, updated_geom = update_layout_dataset_component_placement(
+        updated_layout_topology,
+        updated_geom,
+        "E000",
+        normalized["components"]["E000"],
+    )
+    return updated_layout_topology, updated_geom
+
+
 def test_face_id_parsers_map_layout_dataset_ids() -> None:
     assert component_local_face_to_face_id("P000.local_ymax") == 3
     assert component_local_face_to_face_id("E000.local_zmin") == 4
@@ -32,8 +215,16 @@ def test_face_id_parsers_map_layout_dataset_ids() -> None:
     assert layout_mount_face_to_face_id("outer.zmin_outer") == 10
 
 
-def test_real_layout_dataset_normalizes_into_build_spec() -> None:
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
+def test_real_layout_dataset_normalizes_into_build_spec(tmp_path: Path) -> None:
+    layout_topology, geom = sample_realistic_layout_dataset()
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir(parents=True)
+    (dataset_dir / "layout_topology.json").write_text(
+        json.dumps(layout_topology, indent=2), encoding="utf-8"
+    )
+    (dataset_dir / "geom.json").write_text(
+        json.dumps(geom, indent=2), encoding="utf-8"
+    )
     normalized = load_and_normalize_layout_dataset(
         dataset_dir / "layout_topology.json",
         dataset_dir / "geom.json",
@@ -45,7 +236,7 @@ def test_real_layout_dataset_normalizes_into_build_spec() -> None:
     assert normalized["envelope"]["inner_size"] == pytest.approx(
         [307.81059879046506, 284.2744524358452, 196.22139926575724]
     )
-    assert len(normalized["components"]) == 15
+    assert len(normalized["components"]) == 2
 
     p000 = normalized["components"]["P000"]
     assert p000["source_component_id"] == "P_000_internal"
@@ -82,11 +273,7 @@ def test_real_layout_dataset_normalizes_into_build_spec() -> None:
 
 
 def test_round_trip_preserves_real_component_dataset_fields() -> None:
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
-    layout_topology, geom = load_layout_dataset_files(
-        dataset_dir / "layout_topology.json",
-        dataset_dir / "geom.json",
-    )
+    layout_topology, geom = sample_realistic_layout_dataset()
     normalized = normalize_layout_dataset(layout_topology, geom)
 
     updated_layout_topology, updated_geom = update_layout_dataset_component_placement(
@@ -128,11 +315,7 @@ def test_round_trip_preserves_real_component_dataset_fields() -> None:
 
 
 def test_round_trip_preserves_modeled_pose_after_face_change() -> None:
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
-    layout_topology, geom = load_layout_dataset_files(
-        dataset_dir / "layout_topology.json",
-        dataset_dir / "geom.json",
-    )
+    layout_topology, geom = sample_realistic_layout_dataset()
     normalized = normalize_layout_dataset(layout_topology, geom)
     target = normalized["components"]["E000"]
     extents = target["dims"]
@@ -179,11 +362,7 @@ def test_round_trip_preserves_modeled_pose_after_face_change() -> None:
 
 
 def test_internal_face_resolution_raises_when_multiple_cabins_match() -> None:
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
-    layout_topology, geom = load_layout_dataset_files(
-        dataset_dir / "layout_topology.json",
-        dataset_dir / "geom.json",
-    )
+    layout_topology, geom = sample_realistic_layout_dataset()
     updated_layout_topology = deepcopy(layout_topology)
     updated_layout_topology["cabins"].append(
         {
@@ -225,11 +404,7 @@ def test_internal_face_resolution_raises_when_multiple_cabins_match() -> None:
 
 
 def test_internal_face_resolution_preserves_current_cabin_when_multiple_exist() -> None:
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
-    layout_topology, geom = load_layout_dataset_files(
-        dataset_dir / "layout_topology.json",
-        dataset_dir / "geom.json",
-    )
+    layout_topology, geom = sample_realistic_layout_dataset()
     updated_layout_topology = deepcopy(layout_topology)
     updated_layout_topology["cabins"].append(
         {

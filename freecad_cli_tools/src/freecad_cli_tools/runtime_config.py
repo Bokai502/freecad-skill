@@ -12,7 +12,10 @@ DEFAULT_CONFIG_PATH = (
 )
 FALLBACK_RPC_HOST = "localhost"
 FALLBACK_RPC_PORT = "9876"
-FALLBACK_RUNTIME_DATA_DIR = "/tmp/freecad_data"
+FALLBACK_WORKSPACE_DIR = str(Path(__file__).resolve().parents[4])
+DEFAULT_LAYOUT_INPUT_DIR = Path("./01_layout")
+DEFAULT_GEOMETRY_EDIT_DIR = Path("./02_geometry_edit")
+DEFAULT_GEOMETRY_AFTER_STEM = "geometry_after"
 
 
 def parse_runtime_config(path: str | Path) -> dict[str, str]:
@@ -53,11 +56,68 @@ def get_default_rpc_port() -> int:
     return int(get_runtime_setting("FREECAD_RPC_PORT", FALLBACK_RPC_PORT))
 
 
-def get_default_runtime_data_dir() -> Path:
-    """Return the configured shared runtime data directory."""
+def get_default_workspace_dir() -> Path:
+    """Return the configured workspace root for relative dataset paths."""
     return Path(
-        get_runtime_setting("FREECAD_RUNTIME_DATA_DIR", FALLBACK_RUNTIME_DATA_DIR)
+        get_runtime_setting("FREECAD_WORKSPACE_DIR", FALLBACK_WORKSPACE_DIR)
     )
+
+
+def resolve_workspace_path(path: str | Path) -> Path:
+    """Resolve a path against the configured workspace root when it is relative."""
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate
+    return get_default_workspace_dir() / candidate
+
+
+def get_default_layout_topology_path() -> Path:
+    """Return the default layout_topology.json path."""
+    return resolve_workspace_path(DEFAULT_LAYOUT_INPUT_DIR / "layout_topology.json")
+
+
+def get_default_geom_path() -> Path:
+    """Return the default geom.json path."""
+    return resolve_workspace_path(DEFAULT_LAYOUT_INPUT_DIR / "geom.json")
+
+
+def get_default_geometry_edit_dir() -> Path:
+    """Return the default output directory for geometry-edit artifacts."""
+    return resolve_workspace_path(DEFAULT_GEOMETRY_EDIT_DIR)
+
+
+def get_default_geometry_after_step_path() -> Path:
+    """Return the default STEP output path for CLI-generated geometry."""
+    return get_default_geometry_edit_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.step"
+
+
+def resolve_geometry_after_step_path(path: str | Path | None = None) -> Path:
+    """Resolve a STEP export target whose basename is always geometry_after.step.
+
+    When a path is provided:
+    - absolute or relative file paths keep their parent directory
+    - directory-like paths (no suffix) place the file under that directory
+    """
+    if path is None:
+        return get_default_geometry_after_step_path()
+
+    candidate = resolve_workspace_path(path)
+    if candidate.suffix:
+        return candidate.with_name(f"{DEFAULT_GEOMETRY_AFTER_STEM}.step")
+    return candidate / f"{DEFAULT_GEOMETRY_AFTER_STEM}.step"
+
+
+def get_default_geometry_after_layout_topology_path() -> Path:
+    """Return the default layout_topology output path for non-destructive edits."""
+    return (
+        get_default_geometry_edit_dir()
+        / f"{DEFAULT_GEOMETRY_AFTER_STEM}.layout_topology.json"
+    )
+
+
+def get_default_geometry_after_geom_path() -> Path:
+    """Return the default geom output path for non-destructive edits."""
+    return get_default_geometry_edit_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.geom.json"
 
 
 def get_default_artifact_registry_dir() -> Path:
@@ -65,12 +125,12 @@ def get_default_artifact_registry_dir() -> Path:
     return Path(
         get_runtime_setting(
             "FREECAD_ARTIFACT_REGISTRY_DIR",
-            str(get_default_runtime_data_dir() / "registry"),
+            str(get_default_workspace_dir() / "registry"),
         )
     )
 
 
 DEFAULT_RPC_HOST = get_default_rpc_host()
 DEFAULT_RPC_PORT = get_default_rpc_port()
-DEFAULT_RUNTIME_DATA_DIR = get_default_runtime_data_dir()
+DEFAULT_WORKSPACE_DIR = get_default_workspace_dir()
 DEFAULT_ARTIFACT_REGISTRY_DIR = get_default_artifact_registry_dir()

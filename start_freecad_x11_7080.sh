@@ -23,7 +23,7 @@ load_runtime_config() {
     value="${value#"${value%%[![:space:]]*}"}"
     value="${value%"${value##*[![:space:]]}"}"
     case "${key}" in
-      FREECAD_RPC_HOST|FREECAD_RPC_PORT|FREECAD_RUNTIME_DATA_DIR)
+      FREECAD_RPC_HOST|FREECAD_RPC_PORT|FREECAD_WORKSPACE_DIR)
         if [[ -z "${!key:-}" ]]; then
           printf -v "${key}" '%s' "${value}"
           export "${key}"
@@ -90,7 +90,7 @@ status_session() {
   echo "freecad_bin=${FREECAD_BIN}"
   echo "runtime_config=${RUNTIME_CONFIG_PATH}"
   echo "freecad_rpc=${FREECAD_RPC_HOST:-localhost}:${FREECAD_RPC_PORT:-9876}"
-  echo "runtime_data_dir=${FREECAD_RUNTIME_DATA_DIR:-/tmp/freecad_data}"
+  echo "workspace_dir=${FREECAD_WORKSPACE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
   if is_port_listening "${VNC_PORT}"; then
     echo "backend: localhost:${VNC_PORT} is listening"
   else
@@ -164,7 +164,7 @@ if ! has_freecad_x_client; then
     FREECAD_RUNTIME_CONFIG="${RUNTIME_CONFIG_PATH}" \
     FREECAD_RPC_HOST="${FREECAD_RPC_HOST:-localhost}" \
     FREECAD_RPC_PORT="${FREECAD_RPC_PORT:-9876}" \
-    FREECAD_RUNTIME_DATA_DIR="${FREECAD_RUNTIME_DATA_DIR:-/tmp/freecad_data}" \
+    FREECAD_WORKSPACE_DIR="${FREECAD_WORKSPACE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}" \
     "${FREECAD_BIN}" --write-log --log-file "${FREECAD_LOG}" >"${FREECAD_LOG}.launch" 2>&1 &
   for _ in $(seq 1 20); do
     sleep 1

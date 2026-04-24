@@ -46,12 +46,12 @@ freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
 # 代码执行和视图
 freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
 freecad-get-view Isometric --output table.png
-freecad-create-assembly --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --doc-name LayoutAssembly
+freecad-create-assembly --doc-name LayoutAssembly
 
 # 基于 layout dataset 的安全移动与可选 CAD 同步
-freecad-layout-safe-move --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --component P001 --move 50 50 0
-freecad-layout-safe-move --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --component P001 --move 50 50 0 --sync-cad --doc-name LayoutAssembly
-freecad-layout-safe-move --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --component P002 --install-face 4 --move 0 0 0
+freecad-layout-safe-move --component P001 --move 50 50 0
+freecad-layout-safe-move --component P001 --move 50 50 0 --sync-cad --doc-name LayoutAssembly
+freecad-layout-safe-move --component P002 --install-face 4 --move 0 0 0
 freecad-sync-placements --doc-name LayoutAssembly --updates-file updates.json
 
 # 仅针对现有文档的兜底命令
@@ -64,7 +64,7 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 只要你手头有 `layout_topology.json` 和 `geom.json`，就建议把这对数据集作为单一事实来源：
 
 1. 先运行 `freecad-layout-safe-move`。
-2. 让它计算安全移动并写出更新后的数据集。
+2. 让它计算安全移动并把新的数据集写到 `./02_geometry_edit`。
 3. 如果需要同步 CAD，就附加 `--sync-cad --doc-name <doc>`，同一条命令会更新 FreeCAD 文档。
 4. 只有在你明确需要重新生成 CAD 文档时，才运行 `freecad-create-assembly`。
 
@@ -74,7 +74,9 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 
 `freecad-layout-safe-move` 是面向布局数据集的主移动命令。它既可以离线处理数据集，也可以把批准后的结果同步到正在运行的 FreeCAD 文档里。
 
-在 `skills_test` 工作区流程中，移动和旋转请求默认会覆盖源数据集文件，并在同步后把现有 `STEP` 文件原地重新导出；只有在用户明确要求时，才额外产出新的重建文件。
+在 `skills_test` 工作区流程中，移动和旋转请求默认会从 `./01_layout`
+读取输入，并把新的数据集、`geometry_after.step`、`geometry_after.glb`
+写到 `./02_geometry_edit`；只有在用户明确要求时，才覆盖原路径或指定其他输出。
 
 适用场景包括：
 
@@ -90,8 +92,6 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 
 ```bash
 freecad-create-assembly \
-  --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json \
-  --geom <WORKSPACE_ROOT>/01_layout/geom.json \
   --doc-name LayoutAssembly
 ```
 
@@ -150,6 +150,7 @@ RPC 默认值已集中到 [../config/freecad_runtime.conf](../config/freecad_run
 ## 依赖要求
 
 - 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务使用 [../config/freecad_runtime.conf](../config/freecad_runtime.conf) 中配置的主机和端口（当前为 `localhost:9876`）
+- 相对输入输出路径会基于 [../config/freecad_runtime.conf](../config/freecad_runtime.conf) 中的 `FREECAD_WORKSPACE_DIR` 解析
 - 对于离线 layout dataset 模式的 `freecad-layout-safe-move`：只需要 Python 3.9+
 - Python 3.9+
 

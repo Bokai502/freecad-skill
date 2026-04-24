@@ -282,6 +282,7 @@ def test_sync_layout_result_to_cad_sends_source_pose(
         "execute_batch_sync",
         fake_execute_batch_sync,
     )
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     layout_path = tmp_path / "layout_topology.json"
     geom_path = tmp_path / "geom.json"
     args = SimpleNamespace(
@@ -324,11 +325,29 @@ def test_sync_layout_result_to_cad_sends_source_pose(
     assert payload["enabled"] is True
     assert payload["layout_topology_path"] == str(layout_path)
     assert payload["geom_path"] == str(geom_path)
+    assert payload["step_path"] == str(
+        tmp_path / "02_geometry_edit" / "geometry_after.step"
+    )
     update = captured["updates"][0]
     assert update["source_position"] == [1.0, 2.0, 55.0]
     assert update["source_rotation_matrix"] == [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
     assert update["position"] == [55.0, -10.0, 5.0]
     assert update["rotation_matrix"] == [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]
+
+
+def test_resolve_step_output_path_forces_geometry_after_basename(tmp_path: Path) -> None:
+    args = SimpleNamespace(
+        sync_cad=True,
+        step_output=str(tmp_path / "exports" / "custom_name.step"),
+        doc_name="DemoDoc",
+    )
+
+    step_path = layout_safe_move.resolve_step_output_path(
+        args,
+        tmp_path / "geometry_after.layout_topology.json",
+    )
+
+    assert step_path == tmp_path / "exports" / "geometry_after.step"
 
 
 def test_layout_safe_move_records_partial_success_when_cad_sync_fails(
@@ -397,12 +416,13 @@ def test_layout_safe_move_records_step_and_glb_outputs_on_sync_success(
     output_layout_path = tmp_path / "layout_topology.updated.json"
     output_geom_path = tmp_path / "geom.updated.json"
     registry_dir = tmp_path / "registry"
-    step_path = tmp_path / "DemoDoc.step"
-    glb_path = tmp_path / "DemoDoc.glb"
+    step_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
+    glb_path = tmp_path / "02_geometry_edit" / "geometry_after.glb"
     write_dataset(layout_path, geom_path)
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
 
     def fake_sync(*args, **kwargs):
+        step_path.parent.mkdir(parents=True, exist_ok=True)
         step_path.write_text("step-data", encoding="utf-8")
         glb_path.write_text("glb-data", encoding="utf-8")
         return {
@@ -467,12 +487,13 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
     output_layout_path = tmp_path / "layout_topology.updated.json"
     output_geom_path = tmp_path / "geom.updated.json"
     registry_dir = tmp_path / "registry"
-    step_path = tmp_path / "DemoDoc.step"
-    glb_path = tmp_path / "DemoDoc.glb"
+    step_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
+    glb_path = tmp_path / "02_geometry_edit" / "geometry_after.glb"
     write_dataset(layout_path, geom_path)
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
 
     def fake_sync(*args, **kwargs):
+        step_path.parent.mkdir(parents=True, exist_ok=True)
         step_path.write_text("step-data", encoding="utf-8")
         return {
             "enabled": True,
@@ -523,3 +544,42 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
     assert manifest["outputs"]["step_path"] == str(step_path)
     assert manifest["outputs"]["glb_path"] == str(glb_path)
     assert manifest["error"]["code"] == "GLB_EXPORT_INCOMPLETE"
+
+
+def test_layout_safe_move_defaults_to_geometry_after_outputs_without_touching_source(
+    monkeypatch, tmp_path: Path
+) -> None:
+    source_dir = tmp_path / "01_layout"
+    source_dir.mkdir(parents=True)
+    layout_path = source_dir / "layout_topology.json"
+    geom_path = source_dir / "geom.json"
+    write_dataset(layout_path, geom_path)
+    original_layout = layout_path.read_text(encoding="utf-8")
+    original_geom = geom_path.read_text(encoding="utf-8")
+
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-layout-safe-move",
+            "--component",
+            "P001",
+            "--move",
+            "0",
+            "10",
+            "0",
+        ],
+    )
+
+    exit_code = layout_safe_move.main()
+
+    output_layout_path = (
+        tmp_path / "02_geometry_edit" / "geometry_after.layout_topology.json"
+    )
+    output_geom_path = tmp_path / "02_geometry_edit" / "geometry_after.geom.json"
+    assert exit_code == 0
+    assert layout_path.read_text(encoding="utf-8") == original_layout
+    assert geom_path.read_text(encoding="utf-8") == original_geom
+    assert output_layout_path.exists()
+    assert output_geom_path.exists()

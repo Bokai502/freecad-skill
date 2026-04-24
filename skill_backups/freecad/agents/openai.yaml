@@ -1,0 +1,4 @@
+interface:
+  display_name: "FreeCAD"
+  short_description: "Build, move, and replace FreeCAD assemblies"
+  default_prompt: "Use $freecad to build, move, or replace components in the FreeCAD layout-dataset workflow."

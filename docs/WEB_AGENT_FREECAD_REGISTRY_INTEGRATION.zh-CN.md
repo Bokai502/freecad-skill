@@ -254,8 +254,6 @@ env \
   FREECAD_CALLER=open_codex_web \
   FREECAD_AGENT_NAME=codex \
   freecad-create-assembly \
-    --layout-topology /data/lbk/freecad_skills/01_layout/layout_topology.json \
-    --geom /data/lbk/freecad_skills/01_layout/geom.json \
     --doc-name LayoutAssembly
 ```
 
@@ -384,7 +382,7 @@ body: JSON.stringify({
    - `thread_id`
    - `turn_id`
    - “调用 freecad-* CLI 时必须用 env 透传”
-4. 先只约束 `freecad-create-assembly / freecad-replace-component / freecad-yaml-safe-move`
+4. 先只约束 `freecad-create-assembly / freecad-replace-component / freecad-layout-safe-move`
 5. UI 暂时不读 registry，只先让 registry 文件稳定落账
 
 ## 12. 一个完整示例
@@ -396,7 +394,7 @@ POST /api/run
 Content-Type: application/json
 
 {
-  "prompt": "读取 /data/lbk/codex_web/FreeCAD_data/sample.yaml，生成 assembly",
+  "prompt": "读取 ./01_layout 下的数据集，生成 assembly",
   "threadId": "019db475-aef0-7591-be45-427603bcf231",
   "sessionId": "mo9u2ua5xvp6xs176c",
   "turnId": "mo9ub1ikxqp4il65bld",
@@ -414,8 +412,6 @@ env \
   FREECAD_CALLER=open_codex_web \
   FREECAD_AGENT_NAME=codex \
   freecad-create-assembly \
-    --layout-topology /data/lbk/freecad_skills/01_layout/layout_topology.json \
-    --geom /data/lbk/freecad_skills/01_layout/geom.json \
     --doc-name LayoutAssembly
 ```
 

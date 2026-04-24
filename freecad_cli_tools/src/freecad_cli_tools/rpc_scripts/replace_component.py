@@ -8,10 +8,10 @@ import FreeCADGui
 import Import
 import ImportGui
 import Part
-import yaml
 
-YAML_PATH = __YAML_PATH__
-ASSEMBLY_PATH = __ASSEMBLY_PATH__
+INPUT_PATH = __INPUT_PATH__
+ASSEMBLY_INPUT_PATH = __ASSEMBLY_INPUT_PATH__
+EXPORT_PATH = __EXPORT_PATH__
 REPLACEMENT_PATH = __REPLACEMENT_PATH__
 COMPONENT_NAME = __COMPONENT_NAME__
 DOC_NAME = __DOC_NAME__
@@ -127,7 +127,7 @@ def component_contact_face_from_placement(mount_face, rotation_rows):
     return component_contact_face(mount_face)
 
 
-def yaml_bbox(component, component_contact_face_id=None):
+def component_bbox(component, component_contact_face_id=None):
     placement = component.get("placement") or {}
     position = [float(v) for v in placement.get("position", [0.0, 0.0, 0.0])]
     shape = (component.get("shape") or "box").lower()
@@ -159,8 +159,8 @@ def yaml_bbox(component, component_contact_face_id=None):
     return position, [0.0, 0.0, 0.0]
 
 
-def yaml_component_center(component, component_contact_face_id, rotation_rows):
-    position, extents = yaml_bbox(component, component_contact_face_id)
+def component_center(component, component_contact_face_id, rotation_rows):
+    position, extents = component_bbox(component, component_contact_face_id)
     local_center = [extents[i] / 2.0 for i in range(3)]
     return position, extents, translate_position(position, rotation_rows, local_center)
 
@@ -342,7 +342,7 @@ def remove_object_with_children(doc, obj):
 
 
 def create_component_part(doc, label):
-    """Create a plain App::Part container matching the YAML builder's convention."""
+    """Create a plain App::Part container matching the assembly builder's convention."""
     part = doc.addObject("App::Part", label)
     part.Label = label
     return part
@@ -656,15 +656,15 @@ try:
         FreeCAD.setActiveDocument(doc.Name)
         doc.recompute()
     else:
-        doc, assembly = create_or_import_document(DOC_NAME, ASSEMBLY_PATH)
+        doc, assembly = create_or_import_document(DOC_NAME, ASSEMBLY_INPUT_PATH)
         assembly_imported = True
 
-    with Path(YAML_PATH).open("r", encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
+    with Path(INPUT_PATH).open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
     component = (data.get("components") or {}).get(COMPONENT_NAME)
     if component is None:
         raise RuntimeError(
-            f"Component '{COMPONENT_NAME}' not found in YAML {YAML_PATH}"
+            f"Component '{COMPONENT_NAME}' not found in normalized layout dataset {INPUT_PATH}"
         )
 
     placement = component.get("placement") or {}
@@ -689,17 +689,21 @@ try:
     inner_size = envelope.get("inner_size")
     if external:
         if not outer_size:
-            raise RuntimeError("External mount face requires envelope.outer_size in YAML.")
+            raise RuntimeError(
+                "External mount face requires envelope.outer_size in the layout dataset."
+            )
         wall_position = mount_direction * float(outer_size[mount_axis]) / 2.0
     else:
         if not inner_size:
-            raise RuntimeError("Internal mount face requires envelope.inner_size in YAML.")
+            raise RuntimeError(
+                "Internal mount face requires envelope.inner_size in the layout dataset."
+            )
         wall_position = mount_direction * float(inner_size[mount_axis]) / 2.0
 
     flange_dir = [0.0, 0.0, 0.0]
     flange_dir[mount_axis] = (-mount_direction) if external else mount_direction
 
-    yaml_position, yaml_dims, yaml_bbox_center = yaml_component_center(
+    _component_position, component_dims, component_bbox_center = component_center(
         component,
         component_contact_face_id,
         placement_rotation_rows,
@@ -751,19 +755,19 @@ try:
     native_bb = combined.BoundBox
     native_dims = [native_bb.XLength, native_bb.YLength, native_bb.ZLength]
 
-    # Auto-detect thrust axis by matching STEP bbox extents to the placeholder's
-    # component-local contact-axis thickness. This remains correct when
-    # placement.rotation_matrix rotates that local axis onto a different world
-    # mount axis.
+    # Auto-detect thrust axis by matching STEP bbox extents to the normalized
+    # placeholder's component-local contact-axis thickness. This remains
+    # correct when placement.rotation_matrix rotates that local axis onto a
+    # different world mount axis.
     replacement_meta = component.get("replacement") or {}
     axis_override = replacement_meta.get("thrust_axis")
     sign_override = replacement_meta.get("flange_sign")
 
     if axis_override is not None:
         thrust_axis = {"x": 0, "y": 1, "z": 2}[str(axis_override).lower()]
-        thrust_axis_source = "yaml"
+        thrust_axis_source = "cli"
     else:
-        contact_extent = float(yaml_dims[component_contact_axis])
+        contact_extent = float(component_dims[component_contact_axis])
         if contact_extent > 0.0:
             diffs = sorted(
                 (abs(native_dims[i] - contact_extent), i) for i in range(3)
@@ -776,7 +780,7 @@ try:
                 _sys.stderr.write(
                     f"[WARN] thrust_axis auto-detection ambiguous for '{COMPONENT_NAME}' "
                     f"(margin={ambiguity_margin:.1f} mm). "
-                    "If orientation looks wrong, add replacement.thrust_axis to the YAML.\n"
+                    "If orientation looks wrong, rerun with --thrust-axis.\n"
                 )
         else:
             thrust_axis = mount_axis
@@ -784,7 +788,7 @@ try:
 
     if sign_override is not None:
         flange_sign = int(sign_override)
-        flange_sign_source = "yaml"
+        flange_sign_source = "cli"
     else:
         flange_sign = 1
         flange_sign_source = "default_positive"
@@ -821,7 +825,7 @@ try:
             else:
                 delta[axis] = wall_position - rb_min[axis]
         else:
-            delta[axis] = yaml_bbox_center[axis] - rb_center[axis]
+            delta[axis] = component_bbox_center[axis] - rb_center[axis]
 
     # All computation succeeded — safe to remove the old component now.
     preserved_style = capture_view_style(target_part)
@@ -859,7 +863,7 @@ try:
     )
     hide_origin_features(doc)
 
-    assembly_path, glb_path = export_step_and_glb([assembly], ASSEMBLY_PATH)
+    assembly_path, glb_path = export_step_and_glb([assembly], EXPORT_PATH)
 
     view_updated = fit_view(doc.Name) if FIT_VIEW else False
 
@@ -894,9 +898,9 @@ try:
                 "flange_sign_source": flange_sign_source,
                 "flange_dir": flange_dir,
                 "local_flange_dir": local_flange_dir,
-                "yaml_dims": yaml_dims,
+                "component_dims": component_dims,
                 "native_dims": native_dims,
-                "yaml_bbox_center": yaml_bbox_center,
+                "component_bbox_center": component_bbox_center,
                 "translation_applied": delta,
                 "rotation_axis": list(rotation.Axis),
                 "rotation_angle_deg": rotation.Angle * 180.0 / math.pi,

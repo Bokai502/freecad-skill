@@ -47,12 +47,12 @@ freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
 # Code execution and view
 freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
 freecad-get-view Isometric --output table.png
-freecad-create-assembly --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --doc-name LayoutAssembly
+freecad-create-assembly --doc-name LayoutAssembly
 
 # Safe move with layout_topology.json + geom.json
-freecad-layout-safe-move --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --component P001 --move 50 50 0
-freecad-layout-safe-move --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --component P001 --move 50 50 0 --sync-cad --doc-name LayoutAssembly
-freecad-layout-safe-move --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json --geom <WORKSPACE_ROOT>/01_layout/geom.json --component P002 --install-face 4 --move 0 0 0
+freecad-layout-safe-move --component P001 --move 50 50 0
+freecad-layout-safe-move --component P001 --move 50 50 0 --sync-cad --doc-name LayoutAssembly
+freecad-layout-safe-move --component P002 --install-face 4 --move 0 0 0
 freecad-sync-placements --doc-name LayoutAssembly --updates-file updates.json
 
 # Document-only fallback commands
@@ -60,8 +60,11 @@ freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
 freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 ```
 
-`freecad-create-assembly` writes `<doc-name>.step` beside `layout_topology.json` by default and also exports a
-same-stem `.glb` beside it. If you pass `--output`, the sibling `.glb` follows that STEP path.
+By default, relative CLI paths are resolved against `FREECAD_WORKSPACE_DIR` in
+`config/freecad_runtime.conf`. `freecad-create-assembly` reads
+`./01_layout/layout_topology.json` and `./01_layout/geom.json`, then writes
+`./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb` unless
+you pass explicit paths.
 
 ## Recommended Move Workflow
 
@@ -69,7 +72,7 @@ Use the layout dataset as the source of truth whenever you have
 `layout_topology.json` and `geom.json`:
 
 1. Run `freecad-layout-safe-move` on the dataset pair.
-2. Let it compute a safe move and write the updated dataset.
+2. Let it compute a safe move and write new dataset files under `./02_geometry_edit`.
 3. If needed, pass `--sync-cad --doc-name <doc>` so the same command updates the FreeCAD document.
 4. Only run `freecad-create-assembly` when you explicitly need a regenerated CAD document.
 
@@ -90,7 +93,7 @@ Use it when you want to:
   different envelope face
 - keep internal components (faces 0–5) inside `envelope.inner_size`, or place external components
   (faces 6–11) on the outside of the envelope using `envelope.outer_size`
-- write the updated dataset placement and geometry fields back into both JSON files
+- write the updated dataset placement and geometry fields into new JSON files under `./02_geometry_edit`
 - optionally update the matching component in an open FreeCAD document
 - keep external-face moves inside the selected wall's in-plane 2D footprint and surface
   `FACE_BOUNDARY` when a requested path would slide past the wall edge
@@ -99,8 +102,6 @@ To build a new CAD document from the layout dataset, use:
 
 ```bash
 freecad-create-assembly \
-  --layout-topology <WORKSPACE_ROOT>/01_layout/layout_topology.json \
-  --geom <WORKSPACE_ROOT>/01_layout/geom.json \
   --doc-name LayoutAssembly
 ```
 
@@ -135,9 +136,9 @@ segment would cross that footprint, the command truncates the move to the closes
 includes `FACE_BOUNDARY` in the blocker list.
 
 In the `skills_test` workspace workflow, move and rotation requests now default
-to overwriting the source dataset files and re-exporting the existing `STEP`
-file in place, plus a sibling `.glb`, after sync unless the user explicitly
-asks for a separate rebuilt output.
+to reading from `./01_layout` and writing new dataset files plus
+`geometry_after.step` / `geometry_after.glb` under `./02_geometry_edit`, so the
+source dataset remains unchanged unless the user explicitly overrides the paths.
 
 RPC defaults are centralized in [../config/freecad_runtime.conf](../config/freecad_runtime.conf).
 
@@ -177,6 +178,7 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 ## Requirements
 
 - For RPC commands: FreeCAD with the MCP addon running on the host/port configured in [../config/freecad_runtime.conf](../config/freecad_runtime.conf) (currently `localhost:9876`)
+- Relative input and output paths are resolved against `FREECAD_WORKSPACE_DIR` from [../config/freecad_runtime.conf](../config/freecad_runtime.conf)
 - For offline layout-dataset use of `freecad-layout-safe-move`: Python 3.9+ only
 - Python 3.9+
 

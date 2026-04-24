@@ -17,15 +17,18 @@ from freecad_cli_tools.cli_support import (
 )
 from freecad_cli_tools.runtime_config import (
     get_default_artifact_registry_dir,
-    get_default_runtime_data_dir,
+    get_default_geometry_after_step_path,
+    get_default_workspace_dir,
     parse_runtime_config,
+    resolve_geometry_after_step_path,
+    resolve_workspace_path,
 )
 
 
 def test_parse_runtime_config_ignores_comments_and_blank_lines(tmp_path: Path) -> None:
     config_path = tmp_path / "freecad_runtime.conf"
     config_path.write_text(
-        "\n# comment\nFREECAD_RPC_PORT=9876\nFREECAD_RUNTIME_DATA_DIR=/tmp/freecad_data\n",
+        "\n# comment\nFREECAD_RPC_PORT=9876\nFREECAD_WORKSPACE_DIR=/tmp/workspace\n",
         encoding="utf-8",
     )
 
@@ -33,7 +36,7 @@ def test_parse_runtime_config_ignores_comments_and_blank_lines(tmp_path: Path) -
 
     assert config == {
         "FREECAD_RPC_PORT": "9876",
-        "FREECAD_RUNTIME_DATA_DIR": "/tmp/freecad_data",
+        "FREECAD_WORKSPACE_DIR": "/tmp/workspace",
     }
 
 
@@ -81,12 +84,44 @@ def test_extract_output_payload_accepts_message_without_marker_when_json_present
     assert payload == [{"name": "Doc1"}]
 
 
-def test_runtime_directory_getters_honor_environment_overrides(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+def test_runtime_directory_getters_honor_environment_overrides(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
     monkeypatch.delenv("FREECAD_ARTIFACT_REGISTRY_DIR", raising=False)
 
-    assert get_default_runtime_data_dir() == tmp_path / "runtime"
-    assert get_default_artifact_registry_dir() == tmp_path / "runtime" / "registry"
+    assert get_default_workspace_dir() == tmp_path / "workspace"
+    assert get_default_artifact_registry_dir() == (
+        tmp_path / "workspace" / "registry"
+    )
+
+
+def test_resolve_workspace_path_uses_configured_workspace_root(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
+
+    assert resolve_workspace_path("./01_layout/geom.json") == (
+        tmp_path / "workspace" / "01_layout" / "geom.json"
+    )
+    absolute = tmp_path / "abs" / "geom.json"
+    assert resolve_workspace_path(absolute) == absolute
+
+
+def test_resolve_geometry_after_step_path_forces_geometry_after_basename(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
+
+    assert get_default_geometry_after_step_path() == (
+        tmp_path / "workspace" / "02_geometry_edit" / "geometry_after.step"
+    )
+    assert resolve_geometry_after_step_path("exports/custom_name.step") == (
+        tmp_path / "workspace" / "exports" / "geometry_after.step"
+    )
+    assert resolve_geometry_after_step_path("exports") == (
+        tmp_path / "workspace" / "exports" / "geometry_after.step"
+    )
 
 
 def test_start_and_finalize_registry_run_write_manifest_and_index(

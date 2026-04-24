@@ -27,7 +27,13 @@ from freecad_cli_tools.rpc_script_fragments import (
     PLACEMENT_HELPERS,
 )
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
-from freecad_cli_tools.runtime_config import get_default_runtime_data_dir
+from freecad_cli_tools.runtime_config import (
+    get_default_geom_path,
+    get_default_layout_topology_path,
+    get_default_workspace_dir,
+    resolve_geometry_after_step_path,
+    resolve_workspace_path,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -39,13 +45,18 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--layout-topology",
-        required=True,
-        help="Path to layout_topology.json for the layout dataset.",
+        help=(
+            "Path to layout_topology.json for the layout dataset. "
+            "Defaults to './01_layout/layout_topology.json' under the configured "
+            "workspace root."
+        ),
     )
     parser.add_argument(
         "--geom",
-        required=True,
-        help="Path to geom.json for the layout dataset.",
+        help=(
+            "Path to geom.json for the layout dataset. Defaults to "
+            "'./01_layout/geom.json' under the configured workspace root."
+        ),
     )
     parser.add_argument(
         "--doc-name", required=True, help="Name of the FreeCAD document to create."
@@ -53,8 +64,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         help=(
-            "Optional output STEP path. Defaults to '<doc-name>.step' beside the "
-            "selected input dataset, and also writes a sibling '<doc-name>.glb'."
+            "Optional output STEP path or directory. The exported STEP/GLB "
+            "filenames are always 'geometry_after.step' and "
+            "'geometry_after.glb'. Defaults to './02_geometry_edit' under the "
+            "configured workspace root."
         ),
     )
     parser.add_argument(
@@ -72,22 +85,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def runtime_data_dir() -> Path:
-    """Return a shell/FreeCAD shared directory for temporary file exchange."""
-    return get_default_runtime_data_dir()
-
-
-def stage_runtime_paths(input_path: Path, output_path: Path, doc_name: str) -> tuple[Path, Path]:
-    """Create stable per-document runtime paths visible to the FreeCAD process."""
+def stage_runtime_paths(
+    input_path: Path, output_path: Path, doc_name: str
+) -> tuple[Path, Path]:
+    """Create stable per-document staging paths under the configured workspace."""
     safe_doc_name = "".join(
         ch if ch.isalnum() or ch in ("-", "_") else "_" for ch in doc_name
     ).strip("_") or "assembly"
-    root = runtime_data_dir() / "assembly_builds" / safe_doc_name
+    root = get_default_workspace_dir() / "assembly_builds" / safe_doc_name
     return root / "inputs" / input_path.name, root / "outputs" / output_path.name
 
 
 def stage_input_data(data: dict[str, object], target: Path) -> None:
-    """Write normalized input data into the shared runtime directory."""
+    """Write normalized input data into the workspace staging directory."""
     target.parent.mkdir(parents=True, exist_ok=True)
     for directory in (target.parent, target.parent.parent, target.parent.parent.parent):
         if directory.exists():
@@ -160,13 +170,11 @@ def source_artifacts(layout_topology_path: Path, geom_path: Path) -> list[dict[s
 
 def main() -> None:
     args = parse_args()
-    layout_topology_path = Path(args.layout_topology)
-    geom_path = Path(args.geom)
-    output_path = (
-        Path(args.output)
-        if args.output
-        else layout_topology_path.with_name(f"{args.doc_name}.step")
+    layout_topology_path = resolve_workspace_path(
+        args.layout_topology or get_default_layout_topology_path()
     )
+    geom_path = resolve_workspace_path(args.geom or get_default_geom_path())
+    output_path = resolve_geometry_after_step_path(args.output)
     staged_input_name = Path("normalized_layout_dataset.json")
     staged_input_path, staged_output_path = stage_runtime_paths(
         staged_input_name, output_path, args.doc_name

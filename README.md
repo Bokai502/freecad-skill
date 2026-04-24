@@ -5,7 +5,8 @@
 ## What This Workspace Contains
 
 - `freecad_cli_tools/`: Python package that provides FreeCAD CLI commands, YAML-safe move logic, RPC helpers, tests, and package-level documentation.
-- `examples/`: tracked example input files such as [sample.yaml](./examples/sample.yaml).
+- `01_layout/`: tracked source layout dataset inputs.
+- `02_geometry_edit/`: generated geometry-edit outputs such as `geometry_after.step` and validation files.
 - `data/`: runtime outputs such as generated STEP files, updated YAML files, screenshots, and temporary verification artifacts. This directory is intentionally ignored by git.
 - `skill_backups/`: local backup of the current FreeCAD skill instructions.
 
@@ -36,27 +37,29 @@ python -m pip install -e ./freecad_cli_tools[dev]
 ### 3. Create an assembly from the layout dataset
 
 ```powershell
-freecad-create-assembly --layout-topology <WORKSPACE_ROOT>\01_layout\layout_topology.json --geom <WORKSPACE_ROOT>\01_layout\geom.json --doc-name LayoutAssembly
+freecad-create-assembly --doc-name LayoutAssembly
 ```
 
 ### 4. Run a safe move and sync it back to CAD
 
 ```powershell
-freecad-yaml-safe-move --input examples\sample.yaml --output examples\sample.yaml --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name SampleYamlAssembly
+freecad-layout-safe-move --component P005 --install-face 5 --move 228.83671815191935 195.70657882164386 0 --sync-cad --doc-name LayoutAssembly
 ```
 
 For external-face placements, the same command uses `envelope.outer_size` as the wall reference,
 keeps the component on the outside of the shell, and still constrains motion to the selected face's
 2D footprint so it cannot slide past the wall edge.
 
-In the current workspace skill workflow, move and rotation operations update the existing YAML in
-place and re-export the current `STEP` file in place instead of creating sibling output files by
-default.
+In the current workspace skill workflow, relative CLI paths are resolved against
+`FREECAD_WORKSPACE_DIR` from [config/freecad_runtime.conf](./config/freecad_runtime.conf).
+By default, source inputs are read from `./01_layout`, while generated dataset,
+STEP, and GLB outputs are written to `./02_geometry_edit` using the base name
+`geometry_after` so the originals are not modified.
 
 ### 5. Batch-sync multiple placements
 
 ```powershell
-freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.json
+freecad-sync-placements --doc-name LayoutAssembly --updates-file updates.json
 ```
 
 ## Documentation Map
@@ -73,8 +76,9 @@ freecad-sync-placements --doc-name SampleYamlAssembly --updates-file updates.jso
 ```text
 skills_test/
 |-- freecad_cli_tools/      # CLI package, RPC helpers, tests
-|-- examples/               # tracked sample inputs
-|-- data/                   # runtime outputs, ignored by git
+|-- 01_layout/             # tracked layout dataset inputs
+|-- 02_geometry_edit/      # generated geometry-edit outputs
+|-- data/                  # other runtime outputs, ignored by git
 |-- docs/                   # architecture and flow diagrams
 |-- skill_backups/          # latest FreeCAD skill backup
 |-- VERSION_UPDATES.md

@@ -41,6 +41,14 @@ from freecad_cli_tools.layout_dataset import (
     save_layout_dataset_files,
     update_layout_dataset_component_placement,
 )
+from freecad_cli_tools.runtime_config import (
+    get_default_geom_path,
+    get_default_geometry_after_geom_path,
+    get_default_geometry_after_layout_topology_path,
+    get_default_layout_topology_path,
+    resolve_geometry_after_step_path,
+    resolve_workspace_path,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,25 +61,32 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--layout-topology",
-        required=True,
-        help="Path to the source layout_topology.json file.",
+        help=(
+            "Path to the source layout_topology.json file. Defaults to "
+            "'./01_layout/layout_topology.json' under the configured workspace root."
+        ),
     )
     parser.add_argument(
         "--geom",
-        required=True,
-        help="Path to the source geom.json file.",
+        help=(
+            "Path to the source geom.json file. Defaults to "
+            "'./01_layout/geom.json' under the configured workspace root."
+        ),
     )
     parser.add_argument(
         "--layout-topology-output",
         help=(
-            "Optional output layout_topology.json path. Defaults to overwriting "
-            "--layout-topology in place."
+            "Optional output layout_topology.json path. Defaults to "
+            "'./02_geometry_edit/geometry_after.layout_topology.json' under the "
+            "configured workspace root."
         ),
     )
     parser.add_argument(
         "--geom-output",
         help=(
-            "Optional output geom.json path. Defaults to overwriting --geom in place."
+            "Optional output geom.json path. Defaults to "
+            "'./02_geometry_edit/geometry_after.geom.json' under the configured "
+            "workspace root."
         ),
     )
     parser.add_argument(
@@ -110,9 +125,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--step-output",
         help=(
-            "STEP export path to overwrite after CAD sync. Defaults to "
-            "'<doc-name>.step' beside the output layout_topology.json path, and "
-            "also writes a sibling .glb."
+            "STEP export path or directory to use after CAD sync. The exported "
+            "STEP/GLB filenames are always 'geometry_after.step' and "
+            "'geometry_after.glb'. Defaults to './02_geometry_edit' under the "
+            "configured workspace root."
         ),
     )
     parser.add_argument(
@@ -139,10 +155,10 @@ def resolve_step_output_path(
     if not args.sync_cad:
         return None
     if args.step_output:
-        return Path(args.step_output).resolve()
+        return resolve_geometry_after_step_path(args.step_output).resolve()
     if not args.doc_name:
         raise ValueError("--doc-name is required when --sync-cad is used.")
-    return layout_topology_output_path.resolve().with_name(f"{args.doc_name}.step")
+    return resolve_geometry_after_step_path().resolve()
 
 
 def sync_layout_result_to_cad(
@@ -431,12 +447,16 @@ def classify_cad_sync_result(cad_sync: dict) -> tuple[str, dict | None, str | No
 
 def main() -> int:
     args = parse_args()
-    layout_topology_input_path = Path(args.layout_topology)
-    geom_input_path = Path(args.geom)
-    layout_topology_output_path = Path(
-        args.layout_topology_output or args.layout_topology
+    layout_topology_input_path = resolve_workspace_path(
+        args.layout_topology or get_default_layout_topology_path()
     )
-    geom_output_path = Path(args.geom_output or args.geom)
+    geom_input_path = resolve_workspace_path(args.geom or get_default_geom_path())
+    layout_topology_output_path = resolve_workspace_path(
+        args.layout_topology_output or get_default_geometry_after_layout_topology_path()
+    )
+    geom_output_path = resolve_workspace_path(
+        args.geom_output or get_default_geometry_after_geom_path()
+    )
     if args.step_output and not args.sync_cad:
         raise ValueError("--step-output requires --sync-cad.")
     if args.sync_cad and not args.doc_name:

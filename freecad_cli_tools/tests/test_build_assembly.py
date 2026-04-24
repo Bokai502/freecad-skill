@@ -14,6 +14,40 @@ def load_shape_helpers() -> dict:
     return namespace
 
 
+def sample_normalized_dataset() -> dict[str, object]:
+    return {
+        "schema_version": "layout_dataset_normalized/1.0",
+        "units": {"length": "mm"},
+        "envelope": {
+            "outer_size": [313.5, 290.0, 202.0],
+            "inner_size": [307.8, 284.2, 196.2],
+            "shell_thickness": 2.8,
+        },
+        "components": {
+            "P000": {
+                "id": "P000",
+                "shape": "box",
+                "dims": [10.0, 20.0, 30.0],
+                "placement": {
+                    "position": [1.0, 2.0, 3.0],
+                    "mount_face": 3,
+                    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                },
+            },
+            "E000": {
+                "id": "E000",
+                "shape": "box",
+                "dims": [40.0, 50.0, 60.0],
+                "placement": {
+                    "position": [7.0, 8.0, 9.0],
+                    "mount_face": 10,
+                    "rotation_matrix": [[-1, 0, 0], [0, 1, 0], [0, 0, -1]],
+                },
+            },
+        },
+    }
+
+
 def test_build_component_shape_spec_keeps_box_base_position() -> None:
     helpers = load_shape_helpers()
     build_component_shape_spec = helpers["build_component_shape_spec"]
@@ -195,18 +229,18 @@ def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> No
         "execute_script_payload",
         fake_execute_script_payload,
     )
-    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
+    monkeypatch.setattr(
+        build_assembly,
+        "load_and_normalize_layout_dataset",
+        lambda *args, **kwargs: sample_normalized_dataset(),
+    )
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "freecad-create-assembly",
-            "--layout-topology",
-            str(dataset_dir / "layout_topology.json"),
-            "--geom",
-            str(dataset_dir / "geom.json"),
             "--doc-name",
             "sample_0001",
         ],
@@ -220,7 +254,7 @@ def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> No
         "build_component_shape_spec"
         in captured["replacements"]["__COMPONENT_SHAPE_HELPERS__"]
     )
-    expected_step = dataset_dir / "sample_0001.step"
+    expected_step = tmp_path / "02_geometry_edit" / "geometry_after.step"
     staged_step = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
     assert staged_step.name == expected_step.name
     assert captured["code"] == "rendered-code"
@@ -250,29 +284,30 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
             "component_count": 0,
         }
 
-    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
     monkeypatch.setattr(
         build_assembly,
         "execute_script_payload",
         fake_execute_script_payload,
     )
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
-    output_path = tmp_path / "exports" / "sample.step"
+    monkeypatch.setattr(
+        build_assembly,
+        "load_and_normalize_layout_dataset",
+        lambda *args, **kwargs: sample_normalized_dataset(),
+    )
+    requested_output_path = tmp_path / "exports" / "sample.step"
+    output_path = tmp_path / "exports" / "geometry_after.step"
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "freecad-create-assembly",
-            "--layout-topology",
-            str(dataset_dir / "layout_topology.json"),
-            "--geom",
-            str(dataset_dir / "geom.json"),
             "--doc-name",
             "SampleYamlAssembly",
             "--output",
-            str(output_path),
+            str(requested_output_path),
         ],
     )
 
@@ -311,7 +346,7 @@ def test_main_writes_artifact_registry_record(
             "component_count": 0,
         }
 
-    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(tmp_path / "registry"))
     monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
     monkeypatch.setattr(
@@ -319,17 +354,17 @@ def test_main_writes_artifact_registry_record(
         "execute_script_payload",
         fake_execute_script_payload,
     )
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
+    monkeypatch.setattr(
+        build_assembly,
+        "load_and_normalize_layout_dataset",
+        lambda *args, **kwargs: sample_normalized_dataset(),
+    )
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "freecad-create-assembly",
-            "--layout-topology",
-            str(dataset_dir / "layout_topology.json"),
-            "--geom",
-            str(dataset_dir / "geom.json"),
             "--doc-name",
             "SampleYamlAssembly",
             "--run-id",
@@ -346,7 +381,7 @@ def test_main_writes_artifact_registry_record(
             encoding="utf-8"
         )
     )
-    expected_step = dataset_dir / "SampleYamlAssembly.step"
+    expected_step = tmp_path / "02_geometry_edit" / "geometry_after.step"
     assert manifest["operation"]["status"] == "success"
     assert manifest["session_id"] == "assembly-session"
     assert manifest["outputs"]["step_path"] == str(expected_step)
@@ -377,30 +412,30 @@ def test_main_accepts_layout_dataset_pair(
             "component_count": 15,
         }
 
-    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
     monkeypatch.setattr(
         build_assembly,
         "execute_script_payload",
         fake_execute_script_payload,
     )
-
-    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
-    output_path = tmp_path / "exports" / "layout.step"
+    monkeypatch.setattr(
+        build_assembly,
+        "load_and_normalize_layout_dataset",
+        lambda *args, **kwargs: sample_normalized_dataset(),
+    )
+    requested_output_path = tmp_path / "exports" / "layout.step"
+    output_path = tmp_path / "exports" / "geometry_after.step"
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "freecad-create-assembly",
-            "--layout-topology",
-            str(dataset_dir / "layout_topology.json"),
-            "--geom",
-            str(dataset_dir / "geom.json"),
             "--doc-name",
             "LayoutAssembly",
             "--output",
-            str(output_path),
+            str(requested_output_path),
         ],
     )
 
@@ -421,3 +456,59 @@ def test_main_accepts_layout_dataset_pair(
     payload = json.loads(capsys.readouterr().out)
     assert payload["save_path"] == str(output_path)
     assert payload["glb_path"] == str(output_path.with_suffix(".glb"))
+
+
+def test_main_uses_workspace_relative_default_input_and_output_paths(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["script_name"] = script_name
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        assert code == "rendered-code"
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "LayoutAssembly",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 15,
+        }
+
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
+    monkeypatch.setattr(
+        build_assembly,
+        "execute_script_payload",
+        fake_execute_script_payload,
+    )
+    monkeypatch.setattr(
+        build_assembly,
+        "load_and_normalize_layout_dataset",
+        lambda *args, **kwargs: sample_normalized_dataset(),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly",
+            "--doc-name",
+            "LayoutAssembly",
+        ],
+    )
+
+    build_assembly.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    expected_output = tmp_path / "02_geometry_edit" / "geometry_after.step"
+    assert payload["save_path"] == str(expected_output)
+    assert payload["glb_path"] == str(expected_output.with_suffix(".glb"))
+    assert expected_output.read_text(encoding="utf-8") == "step-data"
+    assert expected_output.with_suffix(".glb").read_text(encoding="utf-8") == "glb-data"

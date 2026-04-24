@@ -28,7 +28,7 @@ freecad
 
 ```bash
 freecad-list-docs
-freecad-create-assembly --layout-topology /data/lbk/freecad_skills/01_layout/layout_topology.json --geom /data/lbk/freecad_skills/01_layout/geom.json --doc-name LayoutAssembly
+freecad-create-assembly --doc-name LayoutAssembly
 ```
 
 ## 配置
@@ -37,7 +37,7 @@ freecad-create-assembly --layout-topology /data/lbk/freecad_skills/01_layout/lay
 
 - `FREECAD_RPC_HOST`
 - `FREECAD_RPC_PORT`
-- `FREECAD_RUNTIME_DATA_DIR`
+- `FREECAD_WORKSPACE_DIR`
 
 ## 结论
 

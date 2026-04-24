@@ -10,14 +10,14 @@ Use this when the user explicitly requests a rebuilt assembly.
 
 ```bash
 freecad-create-assembly \
-  --layout-topology <DATASET_DIR>/layout_topology.json \
-  --geom <DATASET_DIR>/geom.json \
-  --doc-name LayoutAssembly \
-  --output <DATASET_DIR>/LayoutAssembly.step
+  --doc-name LayoutAssembly
 ```
 
-The CLI normalizes the two JSON files into a build-ready assembly spec before RPC execution.
-FreeCAD then consumes that normalized spec and exports both `STEP` and sibling `GLB`.
+By default, the CLI resolves relative paths from `FREECAD_WORKSPACE_DIR` in
+`config/freecad_runtime.conf`, reads `./01_layout/layout_topology.json` and
+`./01_layout/geom.json`, then exports `./02_geometry_edit/geometry_after.step`
+and sibling `geometry_after.glb`. FreeCAD consumes a normalized intermediate
+spec during RPC execution.
 
 ## CAD Modeling Inputs Derived From The Dataset
 
@@ -144,12 +144,15 @@ envelope_shell.ViewObject.LineWidth = 2.0
 
 Set component colors, call `doc.recompute()`, switch to an isometric fitted view, and export:
 
-- `<output>.step`
-- sibling `<output>.glb`
+- `geometry_after.step`
+- sibling `geometry_after.glb`
 
 ## Rules
 
 - Prefer `--layout-topology` + `--geom` for the new dataset.
+- If these flags are omitted, use `./01_layout/layout_topology.json` and `./01_layout/geom.json` from the configured workspace root.
+- If `--output` is omitted, write `./02_geometry_edit/geometry_after.step` and sibling `.glb`.
+- If `--output` is provided, use only its directory or parent path; the exported filenames must still be `geometry_after.step` and `geometry_after.glb`.
 - Treat `sample.yaml` as backup only; do not use it as the primary build input.
 - Preserve `component_id` from `layout_topology.json` as the user-facing CAD object id.
 - Derive `rotation_matrix` from topology instead of assuming identity for external parts.

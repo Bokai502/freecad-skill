@@ -7,7 +7,8 @@ the layout dataset pair:
 - `geom.json`
 
 `sample.yaml` is not part of this workflow. The CLI entry point is
-`freecad-layout-safe-move`, which reads and writes the JSON dataset only.
+`freecad-layout-safe-move`, which always writes updated JSON dataset outputs and
+optionally syncs/export CAD artifacts.
 
 ## Core Rules
 
@@ -24,8 +25,9 @@ the layout dataset pair:
 - A component can be installed onto any box/envelope face id `0..11`. When the
   target face changes, rotate the component so the original component contact
   face still touches the new box/envelope face.
-- Do not rebuild the whole assembly for a move. Update the dataset in place, sync
-  the open FreeCAD document, then overwrite the existing STEP and sibling GLB.
+- Do not rebuild the whole assembly for a move. Write new dataset files under
+  `./02_geometry_edit`, and when syncing CAD export `geometry_after.step` plus
+  sibling GLB there by default.
 - During CAD sync, move an existing `<NAME>_part` container by the rigid delta
   from the previous normalized pose to the new normalized pose. Do not directly
   overwrite a container with the new absolute `position`, because replaced STEP
@@ -86,10 +88,11 @@ Collect these before running a move:
 - `layout-topology`: source `layout_topology.json`
 - `geom`: source `geom.json`
 - `layout-topology-output` / `geom-output`: optional output paths. If omitted,
-  the inputs are overwritten in place
+  default to `./02_geometry_edit/geometry_after.layout_topology.json` and
+  `./02_geometry_edit/geometry_after.geom.json`
 - `doc-name`: live FreeCAD document name when syncing CAD
-- `step-output`: existing assembly STEP path when it is not the default
-  `<doc-name>.step` beside the output `layout_topology.json`
+- `step-output`: optional export path or directory. Its basename is always
+  forced to `geometry_after.step`, with sibling `geometry_after.glb`
 
 ## Command Patterns
 
@@ -100,13 +103,10 @@ surface.
 
 ```bash
 freecad-layout-safe-move \
-  --layout-topology <DATASET_DIR>/layout_topology.json \
-  --geom <DATASET_DIR>/geom.json \
   --component P022 \
   --move 20 0 0 \
   --sync-cad \
-  --doc-name LayoutAssembly \
-  --step-output <DATASET_DIR>/LayoutAssembly.step
+  --doc-name LayoutAssembly
 ```
 
 If `P022` is on face `11` (`external +Z`), `--move 20 0 0` is valid because
@@ -120,14 +120,11 @@ component to another box/envelope surface.
 
 ```bash
 freecad-layout-safe-move \
-  --layout-topology <DATASET_DIR>/layout_topology.json \
-  --geom <DATASET_DIR>/geom.json \
   --component P022 \
   --install-face 10 \
   --move 20 0 0 \
   --sync-cad \
-  --doc-name LayoutAssembly \
-  --step-output <DATASET_DIR>/LayoutAssembly.step
+  --doc-name LayoutAssembly
 ```
 
 This updates `placements[*].mount_face_id` to the selected dataset face and
@@ -140,14 +137,12 @@ Use this when FreeCAD is not running or the user only wants an updated dataset.
 
 ```bash
 freecad-layout-safe-move \
-  --layout-topology <DATASET_DIR>/layout_topology.json \
-  --geom <DATASET_DIR>/geom.json \
   --component P022 \
   --move 20 0 0
 ```
 
-This updates `layout_topology.json` and `geom.json` only. It does not update
-STEP or GLB.
+This writes new dataset files under `./02_geometry_edit` only. It does not
+update STEP or GLB.
 
 ## Execution Steps
 
@@ -163,7 +158,7 @@ STEP or GLB.
    new target face.
 8. Check whether the requested vector lies in the target face plane.
 9. Run `freecad-layout-safe-move` with the dataset paths.
-10. Write the updated normalized result back into both dataset files.
+10. Write the updated normalized result into the non-destructive output dataset files.
 11. When CAD artifacts must be updated, include `--sync-cad`, `--doc-name`, and
    optionally `--step-output`.
 12. Confirm CAD sync used the previous normalized pose and new normalized pose
