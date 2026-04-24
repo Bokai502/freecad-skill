@@ -254,8 +254,9 @@ env \
   FREECAD_CALLER=open_codex_web \
   FREECAD_AGENT_NAME=codex \
   freecad-create-assembly \
-    --input /data/lbk/codex_web/FreeCAD_data/sample.yaml \
-    --doc-name SampleYamlAssembly
+    --layout-topology /data/lbk/freecad_skills/01_layout/layout_topology.json \
+    --geom /data/lbk/freecad_skills/01_layout/geom.json \
+    --doc-name LayoutAssembly
 ```
 
 如果你希望 run manifest 文件名也能被外层稳定引用，可以再追加：
@@ -413,8 +414,9 @@ env \
   FREECAD_CALLER=open_codex_web \
   FREECAD_AGENT_NAME=codex \
   freecad-create-assembly \
-    --input /data/lbk/codex_web/FreeCAD_data/sample.yaml \
-    --doc-name SampleYamlAssembly
+    --layout-topology /data/lbk/freecad_skills/01_layout/layout_topology.json \
+    --geom /data/lbk/freecad_skills/01_layout/geom.json \
+    --doc-name LayoutAssembly
 ```
 
 ### 12.3 产物登记结果

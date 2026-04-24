@@ -4,9 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-import yaml
-
-from freecad_cli_tools.cli import build_assembly_from_yaml
+from freecad_cli_tools.cli import build_assembly
 from freecad_cli_tools.rpc_script_fragments import COMPONENT_SHAPE_HELPERS
 
 
@@ -166,52 +164,6 @@ def test_build_component_shape_spec_uses_mount_axis_for_legacy_three_value_cylin
     ]
 
 
-def test_updated_sample_yaml_cylinder_components_build_shape_specs() -> None:
-    helpers = load_shape_helpers()
-    build_component_shape_spec = helpers["build_component_shape_spec"]
-    apply_rotation_rows = helpers["apply_rotation_rows"]
-    sample_path = Path(__file__).resolve().parents[2] / "examples" / "sample.yaml"
-    sample = yaml.safe_load(sample_path.read_text(encoding="utf-8"))
-
-    expected = {
-        "P005": {
-            "placement_position": [
-                170.39544205001832,
-                18.63333898339918,
-                -132.6849685999266,
-            ],
-            "axis": [1.0, 0.0, 0.0],
-        },
-        "P010": {
-            "placement_position": [
-                -193.44925497516803,
-                -246.5032580075667,
-                -60.670465703455946,
-            ],
-            "axis": [0.0, 1.0, 0.0],
-        },
-        "P011": {
-            "placement_position": [
-                -189.99231640981162,
-                163.5609819120264,
-                132.30312475973884,
-            ],
-            "axis": [0.0, 1.0, 0.0],
-        },
-    }
-
-    for component_id, expectations in expected.items():
-        spec = build_component_shape_spec(
-            component_id, sample["components"][component_id]
-        )
-        assert spec["object_type"] == "Part::Cylinder"
-        assert spec["placement_position"] == expectations["placement_position"]
-        assert (
-            apply_rotation_rows(spec["rotation_rows"], [0.0, 0.0, 1.0])
-            == expectations["axis"]
-        )
-
-
 def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> None:
     captured: dict = {}
 
@@ -220,7 +172,7 @@ def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> No
         captured["replacements"] = replacements
         return "rendered-code"
 
-    monkeypatch.setattr(build_assembly_from_yaml, "render_rpc_script", fake_render)
+    monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
 
     def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
         captured["host"] = host
@@ -239,36 +191,36 @@ def test_main_injects_component_shape_helpers(monkeypatch, tmp_path: Path) -> No
         }
 
     monkeypatch.setattr(
-        build_assembly_from_yaml,
+        build_assembly,
         "execute_script_payload",
         fake_execute_script_payload,
     )
     monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
-
-    yaml_path = tmp_path / "sample.yaml"
-    yaml_path.write_text("components: {}\n", encoding="utf-8")
+    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "freecad-create-assembly",
-            "--input",
-            str(yaml_path),
+            "--layout-topology",
+            str(dataset_dir / "layout_topology.json"),
+            "--geom",
+            str(dataset_dir / "geom.json"),
             "--doc-name",
             "sample_0001",
         ],
     )
 
-    build_assembly_from_yaml.main()
+    build_assembly.main()
 
-    assert captured["script_name"] == "assembly_from_yaml.py"
+    assert captured["script_name"] == "assembly_from_layout.py"
     assert "__COMPONENT_SHAPE_HELPERS__" in captured["replacements"]
     assert (
         "build_component_shape_spec"
         in captured["replacements"]["__COMPONENT_SHAPE_HELPERS__"]
     )
-    expected_step = yaml_path.with_name("sample_0001.step")
+    expected_step = dataset_dir / "sample_0001.step"
     staged_step = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
     assert staged_step.name == expected_step.name
     assert captured["code"] == "rendered-code"
@@ -299,15 +251,13 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
         }
 
     monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
-    monkeypatch.setattr(build_assembly_from_yaml, "render_rpc_script", fake_render)
+    monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
     monkeypatch.setattr(
-        build_assembly_from_yaml,
+        build_assembly,
         "execute_script_payload",
         fake_execute_script_payload,
     )
-
-    yaml_path = tmp_path / "sample.yaml"
-    yaml_path.write_text("components: {}\n", encoding="utf-8")
+    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
     output_path = tmp_path / "exports" / "sample.step"
 
     monkeypatch.setattr(
@@ -315,8 +265,10 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
         "argv",
         [
             "freecad-create-assembly",
-            "--input",
-            str(yaml_path),
+            "--layout-topology",
+            str(dataset_dir / "layout_topology.json"),
+            "--geom",
+            str(dataset_dir / "geom.json"),
             "--doc-name",
             "SampleYamlAssembly",
             "--output",
@@ -324,10 +276,11 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
         ],
     )
 
-    build_assembly_from_yaml.main()
+    build_assembly.main()
 
-    staged_input = Path(json.loads(captured["replacements"]["__YAML_PATH__"]))
-    assert staged_input.read_text(encoding="utf-8") == "components: {}\n"
+    staged_input = Path(json.loads(captured["replacements"]["__INPUT_PATH__"]))
+    normalized = json.loads(staged_input.read_text(encoding="utf-8"))
+    assert normalized["components"]["P000"]["placement"]["mount_face"] == 3
     assert output_path.read_text(encoding="utf-8") == "step-data"
     assert output_path.with_suffix(".glb").read_text(encoding="utf-8") == "glb-data"
 
@@ -360,23 +313,23 @@ def test_main_writes_artifact_registry_record(
 
     monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(tmp_path / "registry"))
-    monkeypatch.setattr(build_assembly_from_yaml, "render_rpc_script", fake_render)
+    monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
     monkeypatch.setattr(
-        build_assembly_from_yaml,
+        build_assembly,
         "execute_script_payload",
         fake_execute_script_payload,
     )
-
-    yaml_path = tmp_path / "sample.yaml"
-    yaml_path.write_text("components: {}\n", encoding="utf-8")
+    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
 
     monkeypatch.setattr(
         sys,
         "argv",
         [
             "freecad-create-assembly",
-            "--input",
-            str(yaml_path),
+            "--layout-topology",
+            str(dataset_dir / "layout_topology.json"),
+            "--geom",
+            str(dataset_dir / "geom.json"),
             "--doc-name",
             "SampleYamlAssembly",
             "--run-id",
@@ -386,15 +339,85 @@ def test_main_writes_artifact_registry_record(
         ],
     )
 
-    build_assembly_from_yaml.main()
+    build_assembly.main()
 
     manifest = json.loads(
         (tmp_path / "registry" / "runs" / "assembly-run.json").read_text(
             encoding="utf-8"
         )
     )
-    expected_step = yaml_path.with_name("SampleYamlAssembly.step")
+    expected_step = dataset_dir / "SampleYamlAssembly.step"
     assert manifest["operation"]["status"] == "success"
     assert manifest["session_id"] == "assembly-session"
     assert manifest["outputs"]["step_path"] == str(expected_step)
     assert manifest["outputs"]["glb_path"] == str(expected_step.with_suffix(".glb"))
+
+
+def test_main_accepts_layout_dataset_pair(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["script_name"] = script_name
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        assert code == "rendered-code"
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "LayoutAssembly",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 15,
+        }
+
+    monkeypatch.setenv("FREECAD_RUNTIME_DATA_DIR", str(tmp_path / "runtime"))
+    monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
+    monkeypatch.setattr(
+        build_assembly,
+        "execute_script_payload",
+        fake_execute_script_payload,
+    )
+
+    dataset_dir = Path(__file__).resolve().parents[3] / "01_layout"
+    output_path = tmp_path / "exports" / "layout.step"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly",
+            "--layout-topology",
+            str(dataset_dir / "layout_topology.json"),
+            "--geom",
+            str(dataset_dir / "geom.json"),
+            "--doc-name",
+            "LayoutAssembly",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    build_assembly.main()
+
+    staged_input = Path(json.loads(captured["replacements"]["__INPUT_PATH__"]))
+    normalized = json.loads(staged_input.read_text(encoding="utf-8"))
+    assert normalized["components"]["P000"]["placement"]["mount_face"] == 3
+    assert normalized["components"]["E000"]["placement"]["mount_face"] == 10
+    assert normalized["components"]["E000"]["placement"]["rotation_matrix"] == [
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, 0, -1],
+    ]
+    assert output_path.read_text(encoding="utf-8") == "step-data"
+    assert output_path.with_suffix(".glb").read_text(encoding="utf-8") == "glb-data"
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["save_path"] == str(output_path)
+    assert payload["glb_path"] == str(output_path.with_suffix(".glb"))

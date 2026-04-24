@@ -28,7 +28,7 @@ freecad
 
 ```bash
 freecad-list-docs
-freecad-create-assembly --input <FREECAD_RUNTIME_DATA_DIR>/sample.yaml --doc-name SampleYamlAssembly
+freecad-create-assembly --layout-topology /data/lbk/freecad_skills/01_layout/layout_topology.json --geom /data/lbk/freecad_skills/01_layout/geom.json --doc-name LayoutAssembly
 ```
 
 ## 配置

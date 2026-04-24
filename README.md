@@ -1,6 +1,6 @@
 # Skills Test Workspace
 
-`skills_test` is a FreeCAD-oriented workspace for YAML-driven assembly generation, collision-aware component movement, and CAD synchronization through XML-RPC.
+`skills_test` is a FreeCAD-oriented workspace for layout-dataset assembly generation, collision-aware component movement, and CAD synchronization through XML-RPC.
 
 ## What This Workspace Contains
 
@@ -12,7 +12,7 @@
 ## Key Capabilities
 
 - Connect CLI tools to a locally running FreeCAD MCP/XML-RPC service.
-- Build FreeCAD assemblies from YAML definitions.
+- Build FreeCAD assemblies from `layout_topology.json + geom.json`.
 - Move components safely with inner-envelope, external-face boundary, and collision constraints.
 - Sync one or many computed placements into a live FreeCAD document.
 - Benchmark safe-move performance and validate behavior with tests and CI.
@@ -33,10 +33,10 @@ Make sure the FreeCADMCP addon is installed and has started the XML-RPC service 
 python -m pip install -e ./freecad_cli_tools[dev]
 ```
 
-### 3. Create an assembly from YAML
+### 3. Create an assembly from the layout dataset
 
 ```powershell
-freecad-create-assembly --input examples\sample.yaml --doc-name SampleYamlAssembly
+freecad-create-assembly --layout-topology <WORKSPACE_ROOT>\01_layout\layout_topology.json --geom <WORKSPACE_ROOT>\01_layout\geom.json --doc-name LayoutAssembly
 ```
 
 ### 4. Run a safe move and sync it back to CAD

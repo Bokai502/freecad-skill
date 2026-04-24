@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
-"""Safely update a component placement inside a YAML assembly."""
+"""Safely update a component placement inside a layout dataset."""
 
 import argparse
 import json
 import sys
 from pathlib import Path
-
-import yaml
 
 from freecad_cli_tools import add_connection_args
 from freecad_cli_tools.artifact_registry import (
@@ -31,29 +29,50 @@ from freecad_cli_tools.geometry import (
     find_best_safe_scale,
     get_face_data,
     is_external_face,
-    project_move_to_mount_plane,
     rotation_matrix_from_component,
     update_component_placement,
+    project_move_to_mount_plane,
     vector_add,
     vector_scale,
 )
-from freecad_cli_tools.yaml_schema import validate_assembly
+from freecad_cli_tools.layout_dataset import (
+    load_layout_dataset_files,
+    normalize_layout_dataset,
+    save_layout_dataset_files,
+    update_layout_dataset_component_placement,
+)
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Move a component inside a YAML assembly, detect collisions, "
-            "write an updated YAML file, and optionally sync the result to FreeCAD."
+            "Move a component inside layout_topology.json + geom.json, detect "
+            "collisions, write updated dataset files, and optionally sync the "
+            "result to FreeCAD."
         )
     )
     parser.add_argument(
-        "--input", default="data/sample.yaml", help="Path to the source YAML file."
+        "--layout-topology",
+        required=True,
+        help="Path to the source layout_topology.json file.",
     )
     parser.add_argument(
-        "--output",
-        default="data/sample.updated.yaml",
-        help="Path to the output YAML file.",
+        "--geom",
+        required=True,
+        help="Path to the source geom.json file.",
+    )
+    parser.add_argument(
+        "--layout-topology-output",
+        help=(
+            "Optional output layout_topology.json path. Defaults to overwriting "
+            "--layout-topology in place."
+        ),
+    )
+    parser.add_argument(
+        "--geom-output",
+        help=(
+            "Optional output geom.json path. Defaults to overwriting --geom in place."
+        ),
     )
     parser.add_argument(
         "--component", default="P001", help="Target component id to move."
@@ -79,7 +98,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sync-cad",
         action="store_true",
-        help="After writing the updated YAML, sync the component position into a FreeCAD document.",
+        help=(
+            "After writing the updated dataset files, sync the component position "
+            "into a FreeCAD document."
+        ),
     )
     parser.add_argument(
         "--doc-name",
@@ -89,7 +111,8 @@ def parse_args() -> argparse.Namespace:
         "--step-output",
         help=(
             "STEP export path to overwrite after CAD sync. Defaults to "
-            "'<doc-name>.step' beside --output, and also writes a sibling .glb."
+            "'<doc-name>.step' beside the output layout_topology.json path, and "
+            "also writes a sibling .glb."
         ),
     )
     parser.add_argument(
@@ -108,17 +131,10 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def load_yaml(path: Path) -> dict:
-    with path.open("r", encoding="utf-8") as handle:
-        return yaml.safe_load(handle)
-
-
-def save_yaml(path: Path, data: dict) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        yaml.safe_dump(data, handle, sort_keys=False, allow_unicode=True)
-
-
-def resolve_step_output_path(args: argparse.Namespace, output_path: Path) -> Path | None:
+def resolve_step_output_path(
+    args: argparse.Namespace,
+    layout_topology_output_path: Path,
+) -> Path | None:
     """Resolve the STEP export path used for post-move CAD exports."""
     if not args.sync_cad:
         return None
@@ -126,12 +142,13 @@ def resolve_step_output_path(args: argparse.Namespace, output_path: Path) -> Pat
         return Path(args.step_output).resolve()
     if not args.doc_name:
         raise ValueError("--doc-name is required when --sync-cad is used.")
-    return output_path.resolve().with_name(f"{args.doc_name}.step")
+    return layout_topology_output_path.resolve().with_name(f"{args.doc_name}.step")
 
 
-def sync_yaml_result_to_cad(
+def sync_layout_result_to_cad(
     args: argparse.Namespace,
-    output_path: Path,
+    layout_topology_output_path: Path,
+    geom_output_path: Path,
     component_id: str,
     component: dict,
     source_component: dict | None = None,
@@ -140,7 +157,7 @@ def sync_yaml_result_to_cad(
         return {"enabled": False, "success": False}
     if not args.doc_name:
         raise ValueError("--doc-name is required when --sync-cad is used.")
-    export_step_path = resolve_step_output_path(args, output_path)
+    export_step_path = resolve_step_output_path(args, layout_topology_output_path)
 
     position = [float(value) for value in component["placement"]["position"]]
     rotation_matrix = rotation_matrix_from_component(component)
@@ -185,25 +202,35 @@ def sync_yaml_result_to_cad(
             f"cannot connect to FreeCAD RPC server at {args.host}:{args.port}"
         ) from exc
     payload["enabled"] = True
-    payload["yaml_path"] = str(output_path)
+    payload["layout_topology_path"] = str(layout_topology_output_path)
+    payload["geom_path"] = str(geom_output_path)
     if export_step_path is not None:
         payload["step_path"] = str(export_step_path)
         payload["glb_path"] = str(export_step_path.with_suffix(".glb"))
     return payload
 
 
-def registry_inputs(args: argparse.Namespace, input_path: Path, output_path: Path) -> dict[str, object]:
-    """Build the registry input payload for YAML-safe-move."""
-    step_output_path = resolve_step_output_path(args, output_path)
+def registry_inputs(
+    args: argparse.Namespace,
+    layout_topology_input_path: Path,
+    geom_input_path: Path,
+    layout_topology_output_path: Path,
+    geom_output_path: Path,
+) -> dict[str, object]:
+    """Build the registry input payload for layout-dataset safe-move."""
+    step_output_path = resolve_step_output_path(args, layout_topology_output_path)
     return {
-        "input_yaml_path": str(input_path),
-        "output_yaml_path": str(output_path),
+        "input_layout_topology_path": str(layout_topology_input_path),
+        "input_geom_path": str(geom_input_path),
+        "output_layout_topology_path": str(layout_topology_output_path),
+        "output_geom_path": str(geom_output_path),
         "step_output_path": str(step_output_path) if step_output_path else None,
         "glb_output_path": (
             str(step_output_path.with_suffix(".glb"))
             if step_output_path is not None
             else None
         ),
+        "input_format": "layout_dataset",
         "component": args.component,
         "move": [float(value) for value in args.move],
         "install_face": args.install_face,
@@ -217,8 +244,10 @@ def registry_inputs(args: argparse.Namespace, input_path: Path, output_path: Pat
 def build_result_payload(
     *,
     success: bool,
-    input_path: Path,
-    output_path: Path,
+    layout_topology_input_path: Path,
+    geom_input_path: Path,
+    layout_topology_output_path: Path,
+    geom_output_path: Path,
     args: argparse.Namespace,
     component_face: int,
     original_envelope_face: int,
@@ -245,11 +274,14 @@ def build_result_payload(
     step_exported: bool,
     glb_exported: bool,
 ) -> dict[str, object]:
-    """Build a structured result payload for YAML-safe-move."""
+    """Build a structured result payload for layout-dataset safe-move."""
     return {
         "success": success,
-        "input_file": str(input_path.resolve()),
-        "output_file": str(output_path.resolve()),
+        "input_format": "layout_dataset",
+        "input_layout_topology_path": str(layout_topology_input_path.resolve()),
+        "input_geom_path": str(geom_input_path.resolve()),
+        "output_layout_topology_path": str(layout_topology_output_path.resolve()),
+        "output_geom_path": str(geom_output_path.resolve()),
         "step_path": step_path,
         "glb_path": glb_path,
         "step_exported": step_exported,
@@ -284,9 +316,11 @@ def build_result_payload(
 
 
 def emit_result_lines(payload: dict[str, object]) -> None:
-    """Print the legacy human-readable output for YAML-safe-move."""
-    print(f"input_file: {payload['input_file']}")
-    print(f"output_file: {payload['output_file']}")
+    """Print the human-readable output for layout-dataset safe-move."""
+    print(f"input_layout_topology_path: {payload['input_layout_topology_path']}")
+    print(f"input_geom_path: {payload['input_geom_path']}")
+    print(f"output_layout_topology_path: {payload['output_layout_topology_path']}")
+    print(f"output_geom_path: {payload['output_geom_path']}")
     print(f"step_path: {payload['step_path']}")
     print(f"glb_path: {payload['glb_path']}")
     print(f"step_exported: {payload['step_exported']}")
@@ -397,8 +431,12 @@ def classify_cad_sync_result(cad_sync: dict) -> tuple[str, dict | None, str | No
 
 def main() -> int:
     args = parse_args()
-    input_path = Path(args.input)
-    output_path = Path(args.output)
+    layout_topology_input_path = Path(args.layout_topology)
+    geom_input_path = Path(args.geom)
+    layout_topology_output_path = Path(
+        args.layout_topology_output or args.layout_topology
+    )
+    geom_output_path = Path(args.geom_output or args.geom)
     if args.step_output and not args.sync_cad:
         raise ValueError("--step-output requires --sync-cad.")
     if args.sync_cad and not args.doc_name:
@@ -406,14 +444,23 @@ def main() -> int:
     move = [float(value) for value in args.move]
     registry_run = start_registry_run(
         args,
-        tool="freecad-yaml-safe-move",
-        operation_type="yaml_safe_move",
-        inputs=registry_inputs(args, input_path, output_path),
+        tool="freecad-layout-safe-move",
+        operation_type="layout_dataset_safe_move",
+        inputs=registry_inputs(
+            args,
+            layout_topology_input_path,
+            geom_input_path,
+            layout_topology_output_path,
+            geom_output_path,
+        ),
     )
 
     try:
-        data = load_yaml(input_path)
-        validate_assembly(data)
+        layout_topology, geom = load_layout_dataset_files(
+            layout_topology_input_path,
+            geom_input_path,
+        )
+        data = normalize_layout_dataset(layout_topology, geom)
         components = data.get("components", {})
         if args.component not in components:
             available = ", ".join(sorted(components))
@@ -430,7 +477,6 @@ def main() -> int:
         )
         _, target_face_label, target_axis, _ = get_face_data(target_envelope_face)
 
-        # Choose the reference wall size: outer surface for external faces, inner for internal.
         if is_external_face(target_envelope_face):
             outer_size = data["envelope"].get("outer_size")
             if outer_size is None:
@@ -520,12 +566,24 @@ def main() -> int:
             target_envelope_face,
             rotation_matrix=target_rotation_matrix,
         )
-        save_yaml(output_path, updated)
+        updated_layout_topology, updated_geom = update_layout_dataset_component_placement(
+            layout_topology,
+            geom,
+            args.component,
+            updated["components"][args.component],
+        )
+        save_layout_dataset_files(
+            layout_topology_output_path,
+            updated_layout_topology,
+            geom_output_path,
+            updated_geom,
+        )
 
         try:
-            cad_sync = sync_yaml_result_to_cad(
+            cad_sync = sync_layout_result_to_cad(
                 args,
-                output_path,
+                layout_topology_output_path,
+                geom_output_path,
                 args.component,
                 updated["components"][args.component],
                 source_component=target,
@@ -549,8 +607,10 @@ def main() -> int:
         ) = classify_cad_sync_result(cad_sync)
         payload = build_result_payload(
             success=registry_status == "success",
-            input_path=input_path,
-            output_path=output_path,
+            layout_topology_input_path=layout_topology_input_path,
+            geom_input_path=geom_input_path,
+            layout_topology_output_path=layout_topology_output_path,
+            geom_output_path=geom_output_path,
             args=args,
             component_face=component_face,
             original_envelope_face=original_envelope_face,
@@ -583,15 +643,18 @@ def main() -> int:
             registry_run,
             status=registry_status,
             outputs={
-                "yaml_path": str(output_path),
+                "layout_topology_path": str(layout_topology_output_path),
+                "geom_path": str(geom_output_path),
                 "step_path": step_path,
                 "glb_path": glb_path,
             },
             result=payload,
             error=registry_error,
             artifacts=[
-                artifact_entry("input_yaml", input_path),
-                artifact_entry("output_yaml", output_path),
+                artifact_entry("input_layout_topology", layout_topology_input_path),
+                artifact_entry("input_geom", geom_input_path),
+                artifact_entry("output_layout_topology", layout_topology_output_path),
+                artifact_entry("output_geom", geom_output_path),
                 artifact_entry("step", step_path),
                 artifact_entry("glb", glb_path),
             ],
@@ -602,12 +665,17 @@ def main() -> int:
         finalize_registry_run(
             registry_run,
             status="failed",
-            outputs={},
+            outputs={
+                "layout_topology_path": str(layout_topology_output_path),
+                "geom_path": str(geom_output_path),
+            },
             result={"success": False},
-            error=build_error_payload("YAML_SAFE_MOVE_EXCEPTION", str(exc)),
+            error=build_error_payload("LAYOUT_DATASET_SAFE_MOVE_EXCEPTION", str(exc)),
             artifacts=[
-                artifact_entry("input_yaml", input_path),
-                artifact_entry("output_yaml", output_path),
+                artifact_entry("input_layout_topology", layout_topology_input_path),
+                artifact_entry("input_geom", geom_input_path),
+                artifact_entry("output_layout_topology", layout_topology_output_path),
+                artifact_entry("output_geom", geom_output_path),
             ],
         )
         raise
@@ -619,15 +687,3 @@ if __name__ == "__main__":
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-
-
-# Backward-compatible re-exports.  These names moved to
-# freecad_cli_tools.geometry in v0.8.0.  Import from there directly
-# in new code.
-from freecad_cli_tools.geometry import (  # noqa: E402, F401
-    IDENTITY_ROTATION,
-    box_bounds,
-    broad_phase_obstacles,
-    compute_mount_point,
-    translate_bounds,
-)

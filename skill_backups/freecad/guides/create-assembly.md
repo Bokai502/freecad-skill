@@ -1,82 +1,158 @@
-# FreeCAD: Create Assembly
+# FreeCAD: Create Assembly From `layout_topology.json` + `geom.json`
 
-Create an Assembly container with hierarchical sub-parts from YAML. Use only when the user
-explicitly requests a rebuilt assembly.
+Create an Assembly container with hierarchical sub-parts from the new layout dataset.
+Use this when the user explicitly requests a rebuilt assembly.
+
+`sample.yaml` is not part of the new workflow. It may exist as a backup fixture, but
+`freecad-create-assembly` should use `layout_topology.json` and `geom.json` as the source.
 
 ## Preferred CLI
 
 ```bash
 freecad-create-assembly \
-  --input <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
-  --doc-name SampleYamlAssembly
+  --layout-topology <DATASET_DIR>/layout_topology.json \
+  --geom <DATASET_DIR>/geom.json \
+  --doc-name LayoutAssembly \
+  --output <DATASET_DIR>/LayoutAssembly.step
 ```
 
-If unavailable, fall back to `freecad-exec-code --file`.
+The CLI normalizes the two JSON files into a build-ready assembly spec before RPC execution.
+FreeCAD then consumes that normalized spec and exports both `STEP` and sibling `GLB`.
 
-The CLI stages the YAML into the shared runtime directory automatically and writes generated
-artifacts under `FREECAD_RUNTIME_DATA_DIR` from `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` by default
-unless `--output` is supplied.
+## CAD Modeling Inputs Derived From The Dataset
+
+### Envelope
+
+Use `geom.outer_shell` as the envelope source:
+
+- `outer_bbox.min/max` -> `envelope.outer_size`
+- `inner_bbox.min/max` -> `envelope.inner_size`
+- `thickness` -> `envelope.shell_thickness`
+
+### Component Identity And Metadata
+
+Use `layout_topology.placements[]` as the placement list:
+
+- `component_id` -> FreeCAD object / part id, e.g. `P000`
+- `source_ref.layout3dcube_component_id` -> key into `geom.components`
+- `geometry_id`, `thermal_id`, `semantic_name`, `kind` -> preserved metadata
+
+Use `geom.components[source_component_id]` for component geometry:
+
+- `shape`
+- `dims`
+- `color`
+- `mass`
+- `power`
+- optional `model`
+
+### Placement And Orientation
+
+Derive the modeling placement from both files:
+
+- `placement.mount_face`:
+  map dataset face ids onto the existing numeric face ids `0..11`
+  - internal: `xmin/xmax/ymin/ymax/zmin/zmax` -> `0..5`
+  - external: `xmin_outer/xmax_outer/ymin_outer/ymax_outer/zmin_outer/zmax_outer` -> `6..11`
+- `placement.rotation_matrix`:
+  derive from `component_mount_face_id -> mount_face_id` and `alignment`
+- `placement.position`:
+  treat `geom.components[*].position` as the world-space bbox minimum, then back-solve the
+  component local origin from `dims + rotation_matrix`
+
+For the current dataset this is enough to reproduce the original box bounds exactly, including
+external parts whose local mount face does not match the world-facing contact face without a
+derived rotation.
 
 ## Target Hierarchy
 
-```
+```text
 Assembly (Assembly::AssemblyObject or App::Part)
-├── Motor_part (App::Part)
-│   └── Motor (Part::Box or Part::Cylinder)
-├── Sensor_part (App::Part)
-│   └── Sensor (Part::Box)
+├── P000_part (App::Part)
+│   └── P000 (Part::Box or Part::Cylinder)
+├── P008_part (App::Part)
+│   └── P008 (...)
 └── Envelope_part (App::Part)
     └── EnvelopeShell (semi-transparent shell)
 ```
 
+Use `layout_topology.placements[].component_id` as the stable FreeCAD object name.
+
 ## Workflow
 
-### Step 1: Create or reopen document
+### Step 1: Load And Normalize The Dataset
+
+1. Read `layout_topology.json`.
+2. Read `geom.json`.
+3. Validate that every placement resolves to a `geom.components[...]` entry through
+   `source_ref.layout3dcube_component_id`.
+4. Build a normalized assembly spec containing:
+   - `envelope.outer_size`
+   - `envelope.inner_size`
+   - `envelope.shell_thickness`
+   - `components[component_id].shape`
+   - `components[component_id].dims`
+   - `components[component_id].placement.position`
+   - `components[component_id].placement.mount_face`
+   - `components[component_id].placement.rotation_matrix`
+
+### Step 2: Create Or Reopen Document
 
 Close an existing document with the same name first to avoid naming conflicts.
 
-### Step 2: Create assembly container
+### Step 3: Create Assembly Container
 
 ```python
 try:
-    assembly = doc.addObject("Assembly::AssemblyObject", "MyAssembly")
+    assembly = doc.addObject("Assembly::AssemblyObject", "Assembly")
 except Exception:
-    assembly = doc.addObject("App::Part", "MyAssembly")
+    assembly = doc.addObject("App::Part", "Assembly")
 ```
 
-### Step 3: Add components
+### Step 4: Add Components
 
-For each component:
-1. Create `App::Part` sub-container, attach to assembly
-2. Create shape based on YAML `shape` field (`Part::Box` for box, `Part::Cylinder` for cylinder)
-3. Set dimensions from `dims` and position from `placement.position`. Boxes are axis-aligned; `dims[0..2]` map directly to world X/Y/Z extents.
-4. For cylinders, derive the axis rotation from `placement.mount_face` via the canonical `CYLINDER_AXIS_ROTATIONS` table.
-5. Attach shape to sub-part
+For each normalized component:
 
-### Step 4: Create envelope (when YAML provides one)
+1. Create `App::Part` sub-container named `<component_id>_part`
+2. Create the solid from `shape`
+3. Set dimensions from `dims`
+4. Apply `placement.position`
+5. Apply `placement.rotation_matrix`
+6. Set color when provided
+7. Attach the solid under the component part
 
-If YAML contains `envelope.outer_size` / `envelope.inner_size`: create a wireframe shell under
-an `Envelope_part` container, centered at origin.
+Boxes and cylinders both use the normalized placement. Cylinders still use the existing
+axis helper logic from numeric `mount_face`.
+
+### Step 5: Create Envelope
+
+Create the outer-minus-inner shell when the normalized spec contains:
+
+- `envelope.outer_size`
+- `envelope.inner_size`
+- `envelope.shell_thickness`
+
+Keep the envelope centered at the origin.
 
 ```python
 envelope_shell.ViewObject.DisplayMode = "Wireframe"
-envelope_shell.ViewObject.LineColor = (0.2, 0.5, 0.9, 0.0)  # steel blue
+envelope_shell.ViewObject.LineColor = (0.2, 0.5, 0.9, 0.0)
 envelope_shell.ViewObject.LineWidth = 2.0
 ```
 
-### Step 5: Colors, recompute, fit view, export
+### Step 6: Recompute, Fit View, Export
 
-Set `ShapeColor` from RGBA and `Transparency = 40` on each component solid. Call
-`doc.recompute()`, switch to isometric, execute `fitAll()`, export the assembly to the
-target `STEP` path via `Import.export([assembly], path)`.
+Set component colors, call `doc.recompute()`, switch to an isometric fitted view, and export:
 
-```python
-obj.ViewObject.ShapeColor = (r, g, b, a)
-obj.ViewObject.Transparency = 40
-```
+- `<output>.step`
+- sibling `<output>.glb`
 
 ## Rules
 
-- Use `try/except` for `Assembly::AssemblyObject` (version-dependent).
-- Never attach raw shapes directly to the assembly; wrap in `App::Part`.
-- Use `assembly.addObject(part)` then `part.addObject(shape)` in correct order.
+- Prefer `--layout-topology` + `--geom` for the new dataset.
+- Treat `sample.yaml` as backup only; do not use it as the primary build input.
+- Preserve `component_id` from `layout_topology.json` as the user-facing CAD object id.
+- Derive `rotation_matrix` from topology instead of assuming identity for external parts.
+- Support only orthogonal in-plane rotations; reject arbitrary non-90-degree `in_plane_rotation_deg`.
+- Never attach raw shapes directly to the assembly; wrap them in `App::Part`.
+- Use `assembly.addObject(part)` then `part.addObject(shape)` in that order.

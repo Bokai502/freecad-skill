@@ -34,8 +34,8 @@ dev = [
 ]
 
 [project.scripts]
-freecad-create-assembly = "freecad_cli_tools.cli.build_assembly_from_yaml:main"
-freecad-yaml-safe-move = "freecad_cli_tools.cli.yaml_component_safe_move:main"
+freecad-create-assembly = "freecad_cli_tools.cli.build_assembly:main"
+freecad-layout-safe-move = "freecad_cli_tools.cli.layout_safe_move:main"
 freecad-replace-component = "freecad_cli_tools.cli.replace_component:main"
 
 [project.urls]

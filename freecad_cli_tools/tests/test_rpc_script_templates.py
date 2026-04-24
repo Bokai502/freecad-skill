@@ -18,7 +18,7 @@ from freecad_cli_tools.rpc_script_fragments import (
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
 
 _DUMMY_STR = json.dumps("dummy")
-_DUMMY_PATH = json.dumps("/tmp/dummy.yaml")
+_DUMMY_PATH = json.dumps("/tmp/dummy.json")
 _DUMMY_UPDATES = json.dumps(
     [
         {
@@ -32,8 +32,8 @@ _DUMMY_UPDATES = json.dumps(
 )
 
 SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
-    "assembly_from_yaml.py": {
-        "__YAML_PATH__": _DUMMY_PATH,
+    "assembly_from_layout.py": {
+        "__INPUT_PATH__": _DUMMY_PATH,
         "__DOC_NAME__": _DUMMY_STR,
         "__SAVE_PATH__": _DUMMY_PATH,
         "__FIT_VIEW__": "True",
@@ -140,7 +140,7 @@ def test_sync_component_placements_uses_delta_for_part_containers() -> None:
 
 @pytest.mark.parametrize(
     "script_name",
-    ["assembly_from_yaml.py", "replace_component.py", "sync_component_placements.py"],
+    ["assembly_from_layout.py", "replace_component.py", "sync_component_placements.py"],
 )
 def test_exporting_scripts_also_emit_glb(script_name: str) -> None:
     rendered = render_rpc_script(script_name, SCRIPT_REPLACEMENTS[script_name])

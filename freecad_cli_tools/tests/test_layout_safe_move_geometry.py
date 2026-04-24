@@ -200,7 +200,7 @@ def test_mount_point_from_component_recomputes_stale_cylinder_value() -> None:
     assert mount_point == [20.0, 4.0, 4.0]
 
 
-def test_update_component_placement_updates_yaml_fields() -> None:
+def test_update_component_placement_updates_dataset_fields() -> None:
     data = make_layout()
     original = deepcopy(data)
 

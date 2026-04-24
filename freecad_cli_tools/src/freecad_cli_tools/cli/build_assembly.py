@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Build a FreeCAD assembly document from a YAML layout."""
+"""Build a FreeCAD assembly document from layout_topology.json + geom.json."""
 
 import argparse
 import json
 import os
 import shutil
-import sys
 from pathlib import Path
 
 from freecad_cli_tools import add_connection_args
@@ -21,6 +20,7 @@ from freecad_cli_tools.cli_support import (
     exit_on_failure,
     normalize_runtime_path,
 )
+from freecad_cli_tools.layout_dataset import load_and_normalize_layout_dataset
 from freecad_cli_tools.rpc_client import print_result as print_json
 from freecad_cli_tools.rpc_script_fragments import (
     COMPONENT_SHAPE_HELPERS,
@@ -32,9 +32,21 @@ from freecad_cli_tools.runtime_config import get_default_runtime_data_dir
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Create a FreeCAD assembly document from a YAML layout."
+        description=(
+            "Create a FreeCAD assembly document from "
+            "layout_topology.json + geom.json."
+        )
     )
-    parser.add_argument("--input", required=True, help="Path to the source YAML file.")
+    parser.add_argument(
+        "--layout-topology",
+        required=True,
+        help="Path to layout_topology.json for the layout dataset.",
+    )
+    parser.add_argument(
+        "--geom",
+        required=True,
+        help="Path to geom.json for the layout dataset.",
+    )
     parser.add_argument(
         "--doc-name", required=True, help="Name of the FreeCAD document to create."
     )
@@ -42,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         "--output",
         help=(
             "Optional output STEP path. Defaults to '<doc-name>.step' beside the "
-            "YAML file, and also writes a sibling '<doc-name>.glb'."
+            "selected input dataset, and also writes a sibling '<doc-name>.glb'."
         ),
     )
     parser.add_argument(
@@ -74,15 +86,13 @@ def stage_runtime_paths(input_path: Path, output_path: Path, doc_name: str) -> t
     return root / "inputs" / input_path.name, root / "outputs" / output_path.name
 
 
-def stage_input_file(source: Path, target: Path) -> None:
-    """Copy an input file into the shared runtime directory."""
+def stage_input_data(data: dict[str, object], target: Path) -> None:
+    """Write normalized input data into the shared runtime directory."""
     target.parent.mkdir(parents=True, exist_ok=True)
-    # FreeCAD may run under a different local user than the CLI. Make the
-    # staged exchange directories writable by both sides before RPC execution.
     for directory in (target.parent, target.parent.parent, target.parent.parent.parent):
         if directory.exists():
             os.chmod(directory, 0o777)
-    shutil.copy2(source, target)
+    target.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
 def stage_output_dir(target: Path) -> None:
@@ -106,50 +116,82 @@ def collect_runtime_exports(staged_output: Path, final_output: Path) -> None:
 
 
 def registry_inputs(
-    input_path: Path,
+    layout_topology_path: Path,
+    geom_path: Path,
     output_path: Path,
     args: argparse.Namespace,
 ) -> dict[str, object]:
     """Build the registry input payload for assembly creation."""
     return {
-        "yaml_path": str(input_path),
         "doc_name": args.doc_name,
         "output_path": str(output_path),
         "rpc_host": args.host,
         "rpc_port": args.port,
         "view": args.view,
         "fit_view": not args.no_fit_view,
+        "layout_topology_path": str(layout_topology_path),
+        "geom_path": str(geom_path),
+        "input_format": "layout_dataset",
     }
+
+
+def registry_output_paths(
+    layout_topology_path: Path,
+    geom_path: Path,
+    step_path: str | None,
+    glb_path: str | None,
+) -> dict[str, object]:
+    """Build registry output paths for the selected source mode."""
+    return {
+        "step_path": str(step_path) if step_path else None,
+        "glb_path": str(glb_path) if glb_path else None,
+        "layout_topology_path": str(layout_topology_path),
+        "geom_path": str(geom_path),
+    }
+
+
+def source_artifacts(layout_topology_path: Path, geom_path: Path) -> list[dict[str, object]]:
+    """Return artifact registry entries for the layout dataset."""
+    return [
+        artifact_entry("layout_topology", layout_topology_path),
+        artifact_entry("geom", geom_path),
+    ]
 
 
 def main() -> None:
     args = parse_args()
-    input_path = Path(args.input)
+    layout_topology_path = Path(args.layout_topology)
+    geom_path = Path(args.geom)
     output_path = (
         Path(args.output)
         if args.output
-        else input_path.with_name(f"{args.doc_name}.step")
+        else layout_topology_path.with_name(f"{args.doc_name}.step")
     )
+    staged_input_name = Path("normalized_layout_dataset.json")
     staged_input_path, staged_output_path = stage_runtime_paths(
-        input_path, output_path, args.doc_name
+        staged_input_name, output_path, args.doc_name
     )
     registry_run = start_registry_run(
         args,
         tool="freecad-create-assembly",
         operation_type="create_assembly",
-        inputs=registry_inputs(input_path, output_path, args),
+        inputs=registry_inputs(layout_topology_path, geom_path, output_path, args),
     )
 
     try:
-        stage_input_file(input_path, staged_input_path)
+        normalized_data = load_and_normalize_layout_dataset(
+            layout_topology_path,
+            geom_path,
+        )
+        stage_input_data(normalized_data, staged_input_path)
         stage_output_dir(staged_output_path)
 
         code = render_rpc_script(
-            "assembly_from_yaml.py",
+            "assembly_from_layout.py",
             {
                 "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
                 "__COMPONENT_SHAPE_HELPERS__": COMPONENT_SHAPE_HELPERS,
-                "__YAML_PATH__": json.dumps(normalize_runtime_path(staged_input_path)),
+                "__INPUT_PATH__": json.dumps(normalize_runtime_path(staged_input_path)),
                 "__DOC_NAME__": json.dumps(args.doc_name),
                 "__SAVE_PATH__": json.dumps(normalize_runtime_path(staged_output_path)),
                 "__FIT_VIEW__": "False" if args.no_fit_view else "True",
@@ -187,39 +229,36 @@ def main() -> None:
         finalize_registry_run(
             registry_run,
             status=registry_status,
-            outputs={
-                "yaml_path": str(input_path),
-                "step_path": str(step_path) if step_path else None,
-                "glb_path": str(glb_path) if glb_path else None,
-            },
+            outputs=registry_output_paths(layout_topology_path, geom_path, step_path, glb_path),
             result=payload,
             error=registry_error,
-            artifacts=[
-                artifact_entry("yaml", input_path),
+            artifacts=source_artifacts(layout_topology_path, geom_path)
+            + [
                 artifact_entry("step", step_path),
                 artifact_entry("glb", glb_path),
             ],
         )
+        print_json(payload)
+        exit_on_failure(payload)
     except Exception as exc:
         finalize_registry_run(
             registry_run,
             status="failed",
-            outputs={
-                "yaml_path": str(input_path),
-            },
+            outputs=registry_output_paths(
+                layout_topology_path,
+                geom_path,
+                output_path,
+                output_path.with_suffix(".glb"),
+            ),
             result={"success": False},
             error=build_error_payload("ASSEMBLY_BUILD_EXCEPTION", str(exc)),
-            artifacts=[
-                artifact_entry("yaml", input_path),
+            artifacts=source_artifacts(layout_topology_path, geom_path)
+            + [
                 artifact_entry("step", output_path),
                 artifact_entry("glb", output_path.with_suffix(".glb")),
             ],
         )
-        print(f"ERROR: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
-
-    print_json(payload)
-    exit_on_failure(payload)
+        raise
 
 
 if __name__ == "__main__":

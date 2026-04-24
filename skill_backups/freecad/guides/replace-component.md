@@ -19,7 +19,7 @@ placeholder such as `P022_part` for a detailed STEP model.
   to the imported STEP so a previously rotated component keeps the same
   component-local contact face and in-plane orientation.
 - If the user wants the component installed on a different box/envelope face,
-  run `freecad-yaml-safe-move --install-face <0..11>` first, then run
+  run `freecad-layout-safe-move --install-face <0..11>` first, then run
   `freecad-replace-component`.
 - The replacement STEP is aligned to the YAML placeholder: its flange is seated
   on the selected box/envelope wall and its cross-section is centered on the

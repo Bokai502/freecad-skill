@@ -7,9 +7,8 @@ import FreeCADGui
 import Import
 import ImportGui
 import Part
-import yaml
 
-YAML_PATH = __YAML_PATH__
+INPUT_PATH = __INPUT_PATH__
 DOC_NAME = __DOC_NAME__
 SAVE_PATH = __SAVE_PATH__
 FIT_VIEW = __FIT_VIEW__
@@ -120,9 +119,9 @@ def export_step_and_glb(objects, step_path):
 
 
 try:
-    path = Path(YAML_PATH)
+    path = Path(INPUT_PATH)
     with path.open("r", encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
+        data = json.load(handle)
 
     for _name, _d in list(FreeCAD.listDocuments().items()):
         if _name == DOC_NAME or getattr(_d, "Label", "") == DOC_NAME:

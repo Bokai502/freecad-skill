@@ -1,6 +1,6 @@
 # Skills Test 工作区说明
 
-`skills_test` 是一个面向 FreeCAD 的工作区，用于基于 YAML 的装配生成、带碰撞约束的组件移动，以及通过 XML-RPC 进行 CAD 同步。
+`skills_test` 是一个面向 FreeCAD 的工作区，用于基于布局数据集的装配生成、带碰撞约束的组件移动，以及通过 XML-RPC 进行 CAD 同步。
 
 ## 工作区包含的内容
 
@@ -12,7 +12,7 @@
 ## 核心能力
 
 - 通过本机 Linux 上正在运行的 FreeCAD MCP/XML-RPC 服务执行 CLI 操作。
-- 根据 YAML 定义创建 FreeCAD 装配。
+- 根据 `layout_topology.json + geom.json` 创建 FreeCAD 装配。
 - 在内部包络、外部安装面边界和碰撞约束下安全移动组件。
 - 将一个或多个计算后的位姿同步到正在运行的 FreeCAD 文档。
 - 通过测试、CI 和基准脚本验证功能与性能。
@@ -33,10 +33,10 @@ freecad
 python -m pip install -e ./freecad_cli_tools[dev]
 ```
 
-### 3. 根据 YAML 创建装配
+### 3. 根据布局数据集创建装配
 
 ```powershell
-freecad-create-assembly --input examples\sample.yaml --doc-name SampleYamlAssembly
+freecad-create-assembly --layout-topology <WORKSPACE_ROOT>\01_layout\layout_topology.json --geom <WORKSPACE_ROOT>\01_layout\geom.json --doc-name LayoutAssembly
 ```
 
 ### 4. 执行一次安全移动并同步回 CAD
