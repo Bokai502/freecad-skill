@@ -34,11 +34,100 @@ FACE_DEFINITIONS = {
 }
 
 
+IDENTITY_ROTATION_ROWS = [
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+]
+
+
 def is_external_face(face_id):
     return face_id >= 6
 
 
-def yaml_bbox(component):
+def normalize_rotation_rows(rotation_rows):
+    rows = rotation_rows or IDENTITY_ROTATION_ROWS
+    if len(rows) != 3:
+        raise RuntimeError("placement.rotation_matrix must be a 3x3 matrix.")
+    normalized = []
+    for row in rows:
+        if len(row) != 3:
+            raise RuntimeError("placement.rotation_matrix must be a 3x3 matrix.")
+        normalized.append([float(value) for value in row])
+    return normalized
+
+
+def matrix_to_rotation(matrix_rows):
+    matrix = FreeCAD.Matrix()
+    matrix.A11 = float(matrix_rows[0][0])
+    matrix.A12 = float(matrix_rows[0][1])
+    matrix.A13 = float(matrix_rows[0][2])
+    matrix.A14 = 0.0
+    matrix.A21 = float(matrix_rows[1][0])
+    matrix.A22 = float(matrix_rows[1][1])
+    matrix.A23 = float(matrix_rows[1][2])
+    matrix.A24 = 0.0
+    matrix.A31 = float(matrix_rows[2][0])
+    matrix.A32 = float(matrix_rows[2][1])
+    matrix.A33 = float(matrix_rows[2][2])
+    matrix.A34 = 0.0
+    matrix.A41 = 0.0
+    matrix.A42 = 0.0
+    matrix.A43 = 0.0
+    matrix.A44 = 1.0
+    return FreeCAD.Placement(matrix).Rotation
+
+
+def apply_rotation_rows(rotation_rows, point):
+    return [
+        sum(float(rotation_rows[row][col]) * float(point[col]) for col in range(3))
+        for row in range(3)
+    ]
+
+
+def translate_position(position, rotation_rows, local_offset):
+    rotated_offset = apply_rotation_rows(rotation_rows, local_offset)
+    return [float(position[i]) + rotated_offset[i] for i in range(3)]
+
+
+def face_normal(face_id):
+    _, axis, direction = FACE_DEFINITIONS[int(face_id)]
+    normal = [0.0, 0.0, 0.0]
+    normal[axis] = float(direction)
+    return normal
+
+
+def vectors_close(left, right, tol=1e-9):
+    return all(abs(float(left[i]) - float(right[i])) <= tol for i in range(3))
+
+
+def component_contact_face(install_face):
+    install_face = int(install_face)
+    if is_external_face(install_face):
+        return (install_face - 6) ^ 1
+    return install_face
+
+
+def installation_contact_world_face(install_face):
+    install_face = int(install_face)
+    if is_external_face(install_face):
+        return (install_face - 6) ^ 1
+    return install_face
+
+
+def component_contact_face_from_placement(mount_face, rotation_rows):
+    world_contact_normal = face_normal(installation_contact_world_face(mount_face))
+    for candidate_face in range(6):
+        candidate_world_normal = apply_rotation_rows(
+            rotation_rows,
+            face_normal(candidate_face),
+        )
+        if vectors_close(candidate_world_normal, world_contact_normal):
+            return candidate_face
+    return component_contact_face(mount_face)
+
+
+def yaml_bbox(component, component_contact_face_id=None):
     placement = component.get("placement") or {}
     position = [float(v) for v in placement.get("position", [0.0, 0.0, 0.0])]
     shape = (component.get("shape") or "box").lower()
@@ -49,8 +138,11 @@ def yaml_bbox(component):
     if shape == "box" and len(dims) == 3:
         return position, dims
     if shape == "cylinder":
-        mount_face = placement.get("mount_face", 5)
-        axis_index = FACE_DEFINITIONS[int(mount_face)][1]
+        if component_contact_face_id is None:
+            mount_face = placement.get("mount_face", 5)
+            axis_index = FACE_DEFINITIONS[int(component_contact_face(mount_face))][1]
+        else:
+            axis_index = FACE_DEFINITIONS[int(component_contact_face_id)][1]
         if len(dims) == 2:
             radius = dims[0] / 2.0
             height = dims[1]
@@ -65,6 +157,12 @@ def yaml_bbox(component):
         extents[axis_index] = height
         return position, extents
     return position, [0.0, 0.0, 0.0]
+
+
+def yaml_component_center(component, component_contact_face_id, rotation_rows):
+    position, extents = yaml_bbox(component, component_contact_face_id)
+    local_center = [extents[i] / 2.0 for i in range(3)]
+    return position, extents, translate_position(position, rotation_rows, local_center)
 
 
 def shape_world_bbox(obj):
@@ -156,6 +254,44 @@ def find_assembly(doc):
         for parent in getattr(o, "InList", []) or []
     )]
     return roots[0] if roots else None
+
+
+def find_matching_documents(doc_name):
+    matches = []
+    for name, doc in list(FreeCAD.listDocuments().items()):
+        if name == doc_name or getattr(doc, "Label", "") == doc_name:
+            matches.append(doc)
+    return matches
+
+
+def find_reusable_document(doc_name):
+    for doc in find_matching_documents(doc_name):
+        assembly = find_assembly(doc)
+        if assembly is not None:
+            return doc, assembly
+    return None, None
+
+
+def create_or_import_document(doc_name, assembly_path):
+    for doc in find_matching_documents(doc_name):
+        try:
+            FreeCAD.closeDocument(doc.Name)
+        except Exception:
+            pass
+
+    doc = FreeCAD.newDocument(doc_name)
+    if doc.Label != doc_name:
+        doc.Label = doc_name
+    FreeCAD.setActiveDocument(doc.Name)
+    Import.insert(assembly_path, doc.Name)
+    doc.recompute()
+    assembly = find_assembly(doc)
+    if assembly is None:
+        raise RuntimeError(
+            f"Assembly container not found in {assembly_path}. "
+            "Expected an 'Assembly' App::Part at the document root."
+        )
+    return doc, assembly
 
 
 def list_assembly_components(assembly):
@@ -513,19 +649,15 @@ def export_step_and_glb(objects, step_path):
 
 
 try:
-    for _name, _d in list(FreeCAD.listDocuments().items()):
-        if _name == DOC_NAME or getattr(_d, "Label", "") == DOC_NAME:
-            try:
-                FreeCAD.closeDocument(_name)
-            except Exception:
-                pass
-    doc = FreeCAD.newDocument(DOC_NAME)
-    if doc.Label != DOC_NAME:
-        doc.Label = DOC_NAME
-    FreeCAD.setActiveDocument(doc.Name)
-
-    Import.insert(ASSEMBLY_PATH, doc.Name)
-    doc.recompute()
+    doc, assembly = find_reusable_document(DOC_NAME)
+    document_reused = doc is not None
+    assembly_imported = False
+    if document_reused:
+        FreeCAD.setActiveDocument(doc.Name)
+        doc.recompute()
+    else:
+        doc, assembly = create_or_import_document(DOC_NAME, ASSEMBLY_PATH)
+        assembly_imported = True
 
     with Path(YAML_PATH).open("r", encoding="utf-8") as handle:
         data = yaml.safe_load(handle)
@@ -544,6 +676,13 @@ try:
     mount_face = int(mount_face)
     _, mount_axis, mount_direction = FACE_DEFINITIONS[mount_face]
     external = is_external_face(mount_face)
+    placement_rotation_rows = normalize_rotation_rows(placement.get("rotation_matrix"))
+    placement_rotation = matrix_to_rotation(placement_rotation_rows)
+    component_contact_face_id = component_contact_face_from_placement(
+        mount_face,
+        placement_rotation_rows,
+    )
+    _, component_contact_axis, _ = FACE_DEFINITIONS[component_contact_face_id]
 
     envelope = data.get("envelope") or {}
     outer_size = envelope.get("outer_size")
@@ -560,15 +699,11 @@ try:
     flange_dir = [0.0, 0.0, 0.0]
     flange_dir[mount_axis] = (-mount_direction) if external else mount_direction
 
-    yaml_position, yaml_dims = yaml_bbox(component)
-    yaml_bbox_center = [yaml_position[i] + yaml_dims[i] / 2.0 for i in range(3)]
-
-    assembly = find_assembly(doc)
-    if assembly is None:
-        raise RuntimeError(
-            f"Assembly container not found in {ASSEMBLY_PATH}. "
-            "Expected an 'Assembly' App::Part at the document root."
-        )
+    yaml_position, yaml_dims, yaml_bbox_center = yaml_component_center(
+        component,
+        component_contact_face_id,
+        placement_rotation_rows,
+    )
 
     existing_component_ids = list_assembly_components(assembly)
     target_part = find_component_part(assembly, COMPONENT_NAME)
@@ -616,9 +751,10 @@ try:
     native_bb = combined.BoundBox
     native_dims = [native_bb.XLength, native_bb.YLength, native_bb.ZLength]
 
-    # Auto-detect thrust axis by matching STEP bbox extents to YAML placeholder
-    # dims. The STEP axis whose extent is closest to yaml_dims[mount_axis] is
-    # the one that should align with the world mount axis after rotation.
+    # Auto-detect thrust axis by matching STEP bbox extents to the placeholder's
+    # component-local contact-axis thickness. This remains correct when
+    # placement.rotation_matrix rotates that local axis onto a different world
+    # mount axis.
     replacement_meta = component.get("replacement") or {}
     axis_override = replacement_meta.get("thrust_axis")
     sign_override = replacement_meta.get("flange_sign")
@@ -627,10 +763,10 @@ try:
         thrust_axis = {"x": 0, "y": 1, "z": 2}[str(axis_override).lower()]
         thrust_axis_source = "yaml"
     else:
-        mount_extent = float(yaml_dims[mount_axis])
-        if mount_extent > 0.0:
+        contact_extent = float(yaml_dims[component_contact_axis])
+        if contact_extent > 0.0:
             diffs = sorted(
-                (abs(native_dims[i] - mount_extent), i) for i in range(3)
+                (abs(native_dims[i] - contact_extent), i) for i in range(3)
             )
             thrust_axis = diffs[0][1]
             thrust_axis_source = "step_bbox_match"
@@ -655,7 +791,9 @@ try:
     src_flange_dir = [0.0, 0.0, 0.0]
     src_flange_dir[thrust_axis] = float(flange_sign)
 
-    rotation = rotation_to_align(src_flange_dir, flange_dir)
+    local_flange_dir = face_normal(component_contact_face_id)
+    local_rotation = rotation_to_align(src_flange_dir, local_flange_dir)
+    rotation = placement_rotation.multiply(local_rotation)
 
     for obj in top_level_new:
         current = obj.Placement
@@ -723,12 +861,6 @@ try:
 
     assembly_path, glb_path = export_step_and_glb([assembly], ASSEMBLY_PATH)
 
-    fcstd_path = str(Path(assembly_path).with_suffix(".FCStd"))
-    try:
-        doc.saveAs(fcstd_path)
-    except Exception:
-        fcstd_path = None
-
     view_updated = fit_view(doc.Name) if FIT_VIEW else False
 
     print(
@@ -738,9 +870,10 @@ try:
                 "document": doc.Name,
                 "assembly_path": assembly_path,
                 "glb_path": glb_path,
-                "fcstd_path": fcstd_path,
                 "replacement_path": REPLACEMENT_PATH,
                 "component": COMPONENT_NAME,
+                "document_reused": document_reused,
+                "assembly_imported": assembly_imported,
                 "assembly_container": assembly.Name,
                 "assembly_component_count": len(list_assembly_components(assembly)),
                 "removed_objects": removed_objects,
@@ -750,6 +883,9 @@ try:
                 "restored_placements_count": len(restored_placements),
                 "mount_face": mount_face,
                 "mount_axis": mount_axis,
+                "component_contact_face": component_contact_face_id,
+                "component_contact_axis": component_contact_axis,
+                "placement_rotation_matrix": placement_rotation_rows,
                 "external": external,
                 "wall_position": wall_position,
                 "thrust_axis": thrust_axis,
@@ -757,6 +893,7 @@ try:
                 "flange_sign": flange_sign,
                 "flange_sign_source": flange_sign_source,
                 "flange_dir": flange_dir,
+                "local_flange_dir": local_flange_dir,
                 "yaml_dims": yaml_dims,
                 "native_dims": native_dims,
                 "yaml_bbox_center": yaml_bbox_center,

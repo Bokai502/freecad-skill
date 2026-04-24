@@ -175,19 +175,58 @@ def component_shape(component: dict) -> str:
     return str(component.get("shape", "box")).strip().lower()
 
 
-def component_mount_face(component: dict) -> int:
-    """Return the component's own contact face (always 0–5).
+def rotation_matrix_from_component(component: dict) -> list[list[int]]:
+    """Return the component's world-frame rotation matrix."""
+    rotation_matrix = component.get("placement", {}).get("rotation_matrix")
+    if rotation_matrix is None:
+        return [row[:] for row in IDENTITY_ROTATION]
+    if not isinstance(rotation_matrix, list) or len(rotation_matrix) != 3:
+        raise ValueError("placement.rotation_matrix must be a 3x3 matrix.")
+    normalized = []
+    for row in rotation_matrix:
+        if not isinstance(row, list) or len(row) != 3:
+            raise ValueError("placement.rotation_matrix must be a 3x3 matrix.")
+        normalized.append([int(value) for value in row])
+    return normalized
+
+
+def installation_contact_world_face(install_face: int) -> int:
+    """Return the world-facing direction a component contact face must align to."""
+    if install_face not in FACE_DEFINITIONS:
+        raise ValueError(
+            f"Invalid install face {install_face!r}. Expected an integer in 0..11."
+        )
+    return (install_face - 6) ^ 1 if is_external_face(install_face) else install_face
+
+
+def component_contact_face_from_component(component: dict) -> int:
+    """Return the component-local contact face (always 0–5).
 
     The YAML ``mount_face`` field stores the *installation face* (0–11).
-    For external faces (6–11) this derives the component's physical contact
-    face via ``component_contact_face``.
+    When ``placement.rotation_matrix`` exists, infer which component-local face
+    currently points toward the installation contact direction. This preserves
+    the same physical component face across later face changes.
     """
     mount_face = component.get("placement", {}).get("mount_face")
     if mount_face not in FACE_DEFINITIONS:
         raise ValueError(
             f"Invalid or missing mount_face {mount_face!r}. Expected an integer in 0..11."
         )
+    rotation_matrix = rotation_matrix_from_component(component)
+    world_contact_face = installation_contact_world_face(mount_face)
+    world_contact_normal = face_normal(world_contact_face)
+    for candidate_face in range(6):
+        if (
+            apply_rotation(rotation_matrix, face_normal(candidate_face))
+            == world_contact_normal
+        ):
+            return candidate_face
     return component_contact_face(mount_face)
+
+
+def component_mount_face(component: dict) -> int:
+    """Return the component's own contact face (always 0–5)."""
+    return component_contact_face_from_component(component)
 
 
 def envelope_face(component: dict) -> int:
@@ -206,18 +245,6 @@ def face_normal(face_id: int) -> list[int]:
     vec = [0, 0, 0]
     vec[axis] = direction
     return vec
-
-
-def rotation_matrix_from_component(component: dict) -> list[list[int]]:
-    """Return the component's world-frame rotation matrix.
-
-    Under the current schema boxes are always axis-aligned with world axes;
-    ``dims[0..2]`` are the world X/Y/Z extents and ``mount_face`` only selects
-    which envelope wall the box touches. Orientation is therefore always the
-    identity matrix. The helper is kept so callers can stay symmetric with
-    cylinders, which still apply an axis-alignment rotation downstream.
-    """
-    return [row[:] for row in IDENTITY_ROTATION]
 
 
 # ---------------------------------------------------------------------------
@@ -531,6 +558,20 @@ def choose_rotation(component_face: int, target_envelope_face: int) -> list[list
     return candidates[0]
 
 
+def rotation_for_component_contact_face(
+    component_contact_face: int,
+    target_envelope_face: int,
+) -> list[list[int]]:
+    """Rotate one component-local contact face onto a box/envelope face.
+
+    For external installation faces, the component contact face points inward,
+    opposite the outward box face normal. The target direction is therefore the
+    mirrored internal face.
+    """
+    rotation_target = installation_contact_world_face(target_envelope_face)
+    return choose_rotation(component_contact_face, rotation_target)
+
+
 def position_for_mount_point(
     mount_point: list[float],
     dims: list[float],
@@ -569,14 +610,10 @@ def centered_face_position(
     component_face: int,
     target_envelope_face: int,
 ) -> tuple[list[float], list[float], list[list[int]]]:
-    if is_external_face(target_envelope_face):
-        # For external installation the component's contact face has its normal
-        # pointing *inward* (opposite to the outward wall normal), so we rotate
-        # toward the mirrored internal face.
-        rotation_target = (target_envelope_face - 6) ^ 1
-    else:
-        rotation_target = target_envelope_face
-    rotation = choose_rotation(component_face, rotation_target)
+    rotation = rotation_for_component_contact_face(
+        component_face,
+        target_envelope_face,
+    )
     _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
     mount_point = [0.0, 0.0, 0.0]
     mount_point[axis] = (
@@ -1007,35 +1044,41 @@ def update_component_placement(
     updated = deepcopy(data)
     component = updated["components"][component_id]
     extents = component_local_extents(component_id, component)
-    legacy_mode = any(
-        value is not None
-        for value in (component_mount_face, envelope_face_id, rotation_matrix)
-    )
+    legacy_mode = component_mount_face is not None or envelope_face_id is not None
+    preserved_component_contact_face = component_contact_face_from_component(component)
     if install_face is None:
         if envelope_face_id is None:
             raise ValueError("install_face or envelope_face_id is required.")
         install_face = envelope_face_id
 
-    contact_face = (
-        component_mount_face
-        if component_mount_face is not None
-        else component_contact_face(install_face)
-    )
+    if legacy_mode:
+        stored_mount_face = (
+            component_mount_face
+            if component_mount_face is not None
+            else component_contact_face(install_face)
+        )
+        mount_point_face = stored_mount_face
+    else:
+        stored_mount_face = int(install_face)
+        mount_point_face = preserved_component_contact_face
     rotation_matrix = (
         rotation_matrix_from_component(component)
         if rotation_matrix is None
         else [[int(value) for value in row] for row in rotation_matrix]
     )
     component["placement"]["position"] = position
-    component["placement"]["mount_face"] = contact_face
+    component["placement"]["mount_face"] = stored_mount_face
     if legacy_mode:
         if envelope_face_id is not None:
             component["placement"]["envelope_face"] = envelope_face_id
         component["placement"]["rotation_matrix"] = rotation_matrix
     else:
         component["placement"].pop("envelope_face", None)
-        component["placement"].pop("rotation_matrix", None)
+        if rotation_matrix == IDENTITY_ROTATION:
+            component["placement"].pop("rotation_matrix", None)
+        else:
+            component["placement"]["rotation_matrix"] = rotation_matrix
     component["placement"]["mount_point"] = compute_mount_point(
-        position, extents, contact_face, rotation_matrix
+        position, extents, mount_point_face, rotation_matrix
     )
     return updated

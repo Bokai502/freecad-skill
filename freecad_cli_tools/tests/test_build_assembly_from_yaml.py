@@ -38,6 +38,28 @@ def test_build_component_shape_spec_keeps_box_base_position() -> None:
     assert spec["height"] == 30.0
 
 
+def test_build_component_shape_spec_applies_box_rotation_matrix() -> None:
+    helpers = load_shape_helpers()
+    build_component_shape_spec = helpers["build_component_shape_spec"]
+
+    rotation = [[1, 0, 0], [0, -1, 0], [0, 0, -1]]
+    spec = build_component_shape_spec(
+        "P001",
+        {
+            "shape": "box",
+            "dims": [10, 20, 30],
+            "placement": {
+                "position": [1, 2, 3],
+                "rotation_matrix": rotation,
+            },
+        },
+    )
+
+    assert spec["object_type"] == "Part::Box"
+    assert spec["placement_position"] == [1.0, 2.0, 3.0]
+    assert spec["rotation_rows"] == rotation
+
+
 def test_build_component_shape_spec_offsets_cylinder_base_center() -> None:
     helpers = load_shape_helpers()
     build_component_shape_spec = helpers["build_component_shape_spec"]

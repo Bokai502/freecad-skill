@@ -119,7 +119,6 @@ def main() -> None:
         payload = execute_script_payload(args.host, args.port, code)
         step_path = payload.get("assembly_path")
         glb_path = payload.get("glb_path")
-        fcstd_path = payload.get("fcstd_path")
         step_exists = bool(step_path) and Path(step_path).exists()
         glb_exists = bool(glb_path) and Path(glb_path).exists()
         if payload.get("success") and step_exists and glb_exists:
@@ -147,7 +146,6 @@ def main() -> None:
                 "yaml_path": str(yaml_path),
                 "step_path": str(step_path) if step_path else None,
                 "glb_path": str(glb_path) if glb_path else None,
-                "fcstd_path": str(fcstd_path) if fcstd_path else None,
             },
             result=payload,
             error=registry_error,
@@ -155,7 +153,6 @@ def main() -> None:
                 artifact_entry("yaml", yaml_path),
                 artifact_entry("step", step_path),
                 artifact_entry("glb", glb_path),
-                artifact_entry("fcstd", fcstd_path),
                 artifact_entry("replacement_step", replacement_path),
             ],
         )
@@ -172,7 +169,6 @@ def main() -> None:
                 artifact_entry("yaml", yaml_path),
                 artifact_entry("step", assembly_path),
                 artifact_entry("glb", assembly_path.with_suffix(".glb")),
-                artifact_entry("fcstd", assembly_path.with_suffix(".FCStd")),
                 artifact_entry("replacement_step", replacement_path),
             ],
         )

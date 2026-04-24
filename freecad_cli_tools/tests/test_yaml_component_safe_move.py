@@ -6,20 +6,29 @@ from copy import deepcopy
 import pytest
 
 from freecad_cli_tools.geometry import (
+    FACE_DEFINITIONS,
     IDENTITY_ROTATION,
     analyze_position,
     apply_in_plane_spin,
+    apply_rotation,
     box_bounds,
     broad_phase_obstacles,
     build_analysis_context,
+    centered_face_position,
     component_local_extents,
+    component_mount_face,
     component_solid_placement,
+    constrain_position_to_envelope_face,
     compute_mount_point,
+    envelope_face,
+    face_normal,
     find_best_safe_scale,
     inside_face_in_plane_bounds,
+    is_external_face,
     mount_point_from_component,
     normalize_spin_quarter_turns,
     position_for_mount_point,
+    rotation_for_component_contact_face,
     translate_bounds,
     update_component_placement,
 )
@@ -230,6 +239,151 @@ def test_update_component_placement_updates_cylinder_mount_point() -> None:
     placement = updated["components"]["C001"]["placement"]
     assert placement["position"] == [2.0, 4.0, 6.0]
     assert placement["mount_point"] == [22.0, 8.0, 10.0]
+
+
+def test_update_component_placement_preserves_external_install_face_in_new_schema() -> None:
+    data = {
+        "envelope": {
+            "inner_size": [100.0, 100.0, 100.0],
+            "outer_size": [110.0, 110.0, 110.0],
+        },
+        "components": {
+            "P022": {
+                "shape": "box",
+                "dims": [10.0, 20.0, 30.0],
+                "placement": {
+                    "position": [1.0, 2.0, 3.0],
+                    "mount_face": 11,
+                    "mount_point": [6.0, 12.0, 3.0],
+                },
+            }
+        },
+    }
+    original = deepcopy(data)
+
+    updated = update_component_placement(
+        data=data,
+        component_id="P022",
+        position=[21.0, 2.0, 3.0],
+        install_face=11,
+    )
+
+    assert data == original
+    placement = updated["components"]["P022"]["placement"]
+    assert placement["position"] == [21.0, 2.0, 3.0]
+    assert placement["mount_face"] == 11
+    assert placement["mount_point"] == [26.0, 12.0, 3.0]
+    assert "envelope_face" not in placement
+    assert "rotation_matrix" not in placement
+
+
+def test_rotation_for_component_contact_face_aligns_same_face_to_new_mount_face() -> None:
+    rotation = rotation_for_component_contact_face(
+        component_contact_face=4,
+        target_envelope_face=10,
+    )
+
+    assert rotation != IDENTITY_ROTATION
+    assert apply_rotation(rotation, face_normal(4)) == face_normal(5)
+
+
+def test_update_component_placement_keeps_component_contact_face_when_install_face_changes() -> None:
+    data = {
+        "envelope": {
+            "inner_size": [100.0, 100.0, 100.0],
+            "outer_size": [110.0, 110.0, 110.0],
+        },
+        "components": {
+            "P022": {
+                "shape": "box",
+                "dims": [10.0, 20.0, 30.0],
+                "placement": {
+                    "position": [1.0, 2.0, 3.0],
+                    "mount_face": 11,
+                    "mount_point": [6.0, 12.0, 3.0],
+                },
+            }
+        },
+    }
+    rotation = rotation_for_component_contact_face(
+        component_contact_face=4,
+        target_envelope_face=10,
+    )
+
+    updated = update_component_placement(
+        data=data,
+        component_id="P022",
+        position=[-5.0, -10.0, -55.0],
+        install_face=10,
+        rotation_matrix=rotation,
+    )
+
+    placement = updated["components"]["P022"]["placement"]
+    assert placement["mount_face"] == 10
+    assert placement["rotation_matrix"] == rotation
+    assert component_mount_face(updated["components"]["P022"]) == 4
+    assert placement["mount_point"][2] == -55.0
+
+
+def test_face_change_position_stays_seated_on_target_wall_for_all_faces() -> None:
+    data = {
+        "envelope": {
+            "inner_size": [100.0, 100.0, 100.0],
+            "outer_size": [110.0, 110.0, 110.0],
+        },
+        "components": {
+            "P022": {
+                "shape": "box",
+                "dims": [10.0, 20.0, 30.0],
+                "placement": {
+                    "position": [55.0, -10.0, 5.0],
+                    "mount_face": 7,
+                    "mount_point": [55.0, 0.0, 0.0],
+                    "rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+                },
+            }
+        },
+    }
+
+    for target_face in FACE_DEFINITIONS:
+        wall_size = (
+            data["envelope"]["outer_size"]
+            if is_external_face(target_face)
+            else data["envelope"]["inner_size"]
+        )
+        component = data["components"]["P022"]
+        component_face = component_mount_face(component)
+        extents = component_local_extents("P022", component)
+        base_position, _, rotation = centered_face_position(
+            extents,
+            wall_size,
+            component_face,
+            target_face,
+        )
+        final_position = constrain_position_to_envelope_face(
+            base_position,
+            extents,
+            wall_size,
+            target_face,
+            rotation,
+        )
+
+        updated = update_component_placement(
+            data,
+            "P022",
+            final_position,
+            target_face,
+            rotation_matrix=rotation,
+        )
+        updated_component = updated["components"]["P022"]
+        placement = updated_component["placement"]
+        _, axis, direction = FACE_DEFINITIONS[envelope_face(updated_component)]
+        target_coordinate = (
+            -wall_size[axis] / 2.0 if direction < 0 else wall_size[axis] / 2.0
+        )
+
+        assert component_mount_face(updated_component) == 4
+        assert placement["mount_point"][axis] == target_coordinate
 
 
 def test_component_solid_placement_offsets_cylinder_for_cad_sync() -> None:

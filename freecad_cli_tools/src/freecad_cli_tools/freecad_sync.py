@@ -90,6 +90,18 @@ def normalize_sync_updates(raw_updates: Any) -> list[dict[str, Any]]:
                 field_name="solid_rotation_matrix",
                 index=index,
             )
+        if "source_position" in item:
+            normalized_update["source_position"] = normalize_position_list(
+                item.get("source_position"),
+                field_name="source_position",
+                index=index,
+            )
+        if "source_rotation_matrix" in item:
+            normalized_update["source_rotation_matrix"] = normalize_rotation_rows(
+                item.get("source_rotation_matrix"),
+                field_name="source_rotation_matrix",
+                index=index,
+            )
 
         normalized.append(normalized_update)
     return normalized
@@ -100,6 +112,7 @@ def render_batch_sync_script(
     updates: list[dict[str, Any]],
     *,
     recompute: bool = False,
+    export_step_path: str | None = None,
 ) -> str:
     """Render the FreeCAD-side batch placement sync script."""
     return render_rpc_script(
@@ -109,6 +122,11 @@ def render_batch_sync_script(
             "__DOC_NAME__": json.dumps(doc_name),
             "__UPDATES__": json.dumps(updates),
             "__RECOMPUTE__": "True" if recompute else "False",
+            "__EXPORT_STEP_PATH__": (
+                json.dumps(export_step_path)
+                if export_step_path is not None
+                else "None"
+            ),
         },
     )
 
@@ -120,9 +138,15 @@ def execute_batch_sync(
     updates: list[dict[str, Any]],
     *,
     recompute: bool = False,
+    export_step_path: str | None = None,
 ) -> dict[str, Any]:
     """Execute a batch placement sync against the target FreeCAD document."""
-    code = render_batch_sync_script(doc_name, updates, recompute=recompute)
+    code = render_batch_sync_script(
+        doc_name,
+        updates,
+        recompute=recompute,
+        export_step_path=export_step_path,
+    )
     payload = execute_script_payload(host, port, code)
     if not payload.get("success"):
         raise RuntimeError(payload.get("error") or "CAD sync failed")

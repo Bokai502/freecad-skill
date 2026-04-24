@@ -40,7 +40,7 @@ All RPC commands accept `--host <host>` and `--port <port>`. Their defaults come
 ### YAML as Source of Truth
 - When a YAML layout file exists, treat it as the source of truth for move planning and execution.
 - `freecad-yaml-safe-move` is the preferred YAML-first move command; use it to overwrite the source YAML and sync/save the current CAD document instead of creating sibling output files.
-- `placement.mount_face` identifies the envelope face the component is installed onto (`0..5` internal, `6..11` external). The component's physical contact face is derived from this automatically; no separate `envelope_face` or `rotation_matrix` is stored.
+- `placement.mount_face` identifies the envelope face the component is installed onto (`0..5` internal, `6..11` external). When moving to a new install face, preserve the original component-local contact face and store `placement.rotation_matrix` if rotation is needed to seat that same component face on the new envelope face.
 
 ### Move Safety
 - For any move request, prefer `safe-move-workflow.md` as the default entry point.
@@ -49,12 +49,12 @@ All RPC commands accept `--host <host>` and `--port <port>`. Their defaults come
 
 ### Orientation & Rotation
 - `--install-face <0..11>` places a component on a target envelope face. Faces `0..5` are internal (inside the envelope); faces `6..11` are external (outside the envelope, requires `envelope.outer_size` in YAML).
-- Boxes are always axis-aligned; `dims[0]`, `dims[1]`, `dims[2]` are world X/Y/Z extents. To reorient a box, reorder its `dims`.
+- Boxes use `dims[0]`, `dims[1]`, `dims[2]` as local X/Y/Z extents. When `placement.rotation_matrix` is present, apply it to keep the intended component-local contact face seated on the selected envelope face.
 
 ### CAD Generation
 - `freecad-create-assembly` is for explicit rebuild only; do not use it as the default after a move.
 - `freecad-replace-component` is for swapping one generated placeholder with a detailed STEP part in an existing assembly.
-- When only moving/rotating, update YAML in place and re-export the existing `STEP` file in place.
+- When only moving/rotating, update YAML in place and re-export the existing `STEP` file and sibling `GLB` in place.
 - Generated assemblies should include the envelope when YAML provides one.
 - Always call `doc.recompute()` after geometry changes.
 - After generation, switch the GUI to a fitted view automatically.

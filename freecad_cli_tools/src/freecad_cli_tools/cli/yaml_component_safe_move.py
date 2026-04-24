@@ -16,6 +16,7 @@ from freecad_cli_tools.artifact_registry import (
     finalize_registry_run,
     start_registry_run,
 )
+from freecad_cli_tools.cli_support import normalize_runtime_path
 from freecad_cli_tools.freecad_sync import execute_batch_sync
 from freecad_cli_tools.geometry import (
     FACE_DEFINITIONS,
@@ -85,6 +86,13 @@ def parse_args() -> argparse.Namespace:
         help="FreeCAD document name to update when --sync-cad is used.",
     )
     parser.add_argument(
+        "--step-output",
+        help=(
+            "STEP export path to overwrite after CAD sync. Defaults to "
+            "'<doc-name>.step' beside --output, and also writes a sibling .glb."
+        ),
+    )
+    parser.add_argument(
         "--component-object",
         help="Exact FreeCAD solid object name for the component. Defaults to the component id.",
     )
@@ -110,16 +118,29 @@ def save_yaml(path: Path, data: dict) -> None:
         yaml.safe_dump(data, handle, sort_keys=False, allow_unicode=True)
 
 
+def resolve_step_output_path(args: argparse.Namespace, output_path: Path) -> Path | None:
+    """Resolve the STEP export path used for post-move CAD exports."""
+    if not args.sync_cad:
+        return None
+    if args.step_output:
+        return Path(args.step_output).resolve()
+    if not args.doc_name:
+        raise ValueError("--doc-name is required when --sync-cad is used.")
+    return output_path.resolve().with_name(f"{args.doc_name}.step")
+
+
 def sync_yaml_result_to_cad(
     args: argparse.Namespace,
     output_path: Path,
     component_id: str,
     component: dict,
+    source_component: dict | None = None,
 ) -> dict:
     if not args.sync_cad:
         return {"enabled": False, "success": False}
     if not args.doc_name:
         raise ValueError("--doc-name is required when --sync-cad is used.")
+    export_step_path = resolve_step_output_path(args, output_path)
 
     position = [float(value) for value in component["placement"]["position"]]
     rotation_matrix = rotation_matrix_from_component(component)
@@ -129,6 +150,9 @@ def sync_yaml_result_to_cad(
         position,
         rotation_matrix,
     )
+    source = source_component or component
+    source_position = [float(value) for value in source["placement"]["position"]]
+    source_rotation_matrix = rotation_matrix_from_component(source)
     solid_name = args.component_object or args.component
     part_name = args.part_object or f"{args.component}_part"
     try:
@@ -145,9 +169,16 @@ def sync_yaml_result_to_cad(
                     "rotation_matrix": rotation_matrix,
                     "solid_position": solid_position,
                     "solid_rotation_matrix": solid_rotation_matrix,
+                    "source_position": source_position,
+                    "source_rotation_matrix": source_rotation_matrix,
                 }
             ],
             recompute=False,
+            export_step_path=(
+                normalize_runtime_path(export_step_path)
+                if export_step_path is not None
+                else None
+            ),
         )
     except SystemExit as exc:
         raise RuntimeError(
@@ -155,14 +186,24 @@ def sync_yaml_result_to_cad(
         ) from exc
     payload["enabled"] = True
     payload["yaml_path"] = str(output_path)
+    if export_step_path is not None:
+        payload["step_path"] = str(export_step_path)
+        payload["glb_path"] = str(export_step_path.with_suffix(".glb"))
     return payload
 
 
 def registry_inputs(args: argparse.Namespace, input_path: Path, output_path: Path) -> dict[str, object]:
     """Build the registry input payload for YAML-safe-move."""
+    step_output_path = resolve_step_output_path(args, output_path)
     return {
         "input_yaml_path": str(input_path),
         "output_yaml_path": str(output_path),
+        "step_output_path": str(step_output_path) if step_output_path else None,
+        "glb_output_path": (
+            str(step_output_path.with_suffix(".glb"))
+            if step_output_path is not None
+            else None
+        ),
         "component": args.component,
         "move": [float(value) for value in args.move],
         "install_face": args.install_face,
@@ -175,6 +216,7 @@ def registry_inputs(args: argparse.Namespace, input_path: Path, output_path: Pat
 
 def build_result_payload(
     *,
+    success: bool,
     input_path: Path,
     output_path: Path,
     args: argparse.Namespace,
@@ -198,12 +240,20 @@ def build_result_payload(
     final_mount_point: list[float],
     final_blockers: list[str],
     cad_sync: dict,
+    step_path: str | None,
+    glb_path: str | None,
+    step_exported: bool,
+    glb_exported: bool,
 ) -> dict[str, object]:
     """Build a structured result payload for YAML-safe-move."""
     return {
-        "success": not (args.sync_cad and not cad_sync.get("success")),
+        "success": success,
         "input_file": str(input_path.resolve()),
         "output_file": str(output_path.resolve()),
+        "step_path": step_path,
+        "glb_path": glb_path,
+        "step_exported": step_exported,
+        "glb_exported": glb_exported,
         "target_component": args.component,
         "component_mount_face": component_face,
         "component_mount_face_label": FACE_DEFINITIONS[component_face][0],
@@ -237,6 +287,10 @@ def emit_result_lines(payload: dict[str, object]) -> None:
     """Print the legacy human-readable output for YAML-safe-move."""
     print(f"input_file: {payload['input_file']}")
     print(f"output_file: {payload['output_file']}")
+    print(f"step_path: {payload['step_path']}")
+    print(f"glb_path: {payload['glb_path']}")
+    print(f"step_exported: {payload['step_exported']}")
+    print(f"glb_exported: {payload['glb_exported']}")
     print(f"target_component: {payload['target_component']}")
     print(f"component_mount_face: {payload['component_mount_face']}")
     print(f"component_mount_face_label: {payload['component_mount_face_label']}")
@@ -286,10 +340,69 @@ def emit_result_lines(payload: dict[str, object]) -> None:
     )
 
 
+def classify_cad_sync_result(cad_sync: dict) -> tuple[str, dict | None, str | None, str | None, bool, bool]:
+    """Determine overall status from the CAD sync/export payload."""
+    step_path = cad_sync.get("step_path")
+    glb_path = cad_sync.get("glb_path")
+    step_exists = bool(step_path) and Path(step_path).exists()
+    glb_exists = bool(glb_path) and Path(glb_path).exists()
+
+    if not cad_sync.get("enabled"):
+        return "success", None, step_path, glb_path, step_exists, glb_exists
+
+    if not cad_sync.get("success"):
+        return (
+            "partial_success",
+            build_error_payload(
+                "CAD_SYNC_FAILED",
+                str(cad_sync.get("error") or "CAD sync did not complete successfully."),
+                details=cad_sync,
+            ),
+            step_path,
+            glb_path,
+            step_exists,
+            glb_exists,
+        )
+
+    if step_exists and glb_exists:
+        return "success", None, step_path, glb_path, True, True
+
+    if step_exists:
+        return (
+            "partial_success",
+            build_error_payload(
+                "GLB_EXPORT_INCOMPLETE",
+                "STEP export succeeded but the expected GLB artifact was not found.",
+                details=cad_sync,
+            ),
+            step_path,
+            glb_path,
+            True,
+            False,
+        )
+
+    return (
+        "partial_success",
+        build_error_payload(
+            "STEP_EXPORT_MISSING",
+            "CAD sync completed but the expected STEP artifact was not found.",
+            details=cad_sync,
+        ),
+        step_path,
+        glb_path,
+        False,
+        glb_exists,
+    )
+
+
 def main() -> int:
     args = parse_args()
     input_path = Path(args.input)
     output_path = Path(args.output)
+    if args.step_output and not args.sync_cad:
+        raise ValueError("--step-output requires --sync-cad.")
+    if args.sync_cad and not args.doc_name:
+        raise ValueError("--doc-name is required when --sync-cad is used.")
     move = [float(value) for value in args.move]
     registry_run = start_registry_run(
         args,
@@ -331,7 +444,7 @@ def main() -> int:
 
         target_rotation_matrix = rotation_matrix_from_component(target)
         if args.install_face is not None:
-            base_position, _, _ = centered_face_position(
+            base_position, _, target_rotation_matrix = centered_face_position(
                 target_extents,
                 wall_size,
                 component_face,
@@ -405,6 +518,7 @@ def main() -> int:
             args.component,
             final_position,
             target_envelope_face,
+            rotation_matrix=target_rotation_matrix,
         )
         save_yaml(output_path, updated)
 
@@ -414,6 +528,7 @@ def main() -> int:
                 output_path,
                 args.component,
                 updated["components"][args.component],
+                source_component=target,
             )
         except Exception as exc:
             cad_sync = {
@@ -424,7 +539,16 @@ def main() -> int:
                 "component": args.component,
             }
 
+        (
+            registry_status,
+            registry_error,
+            step_path,
+            glb_path,
+            step_exists,
+            glb_exists,
+        ) = classify_cad_sync_result(cad_sync)
         payload = build_result_payload(
+            success=registry_status == "success",
             input_path=input_path,
             output_path=output_path,
             args=args,
@@ -450,32 +574,26 @@ def main() -> int:
             ],
             final_blockers=final_blockers,
             cad_sync=cad_sync,
-        )
-        registry_status = (
-            "partial_success"
-            if args.sync_cad and not cad_sync.get("success")
-            else "success"
-        )
-        registry_error = (
-            build_error_payload(
-                "CAD_SYNC_FAILED",
-                str(cad_sync.get("error") or "CAD sync did not complete successfully."),
-                details=cad_sync,
-            )
-            if registry_status == "partial_success"
-            else None
+            step_path=step_path,
+            glb_path=glb_path,
+            step_exported=step_exists,
+            glb_exported=glb_exists,
         )
         finalize_registry_run(
             registry_run,
             status=registry_status,
             outputs={
                 "yaml_path": str(output_path),
+                "step_path": step_path,
+                "glb_path": glb_path,
             },
             result=payload,
             error=registry_error,
             artifacts=[
                 artifact_entry("input_yaml", input_path),
                 artifact_entry("output_yaml", output_path),
+                artifact_entry("step", step_path),
+                artifact_entry("glb", glb_path),
             ],
         )
         emit_result_lines(payload)

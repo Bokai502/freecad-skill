@@ -29,12 +29,10 @@ def test_replace_component_writes_registry_record(
         assert code == "SCRIPT"
         assembly_path.write_text("new-step", encoding="utf-8")
         assembly_path.with_suffix(".glb").write_text("new-glb", encoding="utf-8")
-        assembly_path.with_suffix(".FCStd").write_text("new-fcstd", encoding="utf-8")
         return {
             "success": True,
             "assembly_path": str(assembly_path),
             "glb_path": str(assembly_path.with_suffix(".glb")),
-            "fcstd_path": str(assembly_path.with_suffix(".FCStd")),
             "component": "P001",
         }
 
@@ -73,4 +71,4 @@ def test_replace_component_writes_registry_record(
     assert manifest["operation"]["status"] == "success"
     assert manifest["outputs"]["step_path"] == str(assembly_path)
     assert manifest["outputs"]["glb_path"] == str(assembly_path.with_suffix(".glb"))
-    assert manifest["artifacts"][4]["path"] == str(replacement_path)
+    assert manifest["artifacts"][3]["path"] == str(replacement_path)

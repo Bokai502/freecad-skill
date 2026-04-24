@@ -55,6 +55,32 @@ def test_normalize_sync_updates_accepts_optional_solid_placement() -> None:
     ]
 
 
+def test_normalize_sync_updates_accepts_optional_source_placement() -> None:
+    updates = normalize_sync_updates(
+        [
+            {
+                "component": "P022",
+                "position": [10, 20, 30],
+                "rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+                "source_position": [1, 2, 3],
+                "source_rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+            }
+        ]
+    )
+
+    assert updates == [
+        {
+            "component": "P022",
+            "solid_name": "P022",
+            "part_name": "P022_part",
+            "position": [10.0, 20.0, 30.0],
+            "rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+            "source_position": [1.0, 2.0, 3.0],
+            "source_rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+        }
+    ]
+
+
 def test_normalize_sync_updates_rejects_missing_component() -> None:
     with pytest.raises(ValueError, match="missing 'component'"):
         normalize_sync_updates(

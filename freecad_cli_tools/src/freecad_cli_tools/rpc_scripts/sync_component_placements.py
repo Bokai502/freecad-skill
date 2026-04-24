@@ -1,11 +1,15 @@
 import json
 import sys
+from pathlib import Path
 
 import FreeCAD
+import Import
+import ImportGui
 
 DOC_NAME = __DOC_NAME__
 UPDATES = __UPDATES__
 RECOMPUTE = __RECOMPUTE__
+EXPORT_STEP_PATH = __EXPORT_STEP_PATH__
 
 
 def vec(v):
@@ -27,6 +31,66 @@ def placement_payload(placement):
     }
 
 
+def apply_delta_placement(target_placement, source_placement, current_placement):
+    delta = target_placement.multiply(source_placement.inverse())
+    return delta.multiply(current_placement)
+
+
+def export_step_and_glb(objects, step_path):
+    step_path = str(Path(step_path))
+    Path(step_path).parent.mkdir(parents=True, exist_ok=True)
+    glb_path = str(Path(step_path).with_suffix(".glb"))
+
+    Import.export(objects, step_path)
+
+    export_options = None
+    if hasattr(ImportGui, "exportOptions"):
+        try:
+            export_options = ImportGui.exportOptions("glTF")
+        except Exception:
+            export_options = None
+
+    if export_options is None:
+        ImportGui.export(objects, glb_path)
+    else:
+        try:
+            ImportGui.export(objects, glb_path, export_options)
+        except TypeError:
+            ImportGui.export(objects, glb_path)
+
+    return step_path, glb_path
+
+
+def top_level_export_objects(doc):
+    ignored_names = {"Origin", "X_Axis", "Y_Axis", "Z_Axis", "XY_Plane", "XZ_Plane", "YZ_Plane"}
+    roots = []
+    for obj in getattr(doc, "Objects", []):
+        if getattr(obj, "InList", []):
+            continue
+        if getattr(obj, "TypeId", "") == "App::Origin":
+            continue
+        if getattr(obj, "Name", "") in ignored_names:
+            continue
+        roots.append(obj)
+    return roots
+
+
+def find_export_objects(doc):
+    for obj in getattr(doc, "Objects", []):
+        type_id = getattr(obj, "TypeId", "")
+        if type_id not in ("Assembly::AssemblyObject", "App::Part"):
+            continue
+        if getattr(obj, "InList", []):
+            continue
+        if getattr(obj, "Name", "") == "Assembly" or getattr(obj, "Label", "") == "Assembly":
+            return [obj], "assembly_root"
+
+    roots = top_level_export_objects(doc)
+    if roots:
+        return roots, "top_level"
+    return [], "none"
+
+
 try:
     doc = FreeCAD.getDocument(DOC_NAME)
     if doc is None:
@@ -36,6 +100,14 @@ try:
     for update in UPDATES:
         component_id = update["component"]
         part_placement = make_placement(update["position"], update["rotation_matrix"])
+        has_source_placement = (
+            "source_position" in update and "source_rotation_matrix" in update
+        )
+        source_placement = (
+            make_placement(update["source_position"], update["source_rotation_matrix"])
+            if has_source_placement
+            else None
+        )
         solid_placement = make_placement(
             update.get("solid_position", update["position"]),
             update.get("solid_rotation_matrix", update["rotation_matrix"]),
@@ -52,7 +124,22 @@ try:
             )
 
         placements = []
-        if solid is not None:
+        if part is not None and has_source_placement:
+            old = part.Placement
+            part.Placement = apply_delta_placement(
+                part_placement,
+                source_placement,
+                old,
+            )
+            placements.append(
+                {
+                    "object": part.Name,
+                    "old_placement": placement_payload(old),
+                    "new_placement": placement_payload(part.Placement),
+                    "mode": "delta",
+                }
+            )
+        elif solid is not None:
             old = solid.Placement
             solid.Placement = solid_placement
             placements.append(
@@ -64,7 +151,7 @@ try:
                 }
             )
 
-        if part is not None:
+        if part is not None and not has_source_placement:
             old = part.Placement
             if solid is not None:
                 part.Placement = FreeCAD.Placement()
@@ -81,8 +168,26 @@ try:
 
         applied.append({"component": component_id, "updates": placements})
 
-    if RECOMPUTE:
+    exported_step_path = None
+    exported_glb_path = None
+    export_mode = None
+    exported_object_names = []
+
+    performed_recompute = bool(RECOMPUTE or EXPORT_STEP_PATH)
+    if performed_recompute:
         doc.recompute()
+
+    if EXPORT_STEP_PATH:
+        export_objects, export_mode = find_export_objects(doc)
+        if not export_objects:
+            raise RuntimeError(
+                f"document '{DOC_NAME}' does not contain any exportable top-level objects"
+            )
+        exported_object_names = [obj.Name for obj in export_objects]
+        exported_step_path, exported_glb_path = export_step_and_glb(
+            export_objects,
+            EXPORT_STEP_PATH,
+        )
 
     print(
         json.dumps(
@@ -91,7 +196,11 @@ try:
                 "document": DOC_NAME,
                 "component_count": len(applied),
                 "components": applied,
-                "recomputed": bool(RECOMPUTE),
+                "recomputed": performed_recompute,
+                "step_path": exported_step_path,
+                "glb_path": exported_glb_path,
+                "export_mode": export_mode,
+                "exported_objects": exported_object_names,
             }
         )
     )

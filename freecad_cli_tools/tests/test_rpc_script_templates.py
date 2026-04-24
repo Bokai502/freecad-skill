@@ -45,6 +45,7 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__DOC_NAME__": _DUMMY_STR,
         "__UPDATES__": _DUMMY_UPDATES,
         "__RECOMPUTE__": "True",
+        "__EXPORT_STEP_PATH__": _DUMMY_PATH,
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
     },
     "replace_component.py": {
@@ -97,7 +98,50 @@ def test_replace_component_preserves_non_target_placements() -> None:
     assert '"restored_placements_count": len(restored_placements)' in rendered
 
 
-@pytest.mark.parametrize("script_name", ["assembly_from_yaml.py", "replace_component.py"])
+def test_replace_component_prefers_reusable_document_before_step_import() -> None:
+    rendered = render_rpc_script(
+        "replace_component.py", SCRIPT_REPLACEMENTS["replace_component.py"]
+    )
+
+    assert "def find_reusable_document(doc_name):" in rendered
+    assert "doc, assembly = find_reusable_document(DOC_NAME)" in rendered
+    assert "document_reused = doc is not None" in rendered
+    assert "doc, assembly = create_or_import_document(DOC_NAME, ASSEMBLY_PATH)" in rendered
+    assert '"document_reused": document_reused' in rendered
+    assert '"assembly_imported": assembly_imported' in rendered
+
+
+def test_replace_component_applies_yaml_rotation_matrix() -> None:
+    rendered = render_rpc_script(
+        "replace_component.py", SCRIPT_REPLACEMENTS["replace_component.py"]
+    )
+
+    assert 'placement.get("rotation_matrix")' in rendered
+    assert "component_contact_face_from_placement(" in rendered
+    assert "yaml_component_center(" in rendered
+    assert "local_rotation = rotation_to_align(src_flange_dir, local_flange_dir)" in rendered
+    assert "rotation = placement_rotation.multiply(local_rotation)" in rendered
+    assert '"component_contact_face": component_contact_face_id' in rendered
+    assert '"placement_rotation_matrix": placement_rotation_rows' in rendered
+
+
+def test_sync_component_placements_uses_delta_for_part_containers() -> None:
+    rendered = render_rpc_script(
+        "sync_component_placements.py",
+        SCRIPT_REPLACEMENTS["sync_component_placements.py"],
+    )
+
+    assert "def apply_delta_placement(" in rendered
+    assert "source_placement.inverse()" in rendered
+    assert 'has_source_placement = (' in rendered
+    assert 'part is not None and has_source_placement' in rendered
+    assert '"mode": "delta"' in rendered
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    ["assembly_from_yaml.py", "replace_component.py", "sync_component_placements.py"],
+)
 def test_exporting_scripts_also_emit_glb(script_name: str) -> None:
     rendered = render_rpc_script(script_name, SCRIPT_REPLACEMENTS[script_name])
 
@@ -105,7 +149,7 @@ def test_exporting_scripts_also_emit_glb(script_name: str) -> None:
     assert 'glb_path = str(Path(step_path).with_suffix(".glb"))' in rendered
     assert "Import.export(objects, step_path)" in rendered
     assert "ImportGui.export(objects, glb_path)" in rendered
-    assert '"glb_path": glb_path' in rendered
+    assert '"glb_path": ' in rendered
 
 
 def _no_unreplaced_placeholders(code: str) -> bool:

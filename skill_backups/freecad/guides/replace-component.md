@@ -1,115 +1,192 @@
 # FreeCAD: Replace Component
 
-Swap a named placeholder component in an existing assembly STEP with an external STEP file
-(real CAD geometry). The replacement is aligned to the placeholder via `mount_face`: the
-flange end of the STEP is seated on the envelope wall, and the body is centered on the
-placeholder's bounding box. The assembly STEP is **overwritten in place**.
+Replace one generated placeholder component in an existing assembly STEP with a
+real external STEP part. This workflow changes CAD geometry only: it overwrites
+the assembly STEP and sibling GLB, but it does not rewrite the YAML layout.
 
-Use this when the user has a generated assembly (boxes/cylinders) and wants to drop in a
-detailed part for one component.
+Use this after an assembly already exists and the user wants to swap one
+placeholder such as `P022_part` for a detailed STEP model.
+
+## Core Rules
+
+- YAML remains the source of placement truth. Read the target component from
+  `components[NAME]`.
+- `placement.mount_face` is the box/envelope installation face, not the
+  component's own contact face.
+- Replace-component must not change YAML `placement.mount_face`, `position`,
+  `dims`, or `mount_point`.
+- If YAML contains `placement.rotation_matrix`, replace-component must apply it
+  to the imported STEP so a previously rotated component keeps the same
+  component-local contact face and in-plane orientation.
+- If the user wants the component installed on a different box/envelope face,
+  run `freecad-yaml-safe-move --install-face <0..11>` first, then run
+  `freecad-replace-component`.
+- The replacement STEP is aligned to the YAML placeholder: its flange is seated
+  on the selected box/envelope wall and its cross-section is centered on the
+  placeholder bounding box.
+- Non-target parts must keep their existing placements. Only `<NAME>_part` and
+  its descendants are replaced.
+- The assembly STEP is overwritten in place, and a sibling GLB is exported beside
+  it.
+
+## Face Model
+
+`placement.mount_face` selects the box/envelope surface used for seating the
+replacement flange.
+
+| Face IDs | Meaning | Wall size source | Cross-section centering axes |
+|----------|---------|------------------|------------------------------|
+| `0`, `1`, `6`, `7` | `-X`, `+X`, external `-X`, external `+X` faces | `inner_size` for `0..1`, `outer_size` for `6..7` | `Y`, `Z` |
+| `2`, `3`, `8`, `9` | `-Y`, `+Y`, external `-Y`, external `+Y` faces | `inner_size` for `2..3`, `outer_size` for `8..9` | `X`, `Z` |
+| `4`, `5`, `10`, `11` | `-Z`, `+Z`, external `-Z`, external `+Z` faces | `inner_size` for `4..5`, `outer_size` for `10..11` | `X`, `Y` |
+
+Internal faces are `0..5` and require `envelope.inner_size`. External faces are
+`6..11` and require `envelope.outer_size`.
+
+For external faces, the code derives the physical seating direction internally.
+Do not convert an external YAML `mount_face` such as `11` into a component
+contact-face ID such as `4`.
 
 ## Orientation Convention
 
-The **thrust axis is auto-detected** by matching the STEP's native bounding box
-against the YAML placeholder `dims`. Specifically:
+The replacement STEP needs a flange direction so it can be seated on the selected
+wall.
 
-- Read the STEP's native bbox extents `[sx, sy, sz]`.
-- The STEP axis whose extent is closest to `yaml_dims[mount_axis]` (the placeholder's
-  thickness along the mount axis) is treated as the STEP-native thrust axis.
-- A rotation is then applied to align that STEP axis with the world mount axis.
+- `placement.mount_face` determines the world mount axis and target wall
+  position.
+- `placement.rotation_matrix`, when present, rotates the placeholder's local
+  axes onto the final world axes. The replacement STEP must follow that same
+  rotation.
+- The component-local contact face is inferred from `mount_face` plus
+  `rotation_matrix`; this preserves the same physical component face after a
+  safe-move face change.
+- The STEP-native thrust axis is auto-detected by comparing the STEP bounding-box
+  extents with the YAML placeholder thickness along the component-local contact
+  axis.
+- `replacement.thrust_axis` can override the auto-detected STEP-native axis.
+- `replacement.flange_sign` tells which end of the STEP-native thrust axis is the
+  flange. The default is `+1`.
+- `thrust_axis` and `flange_sign` describe the replacement STEP geometry only.
+  They do not change the YAML installation face.
 
-Flange sign defaults to `+1` (flange at the positive end of the detected thrust axis
-in STEP native coords). If the result places the nozzle against the wall instead of
-the flange, override via YAML (see below).
-
-If the auto-detected result is wrong (e.g. ambiguous bbox, or the flange is at the
-negative end), override per-component in the YAML (optional):
+Optional YAML override:
 
 ```yaml
 P022:
   ...
   replacement:
-    step_file: DawnAerospace_B1_Thruster.STEP   # informational (not auto-loaded)
-    thrust_axis: y          # x | y | z — STEP-native axis
-    flange_sign: 1          # +1 or -1 — which end of that axis is the flange
+    step_file: DawnAerospace_B1_Thruster.STEP
+    thrust_axis: y
+    flange_sign: 1
 ```
 
-Both fields are optional; omit them to use the auto-detected defaults (bbox match + flange_sign=+1).
+Use overrides when the imported STEP appears reversed, points the nozzle into the
+wall, or the auto-detection warning says the axis is ambiguous.
 
-## Preferred CLI
+## Command Pattern
 
 ```bash
 freecad-replace-component \
   --yaml <FREECAD_RUNTIME_DATA_DIR>/sample.yaml \
   --assembly <FREECAD_RUNTIME_DATA_DIR>/SampleAssembly.step \
-  --replacement parts/RealThruster.STEP \
-  --name P022
+  --replacement <FREECAD_RUNTIME_DATA_DIR>/parts/RealThruster.step \
+  --name P022 \
+  --doc-name SampleAssembly
 ```
+
+`--doc-name` is optional. If omitted, it defaults to the assembly STEP stem.
 
 ## Inputs
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--yaml` | yes | Source YAML — used to look up `components[NAME].placement.position`, `dims`, `color`. |
-| `--assembly` | yes | Existing assembly STEP file. Overwritten in place. |
-| `--replacement` | yes | Replacement STEP file containing the new geometry. |
-| `--name` | yes | Component id to replace (e.g. `P022`). Matched against object `Label`/`Name` and `<NAME>_part`. |
-| `--doc-name` | no | FreeCAD document name; defaults to the assembly file stem. |
+| `--yaml` | yes | Source YAML. Used to read `components[NAME]`, including `placement.position`, `placement.mount_face`, `dims`, `color`, and optional `replacement` overrides. |
+| `--assembly` | yes | Existing assembly STEP. This file is overwritten in place. |
+| `--replacement` | yes | Real replacement STEP file to import. |
+| `--name` | yes | Component ID to replace, for example `P022`. The CLI targets `<NAME>_part` under the Assembly root. |
+| `--doc-name` | no | FreeCAD document name. Defaults to the assembly file stem. |
 | `--no-fit-view` | no | Skip the post-replace isometric/fit view. |
-| `--host`, `--port` | no | Standard RPC connection flags. |
+| `--host`, `--port` | no | FreeCAD RPC connection settings. Defaults come from `config/freecad_runtime.conf`. |
+
+## Execution Steps
+
+1. Confirm the assembly STEP can be overwritten.
+2. Confirm the YAML component exists and has a valid `placement.mount_face`.
+3. If the target face is external (`6..11`), confirm `envelope.outer_size`
+   exists.
+4. Run `freecad-replace-component` with `--yaml`, `--assembly`,
+   `--replacement`, and `--name`.
+5. Read the JSON output and verify `success: true`.
+6. Verify both `assembly_path` and `glb_path` exist.
+7. Report the assembly STEP path, GLB path, target component, mount face, and any
+   orientation overrides used.
 
 ## Behavior
 
-1. Open the assembly STEP into a fresh document.
-2. Locate the root `Assembly` container (`App::Part`/`Assembly::AssemblyObject`).
-3. **Validate** `<NAME>_part` exists as a direct child of the Assembly. If not, error out listing the available component ids.
-4. Look up the component in the YAML; compute the **target center**:
-   - `box`: `position + dims/2`
-   - `cylinder`: derived from mount-face axis + radius/height
-5. Remove the `<NAME>_part` sub-Part and its descendants.
-6. `Import.insert` the replacement STEP into the same document.
-7. Resolve `thrust_axis` / `flange_sign`: read YAML `replacement` overrides if present; otherwise auto-detect thrust axis by matching STEP bbox extents to `yaml_dims`, and default flange_sign to `+1`.
-8. Rotate the STEP so its flange aligns with the wall; translate so its flange sits on the wall and its cross-section is centered on the placeholder.
-9. Apply the YAML color and wrap the new objects in a fresh `App::Part` named `<NAME>_part`; attach it under the Assembly container.
-10. `Import.export([assembly], ASSEMBLY_PATH)` — the Assembly root carries the whole hierarchy.
-11. Switch GUI to isometric / fit (unless `--no-fit-view`).
+1. Reuse the currently open FreeCAD document when `--doc-name` matches an open
+   assembly document; otherwise import the assembly STEP into a fresh document.
+2. Locate the root `Assembly` container.
+3. Validate `<NAME>_part` exists as a direct child of the Assembly root.
+4. Read YAML `placement.mount_face` as the box/envelope installation face.
+5. Compute the placeholder center from YAML after applying
+   `placement.rotation_matrix`.
+6. Import the replacement STEP before deleting the old component, so failures do
+   not destroy the existing assembly.
+7. Detect or read `thrust_axis` and `flange_sign`.
+8. Rotate the replacement so its STEP flange first maps to the component-local
+   contact face, then apply `placement.rotation_matrix` so the detailed part
+   matches the rotated placeholder.
+9. Translate the replacement so the flange seats on the wall and the cross-section
+   is centered on the placeholder.
+10. Remove only `<NAME>_part` and its descendants.
+11. Wrap imported objects into a new `<NAME>_part` container and attach it to the
+   Assembly root.
+12. Restore/preserve non-target placements.
+13. Export `Import.export([assembly], ASSEMBLY_PATH)` and a sibling GLB.
+14. Fit the GUI view unless `--no-fit-view` is set.
 
-### Validation
+## Output Fields To Check
 
-The CLI only targets components that exist as `<NAME>_part` children of the Assembly root. Bare labels outside the Assembly are ignored. On miss:
+- `success`: must be `true`.
+- `assembly_path`: overwritten STEP path.
+- `glb_path`: sibling GLB path.
+- `component`: replaced component ID.
+- `mount_face`: YAML box/envelope installation face used for seating.
+- `component_contact_face`: component-local face kept against the wall.
+- `placement_rotation_matrix`: YAML rotation applied to the imported STEP.
+- `external`: whether the face was external.
+- `wall_position`: wall coordinate used for flange seating.
+- `thrust_axis`: STEP-native axis used as thrust/flange axis.
+- `thrust_axis_source`: `yaml`, `step_bbox_match`, or fallback.
+- `flange_sign`: which end of the STEP-native axis was treated as the flange.
+- `flange_sign_source`: `yaml` or default.
+- `translation_applied`: final translation applied to the imported STEP objects.
+- `removed_objects`: old `<NAME>_part` objects removed.
+- `new_objects`: imported replacement objects.
+- `restored_placements_count`: non-target placements restored after replacement.
 
-```json
-{ "success": false, "error": "Component 'P099' not found in Assembly. Available components: P000, P001, ..., P022" }
-```
+## Failure Handling
 
-## Output (JSON)
+- If `<NAME>_part` is not found under the Assembly root, stop and report the
+  available component IDs.
+- If the replacement STEP imports no objects or no valid shape, stop and report
+  the STEP as invalid or empty.
+- If `thrust_axis` auto-detection is ambiguous, add
+  `replacement.thrust_axis` to YAML and rerun.
+- If the nozzle/flange is reversed, set `replacement.flange_sign` to `1` or `-1`
+  and rerun.
+- If GLB export is missing but STEP export succeeded, report partial success.
 
-```json
-{
-  "success": true,
-  "document": "...",
-  "assembly_path": "...",
-  "replacement_path": "...",
-  "component": "P022",
-  "assembly_container": "Assembly",
-  "assembly_component_count": 23,
-  "removed_objects": ["...P022_part and its descendants..."],
-  "new_objects": ["...imported..."],
-  "container": "P022_part",
-  "target_center": [x, y, z],
-  "translation_applied": [dx, dy, dz],
-  "view_updated": true
-}
-```
+## Reporting Template
 
-## Rules
+Report replacements in this order:
 
-- The assembly file is **overwritten** — confirm with the user before running on a production file.
-- Rotation is applied when `thrust_axis` / `flange_sign` (derived or overridden) require it; translation seats the part on the mount wall and centers it on the placeholder.
-- The YAML is **not** modified — placeholder dims remain as a reference. To reflect the new geometry, re-export the YAML manually.
-- After replacement, optionally run `freecad-check-collision` to verify the new geometry doesn't intersect neighbors.
+1. State which component was replaced.
+2. State the YAML box/envelope mount face used, including whether it was internal
+   or external.
+3. State that the YAML component placement was not changed.
+4. State orientation details when useful: `thrust_axis`, `flange_sign`, and their
+   sources.
+5. State updated STEP and GLB paths.
 
-## Fallbacks
-
-- If the component name is not found in the assembly, the CLI errors out. Check `freecad-get-objs` or open the STEP in FreeCAD to verify labels.
-- If the replacement STEP yields no valid bounding box, the CLI errors out — the file is likely empty or non-solid.
+Do not say the operation fully succeeded unless both STEP and GLB were written.
