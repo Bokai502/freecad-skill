@@ -17,7 +17,7 @@ def write_dataset(
     geom_path: Path,
     *,
     component_id: str = "P001",
-    source_component_id: str = "P_001_internal",
+    geom_component_key: str = "P_001_internal",
     component_mount_face_id: str = "P001.local_xmax",
     mount_face_id: str = "cabin_auto_1.xmax",
     cabin_id: str | None = "cabin_auto_1",
@@ -66,7 +66,7 @@ def write_dataset(
         "schema_version": "1.0",
         "layout_id": "layout-test",
         "source_design_id": "design-test",
-        "outer_shell": {"id": "outer_shell", "source_ref": "outer_shell"},
+        "outer_shell": {"id": "outer_shell"},
         "cabins": [
             {
                 "id": "cabin_auto_1",
@@ -91,9 +91,6 @@ def write_dataset(
                 },
                 "geometry_id": "G001",
                 "thermal_id": "T001",
-                "source_ref": {
-                    "layout3dcube_component_id": source_component_id,
-                },
             }
         ],
     }
@@ -115,13 +112,11 @@ def write_dataset(
         "install_faces": {
             face_id: {
                 "id": known_install_faces[face_id]["id"],
-                "belongs_to": (
-                    "outer_shell"
-                    if face_id.startswith("outer.")
-                    else "cabin_auto_1"
-                ),
+                "belongs_to": ("outer_shell" if face_id.startswith("outer.") else "cabin_auto_1"),
                 "side": known_install_faces[face_id]["side"],
-                "cabin_face_tag": face_id.split(".", 1)[1].replace("_inner", "").replace("_outer", ""),
+                "cabin_face_tag": face_id.split(".", 1)[1]
+                .replace("_inner", "")
+                .replace("_outer", ""),
                 "plane_axis": known_install_faces[face_id]["plane_axis"],
                 "plane_value": known_install_faces[face_id]["plane_value"],
                 "normal_sign": known_install_faces[face_id]["normal_sign"],
@@ -132,8 +127,9 @@ def write_dataset(
             for face_id in sorted(install_face_ids)
         },
         "components": {
-            source_component_id: {
-                "id": source_component_id,
+            geom_component_key: {
+                "id": geom_component_key,
+                "component_id": component_id,
                 "kind": "internal" if cabin_id else "external",
                 "category": "avionics",
                 "dims": dims,
@@ -163,7 +159,7 @@ def write_external_dataset(layout_path: Path, geom_path: Path) -> None:
         layout_path,
         geom_path,
         component_id="P022",
-        source_component_id="P_022_external",
+        geom_component_key="P_022_external",
         component_mount_face_id="P022.local_zmin",
         mount_face_id="outer.zmax_outer",
         cabin_id=None,
@@ -209,9 +205,7 @@ def test_layout_safe_move_writes_registry_record(monkeypatch, tmp_path: Path) ->
     exit_code = layout_safe_move.main()
 
     assert exit_code == 0
-    manifest = json.loads(
-        (registry_dir / "runs" / "move-run.json").read_text(encoding="utf-8")
-    )
+    manifest = json.loads((registry_dir / "runs" / "move-run.json").read_text(encoding="utf-8"))
     assert manifest["operation"]["tool"] == "freecad-layout-safe-move"
     assert manifest["operation"]["status"] == "success"
     assert manifest["inputs"]["input_layout_topology_path"] == str(layout_path)
@@ -222,9 +216,7 @@ def test_layout_safe_move_writes_registry_record(monkeypatch, tmp_path: Path) ->
     assert Path(manifest["outputs"]["geom_path"]).exists()
 
 
-def test_layout_safe_move_install_face_writes_rotation_matrix(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_layout_safe_move_install_face_writes_orientation_rows(monkeypatch, tmp_path: Path) -> None:
     layout_path = tmp_path / "layout_topology.json"
     geom_path = tmp_path / "geom.json"
     output_layout_path = tmp_path / "layout_topology.updated.json"
@@ -263,13 +255,11 @@ def test_layout_safe_move_install_face_writes_rotation_matrix(
     )
     normalized = normalize_layout_dataset(updated_layout, updated_geom)
     placement = normalized["components"]["P022"]["placement"]
-    assert placement["mount_face"] == 10
-    assert placement["rotation_matrix"] != [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    assert placement["mount_face_id"] == "outer.zmin_outer"
+    assert placement["alignment"]["in_plane_rotation_deg"] in {0.0, 90.0, 180.0, 270.0}
 
 
-def test_sync_layout_result_to_cad_sends_source_pose(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_sync_layout_result_to_cad_sends_source_pose(monkeypatch, tmp_path: Path) -> None:
     captured: dict[str, object] = {}
 
     def fake_execute_batch_sync(host, port, doc_name, updates, **kwargs):
@@ -296,20 +286,25 @@ def test_sync_layout_result_to_cad_sends_source_pose(
         component="P022",
     )
     source_component = {
+        "component_id": "P022",
         "shape": "box",
         "dims": [10.0, 20.0, 30.0],
         "placement": {
             "position": [1.0, 2.0, 55.0],
-            "mount_face": 11,
+            "mount_face_id": "outer.zmax_outer",
+            "component_mount_face_id": "P022.local_zmin",
+            "alignment": {"in_plane_rotation_deg": 0.0},
         },
     }
     updated_component = {
+        "component_id": "P022",
         "shape": "box",
         "dims": [10.0, 20.0, 30.0],
         "placement": {
             "position": [55.0, -10.0, 5.0],
-            "mount_face": 7,
-            "rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+            "mount_face_id": "outer.xmax_outer",
+            "component_mount_face_id": "P022.local_zmin",
+            "alignment": {"in_plane_rotation_deg": 0.0},
         },
     }
 
@@ -325,14 +320,12 @@ def test_sync_layout_result_to_cad_sends_source_pose(
     assert payload["enabled"] is True
     assert payload["layout_topology_path"] == str(layout_path)
     assert payload["geom_path"] == str(geom_path)
-    assert payload["step_path"] == str(
-        tmp_path / "02_geometry_edit" / "geometry_after.step"
-    )
+    assert payload["step_path"] == str(tmp_path / "02_geometry_edit" / "geometry_after.step")
     update = captured["updates"][0]
     assert update["source_position"] == [1.0, 2.0, 55.0]
-    assert update["source_rotation_matrix"] == [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+    assert update["source_orientation_rows"] == [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
     assert update["position"] == [55.0, -10.0, 5.0]
-    assert update["rotation_matrix"] == [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]
+    assert update["orientation_rows"] == [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]
 
 
 def test_resolve_step_output_path_forces_geometry_after_basename(tmp_path: Path) -> None:
@@ -466,9 +459,7 @@ def test_layout_safe_move_records_step_and_glb_outputs_on_sync_success(
 
     assert exit_code == 0
     manifest = json.loads(
-        (registry_dir / "runs" / "move-sync-success-run.json").read_text(
-            encoding="utf-8"
-        )
+        (registry_dir / "runs" / "move-sync-success-run.json").read_text(encoding="utf-8")
     )
     assert manifest["operation"]["status"] == "success"
     assert manifest["outputs"]["layout_topology_path"] == str(output_layout_path)
@@ -536,9 +527,7 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
 
     assert exit_code == 2
     manifest = json.loads(
-        (registry_dir / "runs" / "move-glb-missing-run.json").read_text(
-            encoding="utf-8"
-        )
+        (registry_dir / "runs" / "move-glb-missing-run.json").read_text(encoding="utf-8")
     )
     assert manifest["operation"]["status"] == "partial_success"
     assert manifest["outputs"]["step_path"] == str(step_path)
@@ -574,9 +563,7 @@ def test_layout_safe_move_defaults_to_geometry_after_outputs_without_touching_so
 
     exit_code = layout_safe_move.main()
 
-    output_layout_path = (
-        tmp_path / "02_geometry_edit" / "geometry_after.layout_topology.json"
-    )
+    output_layout_path = tmp_path / "02_geometry_edit" / "geometry_after.layout_topology.json"
     output_geom_path = tmp_path / "02_geometry_edit" / "geometry_after.geom.json"
     assert exit_code == 0
     assert layout_path.read_text(encoding="utf-8") == original_layout

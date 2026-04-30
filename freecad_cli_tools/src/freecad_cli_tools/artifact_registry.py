@@ -53,9 +53,7 @@ def add_registry_args(parser: Any) -> None:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace(
-        "+00:00", "Z"
-    )
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def generate_run_id() -> str:
@@ -94,8 +92,7 @@ class ArtifactRegistryRun:
 def resolve_registry_context(args: Any | None = None) -> RegistryContext:
     """Resolve registry metadata from CLI args and environment."""
     return RegistryContext(
-        run_id=_value_from_args_or_env(args, "run_id", RUN_ID_ENV_VAR)
-        or generate_run_id(),
+        run_id=_value_from_args_or_env(args, "run_id", RUN_ID_ENV_VAR) or generate_run_id(),
         session_id=_value_from_args_or_env(args, "session_id", SESSION_ID_ENV_VAR),
         thread_id=_value_from_args_or_env(args, "thread_id", THREAD_ID_ENV_VAR),
         turn_id=_value_from_args_or_env(args, "turn_id", TURN_ID_ENV_VAR),
@@ -253,9 +250,7 @@ def finalize_registry_run(
     registry_run.record["outputs"] = outputs or {}
     registry_run.record["result"] = result or {}
     registry_run.record["error"] = error
-    registry_run.record["artifacts"] = [
-        item for item in (artifacts or []) if item is not None
-    ]
+    registry_run.record["artifacts"] = [item for item in (artifacts or []) if item is not None]
     try:
         _write_run_record(registry_run)
     except Exception as exc:

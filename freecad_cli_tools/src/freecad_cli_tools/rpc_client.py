@@ -20,9 +20,7 @@ class FreeCADConnection:
     def __init__(self, host: str | None = None, port: int | None = None):
         host = get_default_rpc_host() if host is None else host
         port = get_default_rpc_port() if port is None else port
-        self.server = xmlrpc.client.ServerProxy(
-            f"http://{host}:{port}", allow_none=True
-        )
+        self.server = xmlrpc.client.ServerProxy(f"http://{host}:{port}", allow_none=True)
         self.host = host
         self.port = port
 
@@ -67,9 +65,7 @@ def get_connection(
     if verify:
         try:
             if not conn.ping():
-                raise ConnectionError(
-                    f"Cannot ping FreeCAD RPC server at {host}:{port}"
-                )
+                raise ConnectionError(f"Cannot ping FreeCAD RPC server at {host}:{port}")
         except Exception as e:
             print(
                 f"ERROR: Cannot connect to FreeCAD RPC server at {host}:{port}",

@@ -12,7 +12,7 @@ def test_normalize_sync_updates_accepts_wrapped_payload_and_defaults_names() -> 
                 {
                     "component": "P005",
                     "position": [1, 2, 3],
-                    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                    "orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                 }
             ]
         }
@@ -24,7 +24,7 @@ def test_normalize_sync_updates_accepts_wrapped_payload_and_defaults_names() -> 
             "solid_name": "P005",
             "part_name": "P005_part",
             "position": [1.0, 2.0, 3.0],
-            "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+            "orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
         }
     ]
 
@@ -35,9 +35,9 @@ def test_normalize_sync_updates_accepts_optional_solid_placement() -> None:
             {
                 "component": "P011",
                 "position": [1, 2, 3],
-                "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                "orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                 "solid_position": [4, 5, 6],
-                "solid_rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+                "solid_orientation_rows": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
             }
         ]
     )
@@ -48,9 +48,9 @@ def test_normalize_sync_updates_accepts_optional_solid_placement() -> None:
             "solid_name": "P011",
             "part_name": "P011_part",
             "position": [1.0, 2.0, 3.0],
-            "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+            "orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
             "solid_position": [4.0, 5.0, 6.0],
-            "solid_rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+            "solid_orientation_rows": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
         }
     ]
 
@@ -61,9 +61,9 @@ def test_normalize_sync_updates_accepts_optional_source_placement() -> None:
             {
                 "component": "P022",
                 "position": [10, 20, 30],
-                "rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+                "orientation_rows": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
                 "source_position": [1, 2, 3],
-                "source_rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                "source_orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
             }
         ]
     )
@@ -74,9 +74,9 @@ def test_normalize_sync_updates_accepts_optional_source_placement() -> None:
             "solid_name": "P022",
             "part_name": "P022_part",
             "position": [10.0, 20.0, 30.0],
-            "rotation_matrix": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
+            "orientation_rows": [[0, 0, 1], [0, 1, 0], [-1, 0, 0]],
             "source_position": [1.0, 2.0, 3.0],
-            "source_rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+            "source_orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
         }
     ]
 
@@ -87,7 +87,7 @@ def test_normalize_sync_updates_rejects_missing_component() -> None:
             [
                 {
                     "position": [1, 2, 3],
-                    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                    "orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
                 }
             ]
         )

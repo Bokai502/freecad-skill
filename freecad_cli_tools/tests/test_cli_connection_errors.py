@@ -49,5 +49,7 @@ def test_execute_script_payload_wraps_connection_failure(monkeypatch) -> None:
 
     monkeypatch.setattr(cli_support, "call_rpc_method", fake_call_rpc_method)
 
-    with pytest.raises(RuntimeError, match="Cannot connect to FreeCAD RPC server at localhost:9876"):
+    with pytest.raises(
+        RuntimeError, match="Cannot connect to FreeCAD RPC server at localhost:9876"
+    ):
         cli_support.execute_script_payload("localhost", 9876, "print('hi')")

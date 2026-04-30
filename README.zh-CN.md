@@ -14,6 +14,8 @@
 
 - 通过本机 Linux 上正在运行的 FreeCAD MCP/XML-RPC 服务执行 CLI 操作。
 - 根据 `layout_topology.json + geom.json` 创建 FreeCAD 装配。
+- 基于 `layout_topology.json + geom.json` 导出占位装配。
+- 基于 `layout_topology.json + geom.json + geom_component_info.json` 直接导出真实 CAD 或 box 回退装配。
 - 在内部包络、外部安装面边界和碰撞约束下安全移动组件。
 - 将一个或多个计算后的位姿同步到正在运行的 FreeCAD 文档。
 - 通过测试、CI 和基准脚本验证功能与性能。
@@ -26,7 +28,10 @@
 freecad
 ```
 
-请确保已安装 FreeCADMCP 插件，并且 XML-RPC 服务使用 [config/freecad_runtime.conf](./config/freecad_runtime.conf) 中配置的主机和端口启动（当前为 `localhost:9876`）。
+请确保已安装 FreeCADMCP 插件，并且 XML-RPC 服务已启动。运行时默认值来自
+`FREECAD_RUNTIME_CONFIG`、项目内 `.freecad/freecad_runtime.conf`、用户级
+`~/.config/freecad-cli-tools/runtime.conf`，或作为兼容兜底的
+[config/freecad_runtime.conf](./config/freecad_runtime.conf)。
 
 ### 2. 安装 CLI 工具包
 
@@ -40,6 +45,12 @@ python -m pip install -e ./freecad_cli_tools[dev]
 freecad-create-assembly --doc-name LayoutAssembly
 ```
 
+或者直接根据 component info 构建一个全新的装配：
+
+```powershell
+freecad-create-assembly-from-component-info --doc-name DirectAssembly
+```
+
 ### 4. 执行一次安全移动并同步回 CAD
 
 ```powershell
@@ -49,11 +60,17 @@ freecad-layout-safe-move --component P005 --install-face 5 --move 228.8367181519
 对于外部安装面，同一条命令会以 `envelope.outer_size` 作为墙面参考，让组件保持在壳体外侧，
 同时继续约束它只能在目标安装面的二维边界内移动，避免沿墙面滑出边缘。
 
-在当前工作区的 skill 流程中，CLI 相对路径会基于
-[config/freecad_runtime.conf](./config/freecad_runtime.conf) 里的
+在当前工作区的 skill 流程中，CLI 相对路径会基于运行时配置或环境变量里的
 `FREECAD_WORKSPACE_DIR` 解析。默认从 `./01_layout` 读取源输入，并把
 新的数据集、STEP、GLB 输出到 `./02_geometry_edit`，统一使用
 `geometry_after` 作为文件名前缀，因此不会修改原始文件。
+
+当 `./01_layout/geom_component_info.json` 存在时，
+`freecad-create-assembly-from-component-info` 会把它与
+`layout_topology.json`、`geom.json` 一起使用，优先读取
+`display_info.assets.cad_rotated_path` 指向的 STEP；若 STEP 缺失、不可用，
+或超过 `--max-step-size-mb`，则回退为 box，并输出
+`geometry_after.step` 和同名 `geometry_after.glb`。
 
 ### 5. 批量同步多个位姿
 

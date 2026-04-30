@@ -17,10 +17,14 @@ from freecad_cli_tools.cli_support import (
 )
 from freecad_cli_tools.runtime_config import (
     get_default_artifact_registry_dir,
+    get_default_component_info_max_step_size_mb,
     get_default_geometry_after_step_path,
     get_default_workspace_dir,
+    get_runtime_config_candidates,
+    load_runtime_config,
     parse_runtime_config,
     resolve_geometry_after_step_path,
+    resolve_runtime_config_path,
     resolve_workspace_path,
 )
 
@@ -38,6 +42,29 @@ def test_parse_runtime_config_ignores_comments_and_blank_lines(tmp_path: Path) -
         "FREECAD_RPC_PORT": "9876",
         "FREECAD_WORKSPACE_DIR": "/tmp/workspace",
     }
+
+
+def test_runtime_config_uses_explicit_config_path(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "custom.conf"
+    config_path.write_text("FREECAD_RPC_PORT=9999\n", encoding="utf-8")
+    monkeypatch.setenv("FREECAD_RUNTIME_CONFIG", str(config_path))
+    load_runtime_config.cache_clear()
+
+    assert get_runtime_config_candidates() == [config_path]
+    assert resolve_runtime_config_path() == config_path
+    assert load_runtime_config()["FREECAD_RPC_PORT"] == "9999"
+
+
+def test_runtime_config_prefers_project_config_before_legacy(monkeypatch, tmp_path: Path) -> None:
+    config_path = tmp_path / ".freecad" / "freecad_runtime.conf"
+    config_path.parent.mkdir()
+    config_path.write_text("FREECAD_WORKSPACE_DIR=/tmp/project-workspace\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("FREECAD_RUNTIME_CONFIG", raising=False)
+    load_runtime_config.cache_clear()
+
+    assert resolve_runtime_config_path() == config_path
+    assert load_runtime_config()["FREECAD_WORKSPACE_DIR"] == "/tmp/project-workspace"
 
 
 def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:
@@ -84,21 +111,17 @@ def test_extract_output_payload_accepts_message_without_marker_when_json_present
     assert payload == [{"name": "Doc1"}]
 
 
-def test_runtime_directory_getters_honor_environment_overrides(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_runtime_directory_getters_honor_environment_overrides(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
     monkeypatch.delenv("FREECAD_ARTIFACT_REGISTRY_DIR", raising=False)
+    monkeypatch.setenv("FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB", "42.5")
 
     assert get_default_workspace_dir() == tmp_path / "workspace"
-    assert get_default_artifact_registry_dir() == (
-        tmp_path / "workspace" / "registry"
-    )
+    assert get_default_artifact_registry_dir() == (tmp_path / "workspace" / "registry")
+    assert get_default_component_info_max_step_size_mb() == 42.5
 
 
-def test_resolve_workspace_path_uses_configured_workspace_root(
-    monkeypatch, tmp_path: Path
-) -> None:
+def test_resolve_workspace_path_uses_configured_workspace_root(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
 
     assert resolve_workspace_path("./01_layout/geom.json") == (

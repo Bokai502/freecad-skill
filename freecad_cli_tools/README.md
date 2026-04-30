@@ -1,7 +1,7 @@
 # FreeCAD CLI Tools
 
 Command-line tools for interacting with FreeCAD documents, layout datasets, and
-component-replacement workflows. The package includes both XML-RPC-based
+direct assembly-build workflows. The package includes both XML-RPC-based
 commands and offline dataset utilities.
 
 Chinese version: [README.zh-CN.md](./README.zh-CN.md)
@@ -48,6 +48,7 @@ freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
 freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
 freecad-get-view Isometric --output table.png
 freecad-create-assembly --doc-name LayoutAssembly
+freecad-create-assembly-from-component-info --doc-name DirectAssembly
 
 # Safe move with layout_topology.json + geom.json
 freecad-layout-safe-move --component P001 --move 50 50 0
@@ -60,11 +61,20 @@ freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
 freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 ```
 
-By default, relative CLI paths are resolved against `FREECAD_WORKSPACE_DIR` in
-`config/freecad_runtime.conf`. `freecad-create-assembly` reads
+By default, relative CLI paths are resolved against `FREECAD_WORKSPACE_DIR` from
+the runtime config or environment. `freecad-create-assembly` reads
 `./01_layout/layout_topology.json` and `./01_layout/geom.json`, then writes
 `./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb` unless
 you pass explicit paths.
+
+`freecad-create-assembly-from-component-info` reads
+`./01_layout/layout_topology.json`, `./01_layout/geom.json`, and
+`./01_layout/geom_component_info.json`, then imports each component from
+`display_info.assets.cad_rotated_path` when a readable STEP/STP exists. Missing
+or unreadable STEP assets fall back to `Part::Box`. Oversized STEP assets also
+fall back to `Part::Box`; use `--max-step-size-mb` to control that threshold or
+`-1` to disable it. The direct-build workflow also exports
+`./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb`.
 
 ## Recommended Move Workflow
 
@@ -110,7 +120,7 @@ This command creates:
 - an `Assembly` container
 - an `Envelope_part` with an `EnvelopeShell` when the normalized dataset envelope exists
 - one `App::Part` plus one solid per component, currently `Part::Box` or `Part::Cylinder`
-- a `.step` export and a sibling `.glb` export for the assembly
+- a placeholder `.step` export and a sibling `.glb` export for the assembly
 - an automatic fitted GUI view after generation
 
 The command treats `placement.position` as the component local-bounds minimum
@@ -140,7 +150,10 @@ to reading from `./01_layout` and writing new dataset files plus
 `geometry_after.step` / `geometry_after.glb` under `./02_geometry_edit`, so the
 source dataset remains unchanged unless the user explicitly overrides the paths.
 
-RPC defaults are centralized in [../config/freecad_runtime.conf](../config/freecad_runtime.conf).
+Runtime defaults are resolved in this order: `FREECAD_RUNTIME_CONFIG`, project
+`.freecad/freecad_runtime.conf`, project `freecad_runtime.conf`, user
+`~/.config/freecad-cli-tools/runtime.conf`, then the legacy
+[../config/freecad_runtime.conf](../config/freecad_runtime.conf) fallback.
 
 For multi-component placement updates, `freecad-sync-placements` accepts a JSON list like:
 
@@ -167,7 +180,7 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 - `src/freecad_cli_tools/layout_dataset_common.py`: shared validation helpers for layout dataset parsing
 - `src/freecad_cli_tools/layout_dataset_faces.py`: install-face mapping and reverse face resolution
 - `src/freecad_cli_tools/layout_dataset_io.py`: atomic JSON I/O helpers for layout dataset files
-- `src/freecad_cli_tools/yaml_schema.py`: schema validation for replacement workflows that still consume YAML
+- `src/freecad_cli_tools/component_info_assembly.py`: normalization for direct assembly builds from `geom_component_info.json`
 - `src/freecad_cli_tools/freecad_sync.py`: reusable placement sync helpers for single or batched CAD updates
 - `src/freecad_cli_tools/cli_support.py`: shared CLI-side helpers for RPC calls, output parsing, and file input
 - `src/freecad_cli_tools/rpc_scripts/`: FreeCAD-side Python scripts executed over XML-RPC
@@ -177,8 +190,8 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 
 ## Requirements
 
-- For RPC commands: FreeCAD with the MCP addon running on the host/port configured in [../config/freecad_runtime.conf](../config/freecad_runtime.conf) (currently `localhost:9876`)
-- Relative input and output paths are resolved against `FREECAD_WORKSPACE_DIR` from [../config/freecad_runtime.conf](../config/freecad_runtime.conf)
+- For RPC commands: FreeCAD with the MCP addon running on the host/port from the runtime config or environment
+- Relative input and output paths are resolved against `FREECAD_WORKSPACE_DIR` from the runtime config or environment
 - For offline layout-dataset use of `freecad-layout-safe-move`: Python 3.9+ only
 - Python 3.9+
 

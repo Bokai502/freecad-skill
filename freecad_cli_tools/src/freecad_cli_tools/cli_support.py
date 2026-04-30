@@ -106,6 +106,7 @@ def describe_rpc_failure(result: Any) -> str:
 
 def extract_output_payload(result: dict) -> dict:
     """Extract the JSON payload printed by execute_code-based RPC commands."""
+
     def parse_payload_text(text: str) -> Any:
         candidates: list[str] = []
         stripped = text.strip()
@@ -114,9 +115,7 @@ def extract_output_payload(result: dict) -> dict:
             lines = [line.strip() for line in stripped.splitlines() if line.strip()]
             if lines:
                 candidates.append(lines[-1])
-                candidates.extend(
-                    line for line in reversed(lines) if line[:1] in {"{", "["}
-                )
+                candidates.extend(line for line in reversed(lines) if line[:1] in {"{", "["})
             for marker in ("{", "["):
                 index = stripped.find(marker)
                 if index != -1:

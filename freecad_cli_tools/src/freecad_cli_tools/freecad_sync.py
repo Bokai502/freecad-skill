@@ -12,25 +12,17 @@ from .rpc_script_loader import render_rpc_script
 
 def normalize_position_list(value: Any, *, field_name: str, index: int) -> list[float]:
     if not isinstance(value, list) or len(value) != 3:
-        raise ValueError(
-            f"Sync update #{index} must include a 3-item '{field_name}' list."
-        )
+        raise ValueError(f"Sync update #{index} must include a 3-item '{field_name}' list.")
     return [float(item) for item in value]
 
 
-def normalize_rotation_rows(
-    value: Any, *, field_name: str, index: int
-) -> list[list[int]]:
+def normalize_orientation_rows(value: Any, *, field_name: str, index: int) -> list[list[int]]:
     if not isinstance(value, list) or len(value) != 3:
-        raise ValueError(
-            f"Sync update #{index} must include a 3x3 '{field_name}' list."
-        )
+        raise ValueError(f"Sync update #{index} must include a 3x3 '{field_name}' list.")
     rows = []
     for row in value:
         if not isinstance(row, list) or len(row) != 3:
-            raise ValueError(
-                f"Sync update #{index} must include a 3x3 '{field_name}' list."
-            )
+            raise ValueError(f"Sync update #{index} must include a 3x3 '{field_name}' list.")
         rows.append([int(item) for item in row])
     return rows
 
@@ -52,28 +44,22 @@ def normalize_sync_updates(raw_updates: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict):
             raise ValueError(f"Sync update #{index} must be an object.")
 
-        component_id = str(
-            item.get("component") or item.get("component_id") or ""
-        ).strip()
+        component_id = str(item.get("component") or item.get("component_id") or "").strip()
         if not component_id:
             raise ValueError(f"Sync update #{index} is missing 'component'.")
 
         normalized_update = {
             "component": component_id,
-            "solid_name": item.get("solid_name")
-            or item.get("component_object")
-            or component_id,
-            "part_name": item.get("part_name")
-            or item.get("part_object")
-            or f"{component_id}_part",
+            "solid_name": item.get("solid_name") or item.get("component_object") or component_id,
+            "part_name": item.get("part_name") or item.get("part_object") or f"{component_id}_part",
             "position": normalize_position_list(
                 item.get("position"),
                 field_name="position",
                 index=index,
             ),
-            "rotation_matrix": normalize_rotation_rows(
-                item.get("rotation_matrix"),
-                field_name="rotation_matrix",
+            "orientation_rows": normalize_orientation_rows(
+                item.get("orientation_rows", item.get("rotation_matrix")),
+                field_name="orientation_rows",
                 index=index,
             ),
         }
@@ -84,10 +70,10 @@ def normalize_sync_updates(raw_updates: Any) -> list[dict[str, Any]]:
                 field_name="solid_position",
                 index=index,
             )
-        if "solid_rotation_matrix" in item:
-            normalized_update["solid_rotation_matrix"] = normalize_rotation_rows(
-                item.get("solid_rotation_matrix"),
-                field_name="solid_rotation_matrix",
+        if "solid_orientation_rows" in item or "solid_rotation_matrix" in item:
+            normalized_update["solid_orientation_rows"] = normalize_orientation_rows(
+                item.get("solid_orientation_rows", item.get("solid_rotation_matrix")),
+                field_name="solid_orientation_rows",
                 index=index,
             )
         if "source_position" in item:
@@ -96,10 +82,10 @@ def normalize_sync_updates(raw_updates: Any) -> list[dict[str, Any]]:
                 field_name="source_position",
                 index=index,
             )
-        if "source_rotation_matrix" in item:
-            normalized_update["source_rotation_matrix"] = normalize_rotation_rows(
-                item.get("source_rotation_matrix"),
-                field_name="source_rotation_matrix",
+        if "source_orientation_rows" in item or "source_rotation_matrix" in item:
+            normalized_update["source_orientation_rows"] = normalize_orientation_rows(
+                item.get("source_orientation_rows", item.get("source_rotation_matrix")),
+                field_name="source_orientation_rows",
                 index=index,
             )
 
@@ -123,9 +109,7 @@ def render_batch_sync_script(
             "__UPDATES__": json.dumps(updates),
             "__RECOMPUTE__": "True" if recompute else "False",
             "__EXPORT_STEP_PATH__": (
-                json.dumps(export_step_path)
-                if export_step_path is not None
-                else "None"
+                json.dumps(export_step_path) if export_step_path is not None else "None"
             ),
         },
     )

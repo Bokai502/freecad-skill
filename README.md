@@ -14,6 +14,8 @@
 
 - Connect CLI tools to a locally running FreeCAD MCP/XML-RPC service.
 - Build FreeCAD assemblies from `layout_topology.json + geom.json`.
+- Export placeholder assemblies from `layout_topology.json + geom.json`.
+- Export direct real-CAD-or-box assemblies from `layout_topology.json + geom.json + geom_component_info.json`.
 - Move components safely with inner-envelope, external-face boundary, and collision constraints.
 - Sync one or many computed placements into a live FreeCAD document.
 - Benchmark safe-move performance and validate behavior with tests and CI.
@@ -26,7 +28,11 @@
 freecad
 ```
 
-Make sure the FreeCADMCP addon is installed and has started the XML-RPC service using the host/port configured in [config/freecad_runtime.conf](./config/freecad_runtime.conf) (currently `localhost:9876`).
+Make sure the FreeCADMCP addon is installed and has started the XML-RPC service.
+Runtime defaults come from `FREECAD_RUNTIME_CONFIG`, a project config such as
+`.freecad/freecad_runtime.conf`, the user config
+`~/.config/freecad-cli-tools/runtime.conf`, or the legacy
+[config/freecad_runtime.conf](./config/freecad_runtime.conf) fallback.
 
 ### 2. Install the CLI package
 
@@ -40,6 +46,12 @@ python -m pip install -e ./freecad_cli_tools[dev]
 freecad-create-assembly --doc-name LayoutAssembly
 ```
 
+Or build a brand-new assembly directly from component info:
+
+```powershell
+freecad-create-assembly-from-component-info --doc-name DirectAssembly
+```
+
 ### 4. Run a safe move and sync it back to CAD
 
 ```powershell
@@ -51,10 +63,16 @@ keeps the component on the outside of the shell, and still constrains motion to 
 2D footprint so it cannot slide past the wall edge.
 
 In the current workspace skill workflow, relative CLI paths are resolved against
-`FREECAD_WORKSPACE_DIR` from [config/freecad_runtime.conf](./config/freecad_runtime.conf).
+`FREECAD_WORKSPACE_DIR` from the runtime config or environment.
 By default, source inputs are read from `./01_layout`, while generated dataset,
 STEP, and GLB outputs are written to `./02_geometry_edit` using the base name
 `geometry_after` so the originals are not modified.
+
+When `./01_layout/geom_component_info.json` exists, `freecad-create-assembly-from-component-info`
+combines it with `layout_topology.json` and `geom.json`, uses
+`display_info.assets.cad_rotated_path` when available, falls back to a box when
+the STEP asset is missing or exceeds `--max-step-size-mb`, and writes
+`geometry_after.step` plus sibling `geometry_after.glb`.
 
 ### 5. Batch-sync multiple placements
 

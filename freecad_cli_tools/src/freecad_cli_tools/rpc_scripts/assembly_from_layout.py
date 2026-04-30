@@ -1,6 +1,6 @@
 import json
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import FreeCAD
 import FreeCADGui
@@ -11,6 +11,7 @@ import Part
 INPUT_PATH = __INPUT_PATH__
 DOC_NAME = __DOC_NAME__
 SAVE_PATH = __SAVE_PATH__
+EXPORT_GLB = __EXPORT_GLB__
 FIT_VIEW = __FIT_VIEW__
 VIEW_NAME = __VIEW_NAME__
 
@@ -94,11 +95,46 @@ def apply_color(obj, color):
     obj.ViewObject.Transparency = 40
 
 
+def iter_descendant_shapes(container):
+    stack = list(getattr(container, "Group", []) or [])
+    while stack:
+        obj = stack.pop()
+        if obj is None:
+            continue
+        if obj.TypeId == "App::Part":
+            stack.extend(getattr(obj, "Group", []) or [])
+            continue
+        try:
+            shape = obj.Shape
+        except Exception:
+            continue
+        if shape is None or shape.isNull():
+            continue
+        yield obj
+
+
+def collect_glb_export_objects(objects):
+    glb_objects = []
+    for obj in objects:
+        descendants = list(iter_descendant_shapes(obj))
+        if descendants:
+            glb_objects.extend(descendants)
+            continue
+        try:
+            shape = obj.Shape
+        except Exception:
+            shape = None
+        if shape is not None and not shape.isNull():
+            glb_objects.append(obj)
+    return glb_objects or list(objects)
+
+
 def export_step_and_glb(objects, step_path):
     step_path = str(Path(step_path))
     glb_path = str(Path(step_path).with_suffix(".glb"))
 
     Import.export(objects, step_path)
+    glb_objects = collect_glb_export_objects(objects)
 
     export_options = None
     if hasattr(ImportGui, "exportOptions"):
@@ -108,14 +144,20 @@ def export_step_and_glb(objects, step_path):
             export_options = None
 
     if export_options is None:
-        ImportGui.export(objects, glb_path)
+        ImportGui.export(glb_objects, glb_path)
     else:
         try:
-            ImportGui.export(objects, glb_path, export_options)
+            ImportGui.export(glb_objects, glb_path, export_options)
         except TypeError:
-            ImportGui.export(objects, glb_path)
+            ImportGui.export(glb_objects, glb_path)
 
     return step_path, glb_path
+
+
+def export_step(objects, step_path):
+    step_path = str(Path(step_path))
+    Import.export(objects, step_path)
+    return step_path
 
 
 try:
@@ -158,9 +200,7 @@ try:
             solid.Height = shape_spec["height"]
             solid.Angle = shape_spec["angle"]
         else:
-            raise RuntimeError(
-                f"Unsupported shape for {component_id}: {shape_spec['shape']}"
-            )
+            raise RuntimeError(f"Unsupported shape for {component_id}: {shape_spec['shape']}")
 
         solid.Placement = make_placement(
             shape_spec["placement_position"],
@@ -171,7 +211,11 @@ try:
         created.append(component_id)
 
     doc.recompute()
-    save_path, glb_path = export_step_and_glb([assembly], SAVE_PATH)
+    if EXPORT_GLB:
+        save_path, glb_path = export_step_and_glb([assembly], SAVE_PATH)
+    else:
+        save_path = export_step([assembly], SAVE_PATH)
+        glb_path = None
 
     view_updated = False
     if FIT_VIEW:

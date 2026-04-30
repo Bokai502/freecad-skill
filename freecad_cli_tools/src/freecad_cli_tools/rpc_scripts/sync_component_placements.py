@@ -99,18 +99,16 @@ try:
     applied = []
     for update in UPDATES:
         component_id = update["component"]
-        part_placement = make_placement(update["position"], update["rotation_matrix"])
-        has_source_placement = (
-            "source_position" in update and "source_rotation_matrix" in update
-        )
+        part_placement = make_placement(update["position"], update["orientation_rows"])
+        has_source_placement = "source_position" in update and "source_orientation_rows" in update
         source_placement = (
-            make_placement(update["source_position"], update["source_rotation_matrix"])
+            make_placement(update["source_position"], update["source_orientation_rows"])
             if has_source_placement
             else None
         )
         solid_placement = make_placement(
             update.get("solid_position", update["position"]),
-            update.get("solid_rotation_matrix", update["rotation_matrix"]),
+            update.get("solid_orientation_rows", update["orientation_rows"]),
         )
         solid_name = update.get("solid_name")
         part_name = update.get("part_name")

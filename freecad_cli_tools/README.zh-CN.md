@@ -1,6 +1,6 @@
 # FreeCAD CLI Tools
 
-用于操作 FreeCAD 文档、布局数据集以及组件替换工作流的命令行工具集合。
+用于操作 FreeCAD 文档、布局数据集以及直接装配构建工作流的命令行工具集合。
 该包同时包含基于 XML-RPC 的命令和离线数据集工具。
 
 英文版说明见 [README.md](./README.md)。
@@ -47,6 +47,7 @@ freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
 freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
 freecad-get-view Isometric --output table.png
 freecad-create-assembly --doc-name LayoutAssembly
+freecad-create-assembly-from-component-info --doc-name DirectAssembly
 
 # 基于 layout dataset 的安全移动与可选 CAD 同步
 freecad-layout-safe-move --component P001 --move 50 50 0
@@ -58,6 +59,20 @@ freecad-sync-placements --doc-name LayoutAssembly --updates-file updates.json
 freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
 freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 ```
+
+默认情况下，相对 CLI 路径会基于运行时配置或环境变量中的
+`FREECAD_WORKSPACE_DIR` 解析。
+`freecad-create-assembly` 会读取 `./01_layout/layout_topology.json` 和
+`./01_layout/geom.json`，并输出 `./02_geometry_edit/geometry_after.step`
+及同名 `geometry_after.glb`。
+
+`freecad-create-assembly-from-component-info` 会读取
+`./01_layout/layout_topology.json`、`./01_layout/geom.json` 和
+`./01_layout/geom_component_info.json`，优先从
+`display_info.assets.cad_rotated_path` 导入真实 STEP/STP；缺失或不可读时
+回退为 `Part::Box`。超过 `--max-step-size-mb` 的 STEP/STP 也会回退为
+`Part::Box`，传 `-1` 可以关闭这个限制。这个直接构建流程同样输出
+`./02_geometry_edit/geometry_after.step` 和同名 `geometry_after.glb`。
 
 ## 推荐移动流程
 
@@ -100,8 +115,8 @@ freecad-create-assembly \
 - 一个 `Assembly` 容器
 - 当归一化后的数据集中存在 `envelope` 时，创建 `Envelope_part` 和 `EnvelopeShell`
 - 每个组件对应一个 `App::Part` 和一个几何实体（当前支持 `Part::Box` / `Part::Cylinder`）
+- 一套占位装配导出：`.step` 和同名 `.glb`
 - 生成后自动做一次 GUI 视图拟合
-- 导出 `.step` 和同名 `.glb`
 
 该命令把 `placement.position` 视为组件局部包围盒最小角点位置，并默认在当前朝向下执行安全碰撞移动。在当前归一化模型里：
 
@@ -112,7 +127,10 @@ freecad-create-assembly \
 
 补充说明：外部安装面（6-11）虽然会跳过内部包络包含约束，但仍会使用 `envelope.outer_size` 检查目标墙面的面内边界，避免组件沿墙面滑出边缘。如果请求路径跨出了这个二维轮廓，命令会截断到最近安全前缀，并在阻塞原因中包含 `FACE_BOUNDARY`。
 
-RPC 默认值已集中到 [../config/freecad_runtime.conf](../config/freecad_runtime.conf)。
+运行时默认值按以下顺序解析：`FREECAD_RUNTIME_CONFIG`、项目内
+`.freecad/freecad_runtime.conf`、项目内 `freecad_runtime.conf`、用户级
+`~/.config/freecad-cli-tools/runtime.conf`，最后才使用兼容兜底的
+[../config/freecad_runtime.conf](../config/freecad_runtime.conf)。
 
 对于多组件位姿更新，`freecad-sync-placements` 接受如下 JSON 列表：
 
@@ -139,7 +157,7 @@ RPC 默认值已集中到 [../config/freecad_runtime.conf](../config/freecad_run
 - `src/freecad_cli_tools/layout_dataset_common.py`：layout dataset 共享校验辅助函数
 - `src/freecad_cli_tools/layout_dataset_faces.py`：安装面映射与反向解析
 - `src/freecad_cli_tools/layout_dataset_io.py`：layout dataset 原子 JSON I/O
-- `src/freecad_cli_tools/yaml_schema.py`：仍然以 YAML 为输入的替换工作流格式校验
+- `src/freecad_cli_tools/component_info_assembly.py`：基于 `geom_component_info.json` 的直接装配归一化逻辑
 - `src/freecad_cli_tools/freecad_sync.py`：单组件和批量组件的位姿同步辅助逻辑
 - `src/freecad_cli_tools/cli_support.py`：CLI 侧共享工具，例如 RPC 调用、输出解析和文件输入
 - `src/freecad_cli_tools/rpc_scripts/`：通过 XML-RPC 在 FreeCAD 侧执行的 Python 脚本
@@ -149,8 +167,8 @@ RPC 默认值已集中到 [../config/freecad_runtime.conf](../config/freecad_run
 
 ## 依赖要求
 
-- 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务使用 [../config/freecad_runtime.conf](../config/freecad_runtime.conf) 中配置的主机和端口（当前为 `localhost:9876`）
-- 相对输入输出路径会基于 [../config/freecad_runtime.conf](../config/freecad_runtime.conf) 中的 `FREECAD_WORKSPACE_DIR` 解析
+- 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务使用运行时配置或环境变量中的主机和端口
+- 相对输入输出路径会基于运行时配置或环境变量中的 `FREECAD_WORKSPACE_DIR` 解析
 - 对于离线 layout dataset 模式的 `freecad-layout-safe-move`：只需要 Python 3.9+
 - Python 3.9+
 

@@ -11,6 +11,8 @@ import itertools
 import math
 from copy import deepcopy
 
+from freecad_cli_tools.layout_dataset_common import FACE_ID_TO_TOKEN, FACE_TOKEN_TO_ID
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -114,9 +116,7 @@ def apply_rotation(matrix: list[list[int]], point: list[float]) -> list[float]:
     return [sum(matrix[row][col] * point[col] for col in range(3)) for row in range(3)]
 
 
-def multiply_rotation_matrices(
-    left: list[list[int]], right: list[list[int]]
-) -> list[list[int]]:
+def multiply_rotation_matrices(left: list[list[int]], right: list[list[int]]) -> list[list[int]]:
     return [
         [sum(left[row][k] * right[k][col] for k in range(3)) for col in range(3)]
         for row in range(3)
@@ -166,6 +166,29 @@ def apply_in_plane_spin(
     return multiply_rotation_matrices(spin_rotation, base_rotation)
 
 
+def infer_in_plane_rotation_deg(
+    component_face: int,
+    target_envelope_face: int,
+    orientation_rows: list[list[int]],
+) -> float:
+    base_rotation = rotation_for_component_contact_face(
+        component_face,
+        target_envelope_face,
+    )
+    normalized = [[int(value) for value in row] for row in orientation_rows]
+    for spin_quarter_turns in range(4):
+        candidate = apply_in_plane_spin(
+            base_rotation=base_rotation,
+            target_envelope_face=target_envelope_face,
+            spin_quarter_turns=spin_quarter_turns,
+        )
+        if candidate == normalized:
+            return float(spin_quarter_turns * 90)
+    raise ValueError(
+        "Orientation rows cannot be represented by mount-face ids plus a quarter-turn spin."
+    )
+
+
 # ---------------------------------------------------------------------------
 # Component data accessors
 # ---------------------------------------------------------------------------
@@ -175,53 +198,144 @@ def component_shape(component: dict) -> str:
     return str(component.get("shape", "box")).strip().lower()
 
 
-def rotation_matrix_from_component(component: dict) -> list[list[int]]:
-    """Return the component's world-frame rotation matrix."""
-    rotation_matrix = component.get("placement", {}).get("rotation_matrix")
-    if rotation_matrix is None:
+def _face_token_after_dot(value: str, field_name: str) -> str:
+    if not isinstance(value, str) or "." not in value:
+        raise ValueError(f"{field_name} must be a dotted face id.")
+    return value.rsplit(".", 1)[1].strip().lower()
+
+
+def _parse_mount_face_id(face_id: str) -> int:
+    token = _face_token_after_dot(face_id, "placement.mount_face_id")
+    if token in FACE_TOKEN_TO_ID:
+        return FACE_TOKEN_TO_ID[token]
+    if token.endswith("_inner"):
+        inner = token[: -len("_inner")]
+        if inner in FACE_TOKEN_TO_ID:
+            return FACE_TOKEN_TO_ID[inner]
+    if token.endswith("_outer"):
+        outer = token[: -len("_outer")]
+        if outer in FACE_TOKEN_TO_ID:
+            return FACE_TOKEN_TO_ID[outer] + 6
+    raise ValueError(f"Unsupported mount_face_id {face_id!r}.")
+
+
+def _parse_component_mount_face_id(face_id: str) -> int:
+    token = _face_token_after_dot(
+        face_id,
+        "placement.component_mount_face_id",
+    )
+    if not token.startswith("local_"):
+        raise ValueError(f"Unsupported component_mount_face_id {face_id!r}.")
+    local_token = token[len("local_") :]
+    if local_token not in FACE_TOKEN_TO_ID:
+        raise ValueError(f"Unsupported component_mount_face_id {face_id!r}.")
+    return FACE_TOKEN_TO_ID[local_token]
+
+
+def face_id_to_local_component_face_id(component_id: str, face_id: int) -> str:
+    return f"{component_id}.local_{FACE_ID_TO_TOKEN[face_id]}"
+
+
+def face_id_to_generic_mount_face_id(face_id: int) -> str:
+    token = FACE_ID_TO_TOKEN[face_id % 6]
+    if is_external_face(face_id):
+        return f"outer.{token}_outer"
+    return f"outer.{token}_inner"
+
+
+def orientation_rows_from_placement(
+    component_id: str,
+    placement: dict,
+) -> list[list[int]]:
+    mount_face_id = placement.get("mount_face_id")
+    if not isinstance(mount_face_id, str) or not mount_face_id.strip():
+        legacy_rotation_rows = placement.get("rotation_matrix")
+        if legacy_rotation_rows is not None:
+            return normalize_legacy_orientation_rows(
+                legacy_rotation_rows,
+                field_name="placement.rotation_matrix",
+            )
         return [row[:] for row in IDENTITY_ROTATION]
-    if not isinstance(rotation_matrix, list) or len(rotation_matrix) != 3:
-        raise ValueError("placement.rotation_matrix must be a 3x3 matrix.")
-    normalized = []
-    for row in rotation_matrix:
+    component_mount_face_id = placement.get("component_mount_face_id")
+    if not isinstance(component_mount_face_id, str) or not component_mount_face_id.strip():
+        raise ValueError(
+            f"Component {component_id!r} is missing placement.component_mount_face_id."
+        )
+
+    install_face = _parse_mount_face_id(mount_face_id)
+    component_face = _parse_component_mount_face_id(component_mount_face_id)
+    orientation_rows = rotation_for_component_contact_face(component_face, install_face)
+    alignment = placement.get("alignment") or {}
+    if not isinstance(alignment, dict):
+        raise ValueError(f"Component {component_id!r} placement.alignment must be an object.")
+    spin_degrees = float(alignment.get("in_plane_rotation_deg", 0.0) or 0.0)
+    if abs(spin_degrees) > EPSILON:
+        orientation_rows = apply_in_plane_spin(
+            base_rotation=orientation_rows,
+            target_envelope_face=install_face,
+            spin_quarter_turns=normalize_spin_quarter_turns(spin_degrees),
+        )
+    return orientation_rows
+
+
+def normalize_legacy_orientation_rows(
+    rotation_rows: list[list[int]] | list[list[float]],
+    *,
+    field_name: str,
+) -> list[list[int]]:
+    if not isinstance(rotation_rows, list) or len(rotation_rows) != 3:
+        raise ValueError(f"{field_name} must be a 3x3 matrix.")
+    normalized: list[list[int]] = []
+    for row in rotation_rows:
         if not isinstance(row, list) or len(row) != 3:
-            raise ValueError("placement.rotation_matrix must be a 3x3 matrix.")
+            raise ValueError(f"{field_name} must be a 3x3 matrix.")
         normalized.append([int(value) for value in row])
     return normalized
+
+
+def orientation_rows_from_component(component: dict) -> list[list[int]]:
+    """Return the component's world-frame orientation rows."""
+    component_id = str(component.get("component_id") or component.get("id") or "component")
+    return orientation_rows_from_placement(component_id, component.get("placement", {}))
+
+
+def rotation_matrix_from_component(component: dict) -> list[list[int]]:
+    """Backward-compatible alias for orientation_rows_from_component()."""
+    return orientation_rows_from_component(component)
 
 
 def installation_contact_world_face(install_face: int) -> int:
     """Return the world-facing direction a component contact face must align to."""
     if install_face not in FACE_DEFINITIONS:
-        raise ValueError(
-            f"Invalid install face {install_face!r}. Expected an integer in 0..11."
-        )
+        raise ValueError(f"Invalid install face {install_face!r}. Expected an integer in 0..11.")
     return (install_face - 6) ^ 1 if is_external_face(install_face) else install_face
 
 
 def component_contact_face_from_component(component: dict) -> int:
     """Return the component-local contact face (always 0–5).
 
-    The YAML ``mount_face`` field stores the *installation face* (0–11).
-    When ``placement.rotation_matrix`` exists, infer which component-local face
-    currently points toward the installation contact direction. This preserves
-    the same physical component face across later face changes.
+    The normalized placement stores the installation face and component-local
+    contact face separately. Preserve that same physical component face across
+    later face changes.
     """
-    mount_face = component.get("placement", {}).get("mount_face")
-    if mount_face not in FACE_DEFINITIONS:
+    component_id = str(component.get("component_id") or component.get("id") or "component")
+    placement = component.get("placement", {})
+    component_mount_face_id = placement.get("component_mount_face_id")
+    if isinstance(component_mount_face_id, str) and component_mount_face_id.strip():
+        return _parse_component_mount_face_id(component_mount_face_id)
+
+    legacy_install_face = placement.get("mount_face")
+    if legacy_install_face not in FACE_DEFINITIONS:
         raise ValueError(
-            f"Invalid or missing mount_face {mount_face!r}. Expected an integer in 0..11."
+            f"Component {component_id!r} is missing placement.component_mount_face_id."
         )
-    rotation_matrix = rotation_matrix_from_component(component)
-    world_contact_face = installation_contact_world_face(mount_face)
+    orientation_rows = orientation_rows_from_placement(component_id, placement)
+    world_contact_face = installation_contact_world_face(int(legacy_install_face))
     world_contact_normal = face_normal(world_contact_face)
     for candidate_face in range(6):
-        if (
-            apply_rotation(rotation_matrix, face_normal(candidate_face))
-            == world_contact_normal
-        ):
+        if apply_rotation(orientation_rows, face_normal(candidate_face)) == world_contact_normal:
             return candidate_face
-    return component_contact_face(mount_face)
+    return component_contact_face(int(legacy_install_face))
 
 
 def component_mount_face(component: dict) -> int:
@@ -232,12 +346,13 @@ def component_mount_face(component: dict) -> int:
 def envelope_face(component: dict) -> int:
     """Return the installation face (0–11) for a component."""
     placement = component.get("placement", {})
-    face = placement.get("mount_face")
-    if face not in FACE_DEFINITIONS:
-        raise ValueError(
-            f"Invalid or missing mount_face {face!r}. Expected an integer in 0..11."
-        )
-    return face
+    face_id = placement.get("mount_face_id")
+    if isinstance(face_id, str) and face_id.strip():
+        return _parse_mount_face_id(face_id)
+    legacy_face = placement.get("mount_face")
+    if legacy_face in FACE_DEFINITIONS:
+        return int(legacy_face)
+    raise ValueError("placement.mount_face_id must be a non-empty string.")
 
 
 def face_normal(face_id: int) -> list[int]:
@@ -279,24 +394,18 @@ def infer_cylinder_radius_and_height(
 
     if radius is None:
         if dims_values is None:
-            raise RuntimeError(
-                f"Cylinder component {component_id} requires radius or dims values."
-            )
+            raise RuntimeError(f"Cylinder component {component_id} requires radius or dims values.")
         if len(dims_values) == 2:
             radius = dims_values[0] / 2.0
         else:
-            cross_section = [
-                dims_values[index] for index in range(3) if index != axis_index
-            ]
+            cross_section = [dims_values[index] for index in range(3) if index != axis_index]
             radius = min(cross_section) / 2.0
     else:
         radius = float(radius)
 
     if height is None:
         if dims_values is None:
-            raise RuntimeError(
-                f"Cylinder component {component_id} requires height or dims values."
-            )
+            raise RuntimeError(f"Cylinder component {component_id} requires height or dims values.")
         if len(dims_values) == 2:
             height = dims_values[1]
         else:
@@ -332,16 +441,12 @@ def component_local_extents(component_id: str, component: dict) -> list[float]:
 
     if shape == "box":
         if dims is None or len(dims) != 3:
-            raise RuntimeError(
-                f"Box component {component_id} requires three dims values."
-            )
+            raise RuntimeError(f"Box component {component_id} requires three dims values.")
         return [float(value) for value in dims]
 
     if shape == "cylinder":
         axis_index = cylinder_axis_index(component_mount_face(component))
-        radius, height = infer_cylinder_radius_and_height(
-            component_id, component, axis_index
-        )
+        radius, height = infer_cylinder_radius_and_height(component_id, component, axis_index)
         diameter = radius * 2.0
         extents = [diameter, diameter, diameter]
         extents[axis_index] = height
@@ -364,9 +469,7 @@ def component_solid_placement(
 
     if shape == "cylinder":
         axis_index = cylinder_axis_index(component_mount_face(component))
-        radius, _ = infer_cylinder_radius_and_height(
-            component_id, component, axis_index
-        )
+        radius, _ = infer_cylinder_radius_and_height(component_id, component, axis_index)
         offset = cylinder_base_center_offset(axis_index, radius)
         solid_position = vector_add(position, apply_rotation(rotation_matrix, offset))
         solid_rotation = multiply_rotation_matrices(
@@ -402,8 +505,7 @@ def box_bounds(
                 rotated = apply_rotation(rotation_matrix, [x, y, z])
                 corners.append([position[i] + rotated[i] for i in range(3)])
     return [
-        (min(point[i] for point in corners), max(point[i] for point in corners))
-        for i in range(3)
+        (min(point[i] for point in corners), max(point[i] for point in corners)) for i in range(3)
     ]
 
 
@@ -428,8 +530,7 @@ def bounds_overlap(
     b_bounds: list[tuple[float, float]],
 ) -> bool:
     return all(
-        a_bounds[i][0] < b_bounds[i][1] - EPSILON
-        and b_bounds[i][0] < a_bounds[i][1] - EPSILON
+        a_bounds[i][0] < b_bounds[i][1] - EPSILON and b_bounds[i][0] < a_bounds[i][1] - EPSILON
         for i in range(3)
     )
 
@@ -505,10 +606,7 @@ def inside_face_in_plane_bounds(
         if in_plane_axis == axis:
             continue
         low, high = bounds[in_plane_axis]
-        if (
-            low < -half_wall[in_plane_axis] - EPSILON
-            or high > half_wall[in_plane_axis] + EPSILON
-        ):
+        if low < -half_wall[in_plane_axis] - EPSILON or high > half_wall[in_plane_axis] + EPSILON:
             return False
     return True
 
@@ -545,16 +643,10 @@ def constrain_position_to_envelope_face(
 def choose_rotation(component_face: int, target_envelope_face: int) -> list[list[int]]:
     source = face_normal(component_face)
     target = face_normal(target_envelope_face)
-    candidates = [
-        matrix for matrix in ROTATIONS if apply_rotation(matrix, source) == target
-    ]
+    candidates = [matrix for matrix in ROTATIONS if apply_rotation(matrix, source) == target]
     if not candidates:
-        raise RuntimeError(
-            "No valid orthogonal rotation found for requested face change."
-        )
-    candidates.sort(
-        key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True
-    )
+        raise RuntimeError("No valid orthogonal rotation found for requested face change.")
+    candidates.sort(key=lambda matrix: sum(matrix[i][i] for i in range(3)), reverse=True)
     return candidates[0]
 
 
@@ -597,8 +689,7 @@ def mount_point_from_component(component_id: str, component: dict) -> list[float
         return computed_mount_point
     stored_mount_point = [float(value) for value in mount_point]
     if any(
-        abs(stored_mount_point[index] - computed_mount_point[index]) > EPSILON
-        for index in range(3)
+        abs(stored_mount_point[index] - computed_mount_point[index]) > EPSILON for index in range(3)
     ):
         return computed_mount_point
     return stored_mount_point
@@ -616,16 +707,12 @@ def centered_face_position(
     )
     _, axis, direction = FACE_DEFINITIONS[target_envelope_face]
     mount_point = [0.0, 0.0, 0.0]
-    mount_point[axis] = (
-        (-wall_size[axis] / 2.0) if direction < 0 else (wall_size[axis] / 2.0)
-    )
+    mount_point[axis] = (-wall_size[axis] / 2.0) if direction < 0 else (wall_size[axis] / 2.0)
     position = position_for_mount_point(mount_point, dims, component_face, rotation)
     return position, mount_point, rotation
 
 
-def project_move_to_mount_plane(
-    move: list[float], axis: int
-) -> tuple[list[float], bool]:
+def project_move_to_mount_plane(move: list[float], axis: int) -> tuple[list[float], bool]:
     projected = list(move)
     ignored = abs(projected[axis]) > EPSILON
     projected[axis] = 0.0
@@ -954,9 +1041,7 @@ def find_best_safe_scale(
     envelope_face_id = context.get("envelope_face_id")
     wall_size = context.get("wall_size")
     if context.get("check_envelope", True):
-        allowed_interval = envelope_safe_interval(
-            start_bounds, move, context["inner_size"]
-        )
+        allowed_interval = envelope_safe_interval(start_bounds, move, context["inner_size"])
         if allowed_interval is None or allowed_interval[1] < 0.0:
             return None
         safe_low = max(0.0, allowed_interval[0])
@@ -983,9 +1068,7 @@ def find_best_safe_scale(
     candidate_obstacles = broad_phase_obstacles(context, start_bounds, move, safe_high)
     earliest_blocking_scale = safe_high
     for _, obstacle_bounds in candidate_obstacles:
-        collision_interval = collision_interval_for_obstacle(
-            start_bounds, move, obstacle_bounds
-        )
+        collision_interval = collision_interval_for_obstacle(start_bounds, move, obstacle_bounds)
         if collision_interval is None:
             continue
         block_low = collision_interval[0]
@@ -1044,41 +1127,47 @@ def update_component_placement(
     updated = deepcopy(data)
     component = updated["components"][component_id]
     extents = component_local_extents(component_id, component)
-    legacy_mode = component_mount_face is not None or envelope_face_id is not None
     preserved_component_contact_face = component_contact_face_from_component(component)
     if install_face is None:
         if envelope_face_id is None:
             raise ValueError("install_face or envelope_face_id is required.")
         install_face = envelope_face_id
 
-    if legacy_mode:
-        stored_mount_face = (
-            component_mount_face
-            if component_mount_face is not None
-            else component_contact_face(install_face)
-        )
-        mount_point_face = stored_mount_face
-    else:
-        stored_mount_face = int(install_face)
-        mount_point_face = preserved_component_contact_face
-    rotation_matrix = (
+    legacy_mode = component_mount_face is not None or envelope_face_id is not None
+    mount_point_face = (
+        component_mount_face
+        if component_mount_face is not None
+        else preserved_component_contact_face
+    )
+    orientation_rows = (
         rotation_matrix_from_component(component)
         if rotation_matrix is None
         else [[int(value) for value in row] for row in rotation_matrix]
     )
+    try:
+        in_plane_rotation_deg = infer_in_plane_rotation_deg(
+            mount_point_face,
+            int(install_face),
+            orientation_rows,
+        )
+    except ValueError:
+        if not legacy_mode:
+            raise
+        in_plane_rotation_deg = 0.0
     component["placement"]["position"] = position
-    component["placement"]["mount_face"] = stored_mount_face
-    if legacy_mode:
-        if envelope_face_id is not None:
-            component["placement"]["envelope_face"] = envelope_face_id
-        component["placement"]["rotation_matrix"] = rotation_matrix
-    else:
-        component["placement"].pop("envelope_face", None)
-        if rotation_matrix == IDENTITY_ROTATION:
-            component["placement"].pop("rotation_matrix", None)
-        else:
-            component["placement"]["rotation_matrix"] = rotation_matrix
+    component["placement"].pop("mount_face", None)
+    component["placement"].pop("envelope_face", None)
+    component["placement"].pop("rotation_matrix", None)
+    component["placement"]["mount_face_id"] = face_id_to_generic_mount_face_id(int(install_face))
+    component["placement"]["component_mount_face_id"] = face_id_to_local_component_face_id(
+        component_id,
+        int(mount_point_face),
+    )
+    alignment = component["placement"].setdefault("alignment", {})
+    alignment["normal_alignment"] = "opposite"
+    alignment["component_u_axis_to_target_u_axis"] = True
+    alignment["in_plane_rotation_deg"] = in_plane_rotation_deg
     component["placement"]["mount_point"] = compute_mount_point(
-        position, extents, mount_point_face, rotation_matrix
+        position, extents, mount_point_face, orientation_rows
     )
     return updated

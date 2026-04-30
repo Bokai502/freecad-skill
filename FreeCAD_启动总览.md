@@ -8,13 +8,13 @@
 
 1. 直接在 Linux 环境启动 `freecad`
 2. 确认 `FreeCADMCP` 插件已经自动启动 XML-RPC 服务
-3. 使用 `freecad-*` CLI 命令连接 [config/freecad_runtime.conf](./config/freecad_runtime.conf) 中配置的 RPC 地址（当前为 `localhost:9876`）
+3. 使用 `freecad-*` CLI 命令连接运行时配置中的 RPC 地址
 
 ## 前提条件
 
 - Linux 环境里已经安装 `freecad`
 - FreeCAD 已安装 `FreeCADMCP` 插件
-- RPC 服务默认监听 [config/freecad_runtime.conf](./config/freecad_runtime.conf) 中配置的地址
+- RPC 服务默认监听运行时配置中的地址
 
 ## 常用命令
 
@@ -33,7 +33,15 @@ freecad-create-assembly --doc-name LayoutAssembly
 
 ## 配置
 
-统一的 RPC 默认值集中在 [config/freecad_runtime.conf](./config/freecad_runtime.conf)：
+运行时默认值按以下顺序解析：
+
+1. `FREECAD_RUNTIME_CONFIG`
+2. 当前项目 `.freecad/freecad_runtime.conf`
+3. 当前项目 `freecad_runtime.conf`
+4. 用户级 `~/.config/freecad-cli-tools/runtime.conf`
+5. 兼容兜底：[config/freecad_runtime.conf](./config/freecad_runtime.conf)
+
+常用配置项：
 
 - `FREECAD_RPC_HOST`
 - `FREECAD_RPC_PORT`

@@ -18,8 +18,8 @@ from freecad_cli_tools.geometry import (
     component_local_extents,
     component_mount_face,
     component_solid_placement,
-    constrain_position_to_envelope_face,
     compute_mount_point,
+    constrain_position_to_envelope_face,
     envelope_face,
     face_normal,
     find_best_safe_scale,
@@ -216,9 +216,8 @@ def test_update_component_placement_updates_dataset_fields() -> None:
     assert data == original
     placement = updated["components"]["P001"]["placement"]
     assert placement["position"] == [12.0, 8.0, 4.0]
-    assert placement["mount_face"] == 1
-    assert placement["envelope_face"] == 5
-    assert placement["rotation_matrix"] == IDENTITY_ROTATION
+    assert placement["mount_face_id"] == "outer.zmax_inner"
+    assert placement["component_mount_face_id"] == "P001.local_xmax"
     assert placement["mount_point"] == [22.0, 13.0, 9.0]
 
 
@@ -238,6 +237,8 @@ def test_update_component_placement_updates_cylinder_mount_point() -> None:
     assert data == original
     placement = updated["components"]["C001"]["placement"]
     assert placement["position"] == [2.0, 4.0, 6.0]
+    assert placement["mount_face_id"] == "outer.zmax_inner"
+    assert placement["component_mount_face_id"] == "C001.local_xmax"
     assert placement["mount_point"] == [22.0, 8.0, 10.0]
 
 
@@ -271,8 +272,9 @@ def test_update_component_placement_preserves_external_install_face_in_new_schem
     assert data == original
     placement = updated["components"]["P022"]["placement"]
     assert placement["position"] == [21.0, 2.0, 3.0]
-    assert placement["mount_face"] == 11
+    assert placement["mount_face_id"] == "outer.zmax_outer"
     assert placement["mount_point"] == [26.0, 12.0, 3.0]
+    assert "mount_face" not in placement
     assert "envelope_face" not in placement
     assert "rotation_matrix" not in placement
 
@@ -287,7 +289,9 @@ def test_rotation_for_component_contact_face_aligns_same_face_to_new_mount_face(
     assert apply_rotation(rotation, face_normal(4)) == face_normal(5)
 
 
-def test_update_component_placement_keeps_component_contact_face_when_install_face_changes() -> None:
+def test_update_component_placement_keeps_component_contact_face_when_install_face_changes() -> (
+    None
+):
     data = {
         "envelope": {
             "inner_size": [100.0, 100.0, 100.0],
@@ -319,8 +323,8 @@ def test_update_component_placement_keeps_component_contact_face_when_install_fa
     )
 
     placement = updated["components"]["P022"]["placement"]
-    assert placement["mount_face"] == 10
-    assert placement["rotation_matrix"] == rotation
+    assert placement["mount_face_id"] == "outer.zmin_outer"
+    assert "rotation_matrix" not in placement
     assert component_mount_face(updated["components"]["P022"]) == 4
     assert placement["mount_point"][2] == -55.0
 
@@ -378,9 +382,7 @@ def test_face_change_position_stays_seated_on_target_wall_for_all_faces() -> Non
         updated_component = updated["components"]["P022"]
         placement = updated_component["placement"]
         _, axis, direction = FACE_DEFINITIONS[envelope_face(updated_component)]
-        target_coordinate = (
-            -wall_size[axis] / 2.0 if direction < 0 else wall_size[axis] / 2.0
-        )
+        target_coordinate = -wall_size[axis] / 2.0 if direction < 0 else wall_size[axis] / 2.0
 
         assert component_mount_face(updated_component) == 4
         assert placement["mount_point"][axis] == target_coordinate
@@ -515,9 +517,7 @@ def test_external_face_scale_search_stops_at_face_boundary() -> None:
     assert scale < 1.0
     # At the returned scale the component must still be within the face boundary
     final_z = -5.0 + 60.0 * scale
-    final_bounds = box_bounds(
-        [55.0, -5.0, final_z], [10.0, 10.0, 10.0], IDENTITY_ROTATION
-    )
+    final_bounds = box_bounds([55.0, -5.0, final_z], [10.0, 10.0, 10.0], IDENTITY_ROTATION)
     assert inside_face_in_plane_bounds(final_bounds, [110.0, 110.0, 110.0], face_id=7)
 
 

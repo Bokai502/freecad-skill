@@ -1,7 +1,8 @@
-# FreeCAD: Create Assembly From `layout_topology.json` + `geom.json`
+# FreeCAD: Create Placeholder Assembly From `layout_topology.json` + `geom.json`
 
-Create an Assembly container with hierarchical sub-parts from the new layout dataset.
-Use this when the user explicitly requests a rebuilt assembly.
+Create a placeholder Assembly container with hierarchical sub-parts from the
+layout dataset. Use this when the user explicitly requests a rebuilt assembly
+from topology and geometry only.
 
 `sample.yaml` is not part of the new workflow. It may exist as a backup fixture, but
 `freecad-create-assembly` should use `layout_topology.json` and `geom.json` as the source.
@@ -14,10 +15,13 @@ freecad-create-assembly \
 ```
 
 By default, the CLI resolves relative paths from `FREECAD_WORKSPACE_DIR` in
-`config/freecad_runtime.conf`, reads `./01_layout/layout_topology.json` and
-`./01_layout/geom.json`, then exports `./02_geometry_edit/geometry_after.step`
-and sibling `geometry_after.glb`. FreeCAD consumes a normalized intermediate
-spec during RPC execution.
+the runtime config or environment, reads `./01_layout/layout_topology.json` and
+`./01_layout/geom.json`, then exports the placeholder assembly to
+`./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb`.
+
+FreeCAD consumes a normalized intermediate spec during RPC execution and exports
+the placeholder model directly to `geometry_after.step` and
+`geometry_after.glb`.
 
 ## CAD Modeling Inputs Derived From The Dataset
 
@@ -34,10 +38,14 @@ Use `geom.outer_shell` as the envelope source:
 Use `layout_topology.placements[]` as the placement list:
 
 - `component_id` -> FreeCAD object / part id, e.g. `P000`
-- `source_ref.layout3dcube_component_id` -> key into `geom.components`
-- `geometry_id`, `thermal_id`, `semantic_name`, `kind` -> preserved metadata
+- `semantic_name`, `kind` -> preserved metadata
 
-Use `geom.components[source_component_id]` for component geometry:
+Resolve the backing `geom.components[...]` entry with this order:
+
+- preferred: `geom.components[placement.component_id]`
+- fallback: exactly one `geom.components[*].component_id == placement.component_id`
+
+Use the resolved `geom.components[component_id]` entry for component geometry:
 
 - `shape`
 - `dims`
@@ -50,15 +58,16 @@ Use `geom.components[source_component_id]` for component geometry:
 
 Derive the modeling placement from both files:
 
-- `placement.mount_face`:
-  map dataset face ids onto the existing numeric face ids `0..11`
-  - internal: `xmin/xmax/ymin/ymax/zmin/zmax` -> `0..5`
-  - external: `xmin_outer/xmax_outer/ymin_outer/ymax_outer/zmin_outer/zmax_outer` -> `6..11`
-- `placement.rotation_matrix`:
-  derive from `component_mount_face_id -> mount_face_id` and `alignment`
+- `placement.mount_face_id`:
+  owner-qualified box/envelope install face id from `layout_topology.json`
+- `placement.component_mount_face_id`:
+  owner-qualified component-local install face id from `layout_topology.json`
+- runtime orientation:
+  derive from `component_mount_face_id -> mount_face_id` plus
+  `placement.alignment.in_plane_rotation_deg`
 - `placement.position`:
-  treat `geom.components[*].position` as the world-space bbox minimum, then back-solve the
-  component local origin from `dims + rotation_matrix`
+  treat `geom.components[*].position` as the world-space bbox minimum, then
+  back-solve the component local origin from `dims + derived runtime orientation`
 
 For the current dataset this is enough to reproduce the original box bounds exactly, including
 external parts whose local mount face does not match the world-facing contact face without a
@@ -84,8 +93,8 @@ Use `layout_topology.placements[].component_id` as the stable FreeCAD object nam
 
 1. Read `layout_topology.json`.
 2. Read `geom.json`.
-3. Validate that every placement resolves to a `geom.components[...]` entry through
-   `source_ref.layout3dcube_component_id`.
+3. Validate that every placement resolves to exactly one `geom.components[...]` entry.
+   Prefer `placement.component_id -> geom.components[*].component_id`.
 4. Build a normalized assembly spec containing:
    - `envelope.outer_size`
    - `envelope.inner_size`
@@ -93,8 +102,9 @@ Use `layout_topology.placements[].component_id` as the stable FreeCAD object nam
    - `components[component_id].shape`
    - `components[component_id].dims`
    - `components[component_id].placement.position`
-   - `components[component_id].placement.mount_face`
-   - `components[component_id].placement.rotation_matrix`
+   - `components[component_id].placement.mount_face_id`
+   - `components[component_id].placement.component_mount_face_id`
+   - `components[component_id].placement.alignment`
 
 ### Step 2: Create Or Reopen Document
 
@@ -117,12 +127,12 @@ For each normalized component:
 2. Create the solid from `shape`
 3. Set dimensions from `dims`
 4. Apply `placement.position`
-5. Apply `placement.rotation_matrix`
+5. Derive runtime orientation from `mount_face_id + component_mount_face_id + alignment`
 6. Set color when provided
 7. Attach the solid under the component part
 
 Boxes and cylinders both use the normalized placement. Cylinders still use the existing
-axis helper logic from numeric `mount_face`.
+axis helper logic derived from `component_mount_face_id`.
 
 ### Step 5: Create Envelope
 
@@ -155,7 +165,7 @@ Set component colors, call `doc.recompute()`, switch to an isometric fitted view
 - If `--output` is provided, use only its directory or parent path; the exported filenames must still be `geometry_after.step` and `geometry_after.glb`.
 - Treat `sample.yaml` as backup only; do not use it as the primary build input.
 - Preserve `component_id` from `layout_topology.json` as the user-facing CAD object id.
-- Derive `rotation_matrix` from topology instead of assuming identity for external parts.
+- Derive runtime orientation from topology instead of assuming identity for external parts.
 - Support only orthogonal in-plane rotations; reject arbitrary non-90-degree `in_plane_rotation_deg`.
 - Never attach raw shapes directly to the assembly; wrap them in `App::Part`.
 - Use `assembly.addObject(part)` then `part.addObject(shape)` in that order.

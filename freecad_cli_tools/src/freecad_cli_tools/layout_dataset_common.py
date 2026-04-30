@@ -42,9 +42,7 @@ def require_axis_index(value: Any, field_name: str) -> int:
         raise LayoutDatasetError(f"{field_name} must be a numeric axis index.")
     axis_index = int(value)
     if axis_index < 0 or axis_index > 2:
-        raise LayoutDatasetError(
-            f"{field_name} must be between 0 and 2 (got {value!r})."
-        )
+        raise LayoutDatasetError(f"{field_name} must be between 0 and 2 (got {value!r}).")
     return axis_index
 
 

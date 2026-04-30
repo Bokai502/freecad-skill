@@ -29,9 +29,9 @@ from freecad_cli_tools.geometry import (
     find_best_safe_scale,
     get_face_data,
     is_external_face,
-    rotation_matrix_from_component,
-    update_component_placement,
+    orientation_rows_from_component,
     project_move_to_mount_plane,
+    update_component_placement,
     vector_add,
     vector_scale,
 )
@@ -89,9 +89,7 @@ def parse_args() -> argparse.Namespace:
             "workspace root."
         ),
     )
-    parser.add_argument(
-        "--component", default="P001", help="Target component id to move."
-    )
+    parser.add_argument("--component", default="P001", help="Target component id to move.")
     parser.add_argument(
         "--move",
         nargs=3,
@@ -176,16 +174,16 @@ def sync_layout_result_to_cad(
     export_step_path = resolve_step_output_path(args, layout_topology_output_path)
 
     position = [float(value) for value in component["placement"]["position"]]
-    rotation_matrix = rotation_matrix_from_component(component)
-    solid_position, solid_rotation_matrix = component_solid_placement(
+    orientation_rows = orientation_rows_from_component(component)
+    solid_position, solid_orientation_rows = component_solid_placement(
         component_id,
         component,
         position,
-        rotation_matrix,
+        orientation_rows,
     )
     source = source_component or component
     source_position = [float(value) for value in source["placement"]["position"]]
-    source_rotation_matrix = rotation_matrix_from_component(source)
+    source_orientation_rows = orientation_rows_from_component(source)
     solid_name = args.component_object or args.component
     part_name = args.part_object or f"{args.component}_part"
     try:
@@ -199,18 +197,16 @@ def sync_layout_result_to_cad(
                     "solid_name": solid_name,
                     "part_name": part_name,
                     "position": position,
-                    "rotation_matrix": rotation_matrix,
+                    "orientation_rows": orientation_rows,
                     "solid_position": solid_position,
-                    "solid_rotation_matrix": solid_rotation_matrix,
+                    "solid_orientation_rows": solid_orientation_rows,
                     "source_position": source_position,
-                    "source_rotation_matrix": source_rotation_matrix,
+                    "source_orientation_rows": source_orientation_rows,
                 }
             ],
             recompute=False,
             export_step_path=(
-                normalize_runtime_path(export_step_path)
-                if export_step_path is not None
-                else None
+                normalize_runtime_path(export_step_path) if export_step_path is not None else None
             ),
         )
     except SystemExit as exc:
@@ -242,9 +238,7 @@ def registry_inputs(
         "output_geom_path": str(geom_output_path),
         "step_output_path": str(step_output_path) if step_output_path else None,
         "glb_output_path": (
-            str(step_output_path.with_suffix(".glb"))
-            if step_output_path is not None
-            else None
+            str(step_output_path.with_suffix(".glb")) if step_output_path is not None else None
         ),
         "input_format": "layout_dataset",
         "component": args.component,
@@ -265,11 +259,11 @@ def build_result_payload(
     layout_topology_output_path: Path,
     geom_output_path: Path,
     args: argparse.Namespace,
-    component_face: int,
+    component_contact_face: int,
     original_envelope_face: int,
     target_envelope_face: int,
     target_face_label: str,
-    target_rotation_matrix: list[list[float]],
+    target_orientation_rows: list[list[float]],
     normal_component_ignored: list[float],
     original_position: list[float],
     start_position: list[float],
@@ -303,15 +297,15 @@ def build_result_payload(
         "step_exported": step_exported,
         "glb_exported": glb_exported,
         "target_component": args.component,
-        "component_mount_face": component_face,
-        "component_mount_face_label": FACE_DEFINITIONS[component_face][0],
+        "component_contact_face": component_contact_face,
+        "component_contact_face_label": FACE_DEFINITIONS[component_contact_face][0],
         "original_envelope_face": original_envelope_face,
         "original_envelope_face_label": FACE_DEFINITIONS[original_envelope_face][0],
         "target_envelope_face": target_envelope_face,
         "target_envelope_face_label": target_face_label,
         "orientation_change_supported": True,
         "orientation_change_applied": args.install_face is not None,
-        "rotation_matrix": target_rotation_matrix,
+        "orientation_rows": target_orientation_rows,
         "normal_move_component_ignored": normal_component_ignored,
         "original_position": original_position,
         "constrained_start_position": start_position,
@@ -342,41 +336,25 @@ def emit_result_lines(payload: dict[str, object]) -> None:
     print(f"step_exported: {payload['step_exported']}")
     print(f"glb_exported: {payload['glb_exported']}")
     print(f"target_component: {payload['target_component']}")
-    print(f"component_mount_face: {payload['component_mount_face']}")
-    print(f"component_mount_face_label: {payload['component_mount_face_label']}")
+    print(f"component_contact_face: {payload['component_contact_face']}")
+    print(f"component_contact_face_label: {payload['component_contact_face_label']}")
     print(f"original_envelope_face: {payload['original_envelope_face']}")
-    print(
-        "original_envelope_face_label: "
-        f"{payload['original_envelope_face_label']}"
-    )
+    print("original_envelope_face_label: " f"{payload['original_envelope_face_label']}")
     print(f"target_envelope_face: {payload['target_envelope_face']}")
     print(f"target_envelope_face_label: {payload['target_envelope_face_label']}")
-    print(
-        "orientation_change_supported: "
-        f"{payload['orientation_change_supported']}"
-    )
-    print(
-        "orientation_change_applied: "
-        f"{payload['orientation_change_applied']}"
-    )
-    print(f"rotation_matrix: {payload['rotation_matrix']}")
-    print(
-        "normal_move_component_ignored: "
-        f"{payload['normal_move_component_ignored']}"
-    )
+    print("orientation_change_supported: " f"{payload['orientation_change_supported']}")
+    print("orientation_change_applied: " f"{payload['orientation_change_applied']}")
+    print(f"orientation_rows: {payload['orientation_rows']}")
+    print("normal_move_component_ignored: " f"{payload['normal_move_component_ignored']}")
     print(f"original_position: {payload['original_position']}")
-    print(
-        "constrained_start_position: "
-        f"{payload['constrained_start_position']}"
-    )
+    print("constrained_start_position: " f"{payload['constrained_start_position']}")
     print(f"requested_move: {payload['requested_move']}")
     print(f"effective_move: {payload['effective_move']}")
     print(f"requested_position: {payload['requested_position']}")
     print(f"requested_move_is_safe: {payload['requested_move_is_safe']}")
     print(f"requested_blockers: {payload['requested_blockers']}")
     print(
-        "solution_found_on_requested_segment: "
-        f"{payload['solution_found_on_requested_segment']}"
+        "solution_found_on_requested_segment: " f"{payload['solution_found_on_requested_segment']}"
     )
     print(f"applied_scale: {float(payload['applied_scale']):.12f}")
     print(f"applied_move: {payload['applied_move']}")
@@ -384,13 +362,12 @@ def emit_result_lines(payload: dict[str, object]) -> None:
     print(f"final_mount_point: {payload['final_mount_point']}")
     print(f"final_blockers: {payload['final_blockers']}")
     print(f"cad_sync_enabled: {payload['cad_sync_enabled']}")
-    print(
-        "cad_sync_result: "
-        f"{json.dumps(payload['cad_sync_result'], ensure_ascii=False)}"
-    )
+    print("cad_sync_result: " f"{json.dumps(payload['cad_sync_result'], ensure_ascii=False)}")
 
 
-def classify_cad_sync_result(cad_sync: dict) -> tuple[str, dict | None, str | None, str | None, bool, bool]:
+def classify_cad_sync_result(
+    cad_sync: dict,
+) -> tuple[str, dict | None, str | None, str | None, bool, bool]:
     """Determine overall status from the CAD sync/export payload."""
     step_path = cad_sync.get("step_path")
     glb_path = cad_sync.get("glb_path")
@@ -489,7 +466,7 @@ def main() -> int:
             )
 
         target = components[args.component]
-        component_face = component_mount_face(target)
+        component_contact_face = component_mount_face(target)
         target_extents = component_local_extents(args.component, target)
         original_envelope_face = envelope_face(target)
         target_envelope_face = (
@@ -508,12 +485,12 @@ def main() -> int:
         else:
             wall_size = list(data["envelope"]["inner_size"])
 
-        target_rotation_matrix = rotation_matrix_from_component(target)
+        target_orientation_rows = orientation_rows_from_component(target)
         if args.install_face is not None:
-            base_position, _, target_rotation_matrix = centered_face_position(
+            base_position, _, target_orientation_rows = centered_face_position(
                 target_extents,
                 wall_size,
-                component_face,
+                component_contact_face,
                 target_envelope_face,
             )
             start_position = constrain_position_to_envelope_face(
@@ -521,7 +498,7 @@ def main() -> int:
                 target_extents,
                 wall_size,
                 target_envelope_face,
-                target_rotation_matrix,
+                target_orientation_rows,
             )
         else:
             start_position = constrain_position_to_envelope_face(
@@ -529,23 +506,21 @@ def main() -> int:
                 target_extents,
                 wall_size,
                 target_envelope_face,
-                target_rotation_matrix,
+                target_orientation_rows,
             )
 
-        effective_move, normal_component_ignored = project_move_to_mount_plane(
-            move, target_axis
-        )
+        effective_move, normal_component_ignored = project_move_to_mount_plane(move, target_axis)
         analysis_context = build_analysis_context(
             data,
             args.component,
-            target_rotation_matrix,
+            target_orientation_rows,
             check_envelope=not is_external_face(target_envelope_face),
             envelope_face_id=target_envelope_face,
             wall_size=wall_size,
         )
         requested_position = vector_add(start_position, effective_move)
         requested_ok, requested_blockers = analyze_position(
-            analysis_context, requested_position, target_rotation_matrix
+            analysis_context, requested_position, target_orientation_rows
         )
 
         solution_found = True
@@ -558,7 +533,7 @@ def main() -> int:
                 analysis_context,
                 start_position,
                 effective_move,
-                target_rotation_matrix,
+                target_orientation_rows,
             )
             if best_scale is None:
                 solution_found = False
@@ -571,7 +546,7 @@ def main() -> int:
                 final_position = vector_add(start_position, applied_move)
 
         final_ok, final_blockers = analyze_position(
-            analysis_context, final_position, target_rotation_matrix
+            analysis_context, final_position, target_orientation_rows
         )
         if solution_found and not final_ok:
             raise RuntimeError(
@@ -584,7 +559,7 @@ def main() -> int:
             args.component,
             final_position,
             target_envelope_face,
-            rotation_matrix=target_rotation_matrix,
+            rotation_matrix=target_orientation_rows,
         )
         updated_layout_topology, updated_geom = update_layout_dataset_component_placement(
             layout_topology,
@@ -632,11 +607,11 @@ def main() -> int:
             layout_topology_output_path=layout_topology_output_path,
             geom_output_path=geom_output_path,
             args=args,
-            component_face=component_face,
+            component_contact_face=component_contact_face,
             original_envelope_face=original_envelope_face,
             target_envelope_face=target_envelope_face,
             target_face_label=target_face_label,
-            target_rotation_matrix=target_rotation_matrix,
+            target_orientation_rows=target_orientation_rows,
             normal_component_ignored=normal_component_ignored,
             original_position=list(target["placement"]["position"]),
             start_position=start_position,
@@ -649,9 +624,7 @@ def main() -> int:
             applied_scale=applied_scale,
             applied_move=applied_move,
             final_position=final_position,
-            final_mount_point=updated["components"][args.component]["placement"][
-                "mount_point"
-            ],
+            final_mount_point=updated["components"][args.component]["placement"]["mount_point"],
             final_blockers=final_blockers,
             cad_sync=cad_sync,
             step_path=step_path,

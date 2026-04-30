@@ -1,4 +1,4 @@
-"""Shared runtime configuration loader for the FreeCAD skill repo."""
+"""Shared runtime configuration loader for FreeCAD CLI tools."""
 
 from __future__ import annotations
 
@@ -7,12 +7,17 @@ from functools import lru_cache
 from pathlib import Path
 
 CONFIG_ENV_VAR = "FREECAD_RUNTIME_CONFIG"
-DEFAULT_CONFIG_PATH = (
-    Path(__file__).resolve().parents[3] / "config" / "freecad_runtime.conf"
+PROJECT_CONFIG_PATHS = (
+    Path(".freecad") / "freecad_runtime.conf",
+    Path("freecad_runtime.conf"),
 )
+USER_CONFIG_RELATIVE_PATH = Path("freecad-cli-tools") / "runtime.conf"
+LEGACY_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "freecad_runtime.conf"
+DEFAULT_CONFIG_PATH = LEGACY_CONFIG_PATH
 FALLBACK_RPC_HOST = "localhost"
 FALLBACK_RPC_PORT = "9876"
-FALLBACK_WORKSPACE_DIR = str(Path(__file__).resolve().parents[4])
+FALLBACK_WORKSPACE_DIR = "."
+FALLBACK_COMPONENT_INFO_MAX_STEP_SIZE_MB = "100"
 DEFAULT_LAYOUT_INPUT_DIR = Path("./01_layout")
 DEFAULT_GEOMETRY_EDIT_DIR = Path("./02_geometry_edit")
 DEFAULT_GEOMETRY_AFTER_STEM = "geometry_after"
@@ -32,11 +37,41 @@ def parse_runtime_config(path: str | Path) -> dict[str, str]:
     return config
 
 
+def get_user_runtime_config_path() -> Path:
+    """Return the user-level runtime config path."""
+    config_home = os.getenv("XDG_CONFIG_HOME")
+    if config_home:
+        return Path(config_home).expanduser() / USER_CONFIG_RELATIVE_PATH
+    return Path.home() / ".config" / USER_CONFIG_RELATIVE_PATH
+
+
+def get_runtime_config_candidates() -> list[Path]:
+    """Return runtime config paths in lookup order."""
+    explicit_path = os.getenv(CONFIG_ENV_VAR)
+    if explicit_path:
+        return [Path(explicit_path).expanduser()]
+
+    cwd = Path.cwd()
+    return [
+        *(cwd / path for path in PROJECT_CONFIG_PATHS),
+        get_user_runtime_config_path(),
+        LEGACY_CONFIG_PATH,
+    ]
+
+
+def resolve_runtime_config_path() -> Path | None:
+    """Return the first existing runtime config path, if any."""
+    for candidate in get_runtime_config_candidates():
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 @lru_cache(maxsize=1)
 def load_runtime_config() -> dict[str, str]:
-    """Load repo runtime config from disk once per process."""
-    config_path = Path(os.getenv(CONFIG_ENV_VAR, str(DEFAULT_CONFIG_PATH)))
-    if not config_path.is_file():
+    """Load runtime config from disk once per process."""
+    config_path = resolve_runtime_config_path()
+    if config_path is None:
         return {}
     return parse_runtime_config(config_path)
 
@@ -58,8 +93,16 @@ def get_default_rpc_port() -> int:
 
 def get_default_workspace_dir() -> Path:
     """Return the configured workspace root for relative dataset paths."""
-    return Path(
-        get_runtime_setting("FREECAD_WORKSPACE_DIR", FALLBACK_WORKSPACE_DIR)
+    return Path(get_runtime_setting("FREECAD_WORKSPACE_DIR", FALLBACK_WORKSPACE_DIR))
+
+
+def get_default_component_info_max_step_size_mb() -> float:
+    """Return the configured default max STEP size for component-info builds."""
+    return float(
+        get_runtime_setting(
+            "FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB",
+            FALLBACK_COMPONENT_INFO_MAX_STEP_SIZE_MB,
+        )
     )
 
 
@@ -79,6 +122,11 @@ def get_default_layout_topology_path() -> Path:
 def get_default_geom_path() -> Path:
     """Return the default geom.json path."""
     return resolve_workspace_path(DEFAULT_LAYOUT_INPUT_DIR / "geom.json")
+
+
+def get_default_geom_component_info_path() -> Path:
+    """Return the default geom_component_info.json path."""
+    return resolve_workspace_path(DEFAULT_LAYOUT_INPUT_DIR / "geom_component_info.json")
 
 
 def get_default_geometry_edit_dir() -> Path:
@@ -109,10 +157,7 @@ def resolve_geometry_after_step_path(path: str | Path | None = None) -> Path:
 
 def get_default_geometry_after_layout_topology_path() -> Path:
     """Return the default layout_topology output path for non-destructive edits."""
-    return (
-        get_default_geometry_edit_dir()
-        / f"{DEFAULT_GEOMETRY_AFTER_STEM}.layout_topology.json"
-    )
+    return get_default_geometry_edit_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.layout_topology.json"
 
 
 def get_default_geometry_after_geom_path() -> Path:
@@ -133,4 +178,5 @@ def get_default_artifact_registry_dir() -> Path:
 DEFAULT_RPC_HOST = get_default_rpc_host()
 DEFAULT_RPC_PORT = get_default_rpc_port()
 DEFAULT_WORKSPACE_DIR = get_default_workspace_dir()
+DEFAULT_COMPONENT_INFO_MAX_STEP_SIZE_MB = get_default_component_info_max_step_size_mb()
 DEFAULT_ARTIFACT_REGISTRY_DIR = get_default_artifact_registry_dir()

@@ -116,9 +116,7 @@ def _validate_replacement(comp_id: str, replacement: Any) -> None:
 
 def _validate_placement(comp_id: str, placement: Any) -> None:
     if placement is None or not isinstance(placement, dict):
-        raise AssemblyValidationError(
-            f"Component '{comp_id}': missing required field 'placement'."
-        )
+        raise AssemblyValidationError(f"Component '{comp_id}': missing required field 'placement'.")
     if "position" not in placement:
         raise AssemblyValidationError(
             f"Component '{comp_id}': missing required field 'placement.position'."

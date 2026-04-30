@@ -382,7 +382,7 @@ body: JSON.stringify({
    - `thread_id`
    - `turn_id`
    - “调用 freecad-* CLI 时必须用 env 透传”
-4. 先只约束 `freecad-create-assembly / freecad-replace-component / freecad-layout-safe-move`
+4. 先只约束 `freecad-create-assembly / freecad-create-assembly-from-component-info / freecad-layout-safe-move`
 5. UI 暂时不读 registry，只先让 registry 文件稳定落账
 
 ## 12. 一个完整示例

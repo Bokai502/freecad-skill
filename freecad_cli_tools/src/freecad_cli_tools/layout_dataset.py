@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from copy import deepcopy
 import os
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -12,16 +12,14 @@ from freecad_cli_tools.geometry import (
     apply_in_plane_spin,
     box_bounds,
     component_local_extents,
-    component_mount_face,
     compute_mount_point,
     normalize_spin_quarter_turns,
-    rotation_matrix_from_component,
     rotation_for_component_contact_face,
+    rotation_matrix_from_component,
 )
 from freecad_cli_tools.layout_dataset_common import (
     LayoutDatasetError,
     bbox_size,
-    require_face_id,
     require_number,
     require_string,
     vector3,
@@ -155,9 +153,7 @@ def normalize_layout_dataset(
 
     placements = layout_topology.get("placements")
     if not isinstance(placements, list) or not placements:
-        raise LayoutDatasetError(
-            "layout_topology.placements must be a non-empty array."
-        )
+        raise LayoutDatasetError("layout_topology.placements must be a non-empty array.")
 
     normalized_components: dict[str, Any] = {}
     for placement in placements:
@@ -194,9 +190,7 @@ def bbox_min_to_local_origin(
 ) -> list[float]:
     """Convert an axis-aligned bbox minimum into the component local origin."""
     if len(bbox_min) != 3:
-        raise LayoutDatasetError(
-            f"Expected 3 bbox-min values, got {bbox_min!r}."
-        )
+        raise LayoutDatasetError(f"Expected 3 bbox-min values, got {bbox_min!r}.")
     if len(dims) != 3:
         raise LayoutDatasetError(
             f"Expected 3 dims values when deriving placement.position, got {dims!r}."
@@ -232,26 +226,25 @@ def update_layout_dataset_component_placement(
 
     normalized_placement = normalized_component.get("placement")
     if not isinstance(normalized_placement, dict):
-        raise LayoutDatasetError(
-            f"Normalized component {component_id!r} is missing placement."
-        )
+        raise LayoutDatasetError(f"Normalized component {component_id!r} is missing placement.")
 
-    install_face_id = require_face_id(
-        normalized_placement.get("mount_face"),
-        f"components[{component_id!r}].placement.mount_face",
-        allow_external=True,
+    install_face_id = layout_mount_face_to_face_id(
+        require_string(
+            normalized_placement.get("mount_face_id"),
+            f"components[{component_id!r}].placement.mount_face_id",
+        )
     )
     component_face_id = _component_mount_face_from_normalized(
         component_id,
         normalized_component,
     )
-    rotation_matrix = _normalized_component_rotation_matrix(normalized_component)
+    orientation_rows = _normalized_component_rotation_matrix(normalized_component)
     extents = component_local_extents(component_id, normalized_component)
     position = vector3(
         normalized_placement.get("position"),
         f"components[{component_id!r}].placement.position",
     )
-    bounds = box_bounds(position, extents, rotation_matrix)
+    bounds = box_bounds(position, extents, orientation_rows)
     bbox_min = [float(axis_bounds[0]) for axis_bounds in bounds]
 
     mount_face_id, mount_owner_id = resolve_layout_mount_face_id(
@@ -266,14 +259,14 @@ def update_layout_dataset_component_placement(
     in_plane_rotation_deg = infer_in_plane_rotation_deg(
         component_face_id,
         install_face_id,
-        rotation_matrix,
+        orientation_rows,
     )
     clearance = float(geom_component.get("clearance_mm", 0.0) or 0.0)
     mount_point = compute_mount_point(
         position,
         extents,
         component_face_id,
-        rotation_matrix,
+        orientation_rows,
     )
 
     placement["mount_face_id"] = mount_face_id
@@ -301,9 +294,7 @@ def update_layout_dataset_component_placement(
         )
     if "leaf_node_id" in geom_component or mount_owner_id:
         geom_component["leaf_node_id"] = (
-            "leaf.outer"
-            if mount_owner_id == "outer"
-            else f"leaf.{mount_owner_id}"
+            "leaf.outer" if mount_owner_id == "outer" else f"leaf.{mount_owner_id}"
         )
 
     return updated_layout_topology, updated_geom
@@ -319,10 +310,7 @@ def infer_in_plane_rotation_deg(
         component_face_id,
         install_face_id,
     )
-    normalized_rotation = [
-        [int(value) for value in row]
-        for row in rotation_matrix
-    ]
+    normalized_rotation = [[int(value) for value in row] for row in rotation_matrix]
     for spin_quarter_turns in range(4):
         candidate = apply_in_plane_spin(
             base_rotation=base_rotation,
@@ -347,23 +335,13 @@ def _normalize_component(
         raise LayoutDatasetError("Each placement must be a JSON object.")
 
     component_id = require_string(placement.get("component_id"), "placement.component_id")
-    source_ref = placement.get("source_ref")
-    if not isinstance(source_ref, dict):
-        raise LayoutDatasetError(
-            f"Placement {component_id!r}: source_ref must be a JSON object."
-        )
-    source_component_id = require_string(
-        source_ref.get("layout3dcube_component_id"),
-        f"placement[{component_id!r}].source_ref.layout3dcube_component_id",
+    geom_component_key, geom_component = _resolve_geom_component_for_placement(
+        placement,
+        geom_components,
+        component_id,
     )
 
-    geom_component = geom_components.get(source_component_id)
-    if not isinstance(geom_component, dict):
-        raise LayoutDatasetError(
-            f"Placement {component_id!r} refers to missing geom.components[{source_component_id!r}]."
-        )
-
-    dims = vector3(geom_component.get("dims"), f"geom.components[{source_component_id!r}].dims")
+    dims = vector3(geom_component.get("dims"), f"geom.components[{geom_component_key!r}].dims")
     install_face_id = layout_mount_face_to_face_id(
         require_string(
             placement.get("mount_face_id"),
@@ -376,7 +354,7 @@ def _normalize_component(
             f"placement[{component_id!r}].component_mount_face_id",
         )
     )
-    rotation_matrix = _rotation_matrix_from_placement(
+    orientation_rows = _rotation_matrix_from_placement(
         component_id=component_id,
         placement=placement,
         component_face_id=component_face_id,
@@ -384,12 +362,13 @@ def _normalize_component(
     )
     bbox_min = vector3(
         geom_component.get("position"),
-        f"geom.components[{source_component_id!r}].position",
+        f"geom.components[{geom_component_key!r}].position",
     )
-    position = bbox_min_to_local_origin(bbox_min, dims, rotation_matrix)
+    position = bbox_min_to_local_origin(bbox_min, dims, orientation_rows)
 
     normalized: dict[str, Any] = {
         "id": component_id,
+        "component_id": component_id,
         "shape": geom_component.get("shape", "box"),
         "dims": dims,
         "color": geom_component.get("color"),
@@ -397,19 +376,14 @@ def _normalize_component(
         "power": geom_component.get("power"),
         "kind": placement.get("kind", geom_component.get("kind")),
         "category": geom_component.get("category"),
-        "geometry_id": placement.get("geometry_id"),
-        "thermal_id": placement.get("thermal_id"),
         "semantic_name": placement.get("semantic_name"),
-        "source_component_id": source_component_id,
         "source_mount_face_id": geom_component.get("mount_face_id"),
         "source_bbox_min": bbox_min,
         "placement": {
             "position": position,
-            "mount_face": install_face_id,
             "mount_face_id": placement.get("mount_face_id"),
-            "component_mount_face": component_face_id,
             "component_mount_face_id": placement.get("component_mount_face_id"),
-            "rotation_matrix": rotation_matrix,
+            "alignment": deepcopy(placement.get("alignment") or {}),
         },
     }
 
@@ -445,24 +419,65 @@ def _find_geom_component(
     if not isinstance(geom_components, dict):
         raise LayoutDatasetError("geom.components must be a JSON object.")
 
-    source_component_id = normalized_component.get("source_component_id")
-    if not isinstance(source_component_id, str) or not source_component_id.strip():
-        source_ref = layout_placement.get("source_ref")
-        if not isinstance(source_ref, dict):
-            raise LayoutDatasetError(
-                f"Placement {component_id!r}: source_ref must be a JSON object."
-            )
-        source_component_id = require_string(
-            source_ref.get("layout3dcube_component_id"),
-            f"placement[{component_id!r}].source_ref.layout3dcube_component_id",
+    normalized_component_id = normalized_component.get("component_id")
+    if isinstance(normalized_component_id, str) and normalized_component_id.strip():
+        geom_component = geom_components.get(normalized_component_id)
+        if isinstance(geom_component, dict):
+            return geom_component, normalized_component_id
+
+    geom_component_key, geom_component = _resolve_geom_component_for_placement(
+        layout_placement,
+        geom_components,
+        component_id,
+    )
+    return geom_component, geom_component_key
+
+
+def _resolve_geom_component_for_placement(
+    placement: dict[str, Any],
+    geom_components: dict[str, Any],
+    component_id: str,
+) -> tuple[str, dict[str, Any]]:
+    """Resolve the backing geom.components entry for one placement.
+
+    The current dataset preserves the stable CAD-facing component id directly
+    under geom.components[*].component_id.
+    """
+    if not isinstance(geom_components, dict) or not geom_components:
+        raise LayoutDatasetError("geom.components must be a non-empty object.")
+
+    direct_geom_component = geom_components.get(component_id)
+    if isinstance(direct_geom_component, dict):
+        return component_id, direct_geom_component
+
+    matching_keys = [
+        key
+        for key, geom_component in geom_components.items()
+        if isinstance(key, str)
+        and isinstance(geom_component, dict)
+        and (
+            geom_component.get("component_id") == component_id
+            or geom_component.get("id") == component_id
+        )
+    ]
+    if len(matching_keys) == 1:
+        matched_key = matching_keys[0]
+        geom_component = geom_components[matched_key]
+        if isinstance(geom_component, dict):
+            return matched_key, geom_component
+    if len(matching_keys) > 1:
+        raise LayoutDatasetError(
+            "Placement "
+            f"{component_id!r} matched multiple geom.components entries by component_id: "
+            f"{matching_keys!r}."
         )
 
-    geom_component = geom_components.get(source_component_id)
-    if not isinstance(geom_component, dict):
-        raise LayoutDatasetError(
-            f"geom.components[{source_component_id!r}] is missing for {component_id!r}."
-        )
-    return geom_component, source_component_id
+    raise LayoutDatasetError(
+        "Placement "
+        f"{component_id!r} could not be resolved to a geom.components entry. "
+        "Expected geom.components[component_id], or exactly one "
+        "geom.components[*].component_id matching placement.component_id."
+    )
 
 
 def _component_mount_face_from_normalized(
@@ -471,27 +486,14 @@ def _component_mount_face_from_normalized(
 ) -> int:
     placement = normalized_component.get("placement")
     if not isinstance(placement, dict):
-        raise LayoutDatasetError(
-            f"Normalized component {component_id!r} is missing placement."
-        )
-
-    component_face = placement.get("component_mount_face")
-    if isinstance(component_face, (int, float)):
-        return require_face_id(
-            component_face,
-            f"components[{component_id!r}].placement.component_mount_face",
-            allow_external=False,
-        )
+        raise LayoutDatasetError(f"Normalized component {component_id!r} is missing placement.")
 
     component_face_id = placement.get("component_mount_face_id")
     if component_face_id is not None:
         return component_local_face_to_face_id(component_face_id)
 
-    inferred = component_mount_face(normalized_component)
-    return require_face_id(
-        inferred,
-        f"components[{component_id!r}].placement.component_mount_face",
-        allow_external=False,
+    raise LayoutDatasetError(
+        f"components[{component_id!r}].placement.component_mount_face_id is required."
     )
 
 
@@ -511,9 +513,7 @@ def _rotation_matrix_from_placement(
 ) -> list[list[int]]:
     alignment = placement.get("alignment") or {}
     if not isinstance(alignment, dict):
-        raise LayoutDatasetError(
-            f"Placement {component_id!r}: alignment must be a JSON object."
-        )
+        raise LayoutDatasetError(f"Placement {component_id!r}: alignment must be a JSON object.")
 
     normal_alignment = alignment.get("normal_alignment", "opposite")
     if normal_alignment != "opposite":

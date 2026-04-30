@@ -5,8 +5,8 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-from pathlib import Path
 import tempfile
+from pathlib import Path
 from typing import Any, Callable
 
 from freecad_cli_tools.layout_dataset_common import LayoutDatasetError

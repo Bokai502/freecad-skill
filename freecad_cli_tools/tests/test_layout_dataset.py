@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -10,13 +10,12 @@ import freecad_cli_tools.layout_dataset as layout_dataset_module
 from freecad_cli_tools.geometry import (
     box_bounds,
     centered_face_position,
-    rotation_for_component_contact_face,
+    rotation_matrix_from_component,
     update_component_placement,
 )
 from freecad_cli_tools.layout_dataset import (
     LayoutDatasetError,
     component_local_face_to_face_id,
-    load_layout_dataset_files,
     layout_mount_face_to_face_id,
     load_and_normalize_layout_dataset,
     normalize_layout_dataset,
@@ -39,7 +38,7 @@ def sample_realistic_layout_dataset() -> tuple[dict, dict]:
         "schema_version": "1.0",
         "layout_id": "layout3dcube_910001",
         "source_design_id": "910001",
-        "outer_shell": {"id": "outer_shell", "source_ref": "outer_shell"},
+        "outer_shell": {"id": "outer_shell"},
         "cabins": [
             {
                 "id": "cabin_auto_1",
@@ -81,11 +80,6 @@ def sample_realistic_layout_dataset() -> tuple[dict, dict]:
                     "component_u_axis_to_target_u_axis": True,
                     "in_plane_rotation_deg": 0.0,
                 },
-                "geometry_id": "G001",
-                "thermal_id": "T001",
-                "source_ref": {
-                    "layout3dcube_component_id": "P_000_internal",
-                },
             },
             {
                 "component_id": "E000",
@@ -98,11 +92,6 @@ def sample_realistic_layout_dataset() -> tuple[dict, dict]:
                     "normal_alignment": "opposite",
                     "component_u_axis_to_target_u_axis": True,
                     "in_plane_rotation_deg": 0.0,
-                },
-                "geometry_id": "G002",
-                "thermal_id": "T002",
-                "source_ref": {
-                    "layout3dcube_component_id": "E_000_external",
                 },
             },
         ],
@@ -162,6 +151,7 @@ def sample_realistic_layout_dataset() -> tuple[dict, dict]:
         "components": {
             "P_000_internal": {
                 "id": "P_000_internal",
+                "component_id": "P000",
                 "kind": "internal",
                 "category": "avionics",
                 "dims": [10.0, 20.0, 30.0],
@@ -176,6 +166,7 @@ def sample_realistic_layout_dataset() -> tuple[dict, dict]:
             },
             "E_000_external": {
                 "id": "E_000_external",
+                "component_id": "E000",
                 "kind": "external",
                 "category": "payload",
                 "dims": e000_dims,
@@ -222,9 +213,7 @@ def test_real_layout_dataset_normalizes_into_build_spec(tmp_path: Path) -> None:
     (dataset_dir / "layout_topology.json").write_text(
         json.dumps(layout_topology, indent=2), encoding="utf-8"
     )
-    (dataset_dir / "geom.json").write_text(
-        json.dumps(geom, indent=2), encoding="utf-8"
-    )
+    (dataset_dir / "geom.json").write_text(json.dumps(geom, indent=2), encoding="utf-8")
     normalized = load_and_normalize_layout_dataset(
         dataset_dir / "layout_topology.json",
         dataset_dir / "geom.json",
@@ -239,25 +228,17 @@ def test_real_layout_dataset_normalizes_into_build_spec(tmp_path: Path) -> None:
     assert len(normalized["components"]) == 2
 
     p000 = normalized["components"]["P000"]
-    assert p000["source_component_id"] == "P_000_internal"
-    assert p000["placement"]["mount_face"] == 3
-    assert p000["placement"]["rotation_matrix"] == [
-        [1, 0, 0],
-        [0, 1, 0],
-        [0, 0, 1],
-    ]
+    assert p000["component_id"] == "P000"
+    assert p000["placement"]["mount_face_id"] == "cabin_auto_1.ymax"
+    assert p000["placement"]["component_mount_face_id"] == "P000.local_ymax"
     assert p000["placement"]["position"] == pytest.approx(
         [-144.89511395585285, 50.628016611469434, -89.10051419349894]
     )
 
     e000 = normalized["components"]["E000"]
-    assert e000["source_component_id"] == "E_000_external"
-    assert e000["placement"]["mount_face"] == 10
-    assert e000["placement"]["rotation_matrix"] == [
-        [-1, 0, 0],
-        [0, 1, 0],
-        [0, 0, -1],
-    ]
+    assert e000["component_id"] == "E000"
+    assert e000["placement"]["mount_face_id"] == "outer.zmin_outer"
+    assert e000["placement"]["component_mount_face_id"] == "E000.local_zmin"
     assert e000["placement"]["position"] == pytest.approx(
         [-81.4401644502338, -28.004797658047018, -100.98845651238274]
     )
@@ -266,7 +247,7 @@ def test_real_layout_dataset_normalizes_into_build_spec(tmp_path: Path) -> None:
         bounds = box_bounds(
             component["placement"]["position"],
             component["dims"],
-            component["placement"]["rotation_matrix"],
+            rotation_matrix_from_component(component),
         )
         bbox_min = [axis_bounds[0] for axis_bounds in bounds]
         assert bbox_min == pytest.approx(component["source_bbox_min"])
@@ -299,19 +280,14 @@ def test_round_trip_preserves_real_component_dataset_fields() -> None:
 
     original_geom_component = geom["components"]["E_000_external"]
     updated_geom_component = updated_geom["components"]["E_000_external"]
-    assert updated_geom_component["position"] == pytest.approx(
-        original_geom_component["position"]
-    )
+    assert updated_geom_component["position"] == pytest.approx(original_geom_component["position"])
     assert updated_geom_component["mount_point"] == pytest.approx(
         original_geom_component["mount_point"]
     )
     assert updated_geom_component["install_pos"] == pytest.approx(
         original_geom_component["install_pos"]
     )
-    assert (
-        updated_geom_component["leaf_node_id"]
-        == original_geom_component["leaf_node_id"]
-    )
+    assert updated_geom_component["leaf_node_id"] == original_geom_component["leaf_node_id"]
 
 
 def test_round_trip_preserves_modeled_pose_after_face_change() -> None:
@@ -320,7 +296,7 @@ def test_round_trip_preserves_modeled_pose_after_face_change() -> None:
     target = normalized["components"]["E000"]
     extents = target["dims"]
     wall_size = normalized["envelope"]["inner_size"]
-    component_face = target["placement"]["component_mount_face"]
+    component_face = component_local_face_to_face_id(target["placement"]["component_mount_face_id"])
     final_position, _, rotation_matrix = centered_face_position(
         extents,
         wall_size,
@@ -352,13 +328,10 @@ def test_round_trip_preserves_modeled_pose_after_face_change() -> None:
     assert updated_placement["cabin_id"] == "cabin_auto_1"
     assert updated_placement["mount_face_id"] == "cabin_auto_1.ymax"
     assert updated_placement["alignment"]["in_plane_rotation_deg"] == 0.0
-    assert (
-        updated_geom["components"]["E_000_external"]["leaf_node_id"]
-        == "leaf.cabin_auto_1"
-    )
-    assert updated_component["placement"]["mount_face"] == 3
+    assert updated_geom["components"]["E_000_external"]["leaf_node_id"] == "leaf.cabin_auto_1"
+    assert updated_component["placement"]["mount_face_id"] == "cabin_auto_1.ymax"
     assert updated_component["placement"]["position"] == pytest.approx(final_position)
-    assert updated_component["placement"]["rotation_matrix"] == rotation_matrix
+    assert rotation_matrix_from_component(updated_component) == rotation_matrix
 
 
 def test_internal_face_resolution_raises_when_multiple_cabins_match() -> None:
@@ -383,14 +356,18 @@ def test_internal_face_resolution_raises_when_multiple_cabins_match() -> None:
 
     normalized_component = {
         "id": "E000",
+        "component_id": "E000",
         "shape": "box",
         "dims": [66.33270638512315, 91.51587519468295, 47.89472116237455],
-        "source_component_id": "E_000_external",
         "placement": {
             "position": [0.0, 0.0, 0.0],
-            "mount_face": 3,
-            "component_mount_face": 4,
-            "rotation_matrix": rotation_for_component_contact_face(4, 3),
+            "mount_face_id": "outer.ymax_inner",
+            "component_mount_face_id": "E000.local_zmin",
+            "alignment": {
+                "normal_alignment": "opposite",
+                "component_u_axis_to_target_u_axis": True,
+                "in_plane_rotation_deg": 0.0,
+            },
         },
     }
 

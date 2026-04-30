@@ -78,9 +78,7 @@ def test_multiply_rotation_rows_matches(
 ) -> None:
     expected = _to_float_matrix(multiply_rotation_matrices(left, right))
     result = _to_float_matrix(
-        fragment_ns["multiply_rotation_rows"](
-            _to_float_matrix(left), _to_float_matrix(right)
-        )
+        fragment_ns["multiply_rotation_rows"](_to_float_matrix(left), _to_float_matrix(right))
     )
     for row_idx in range(3):
         assert result[row_idx] == pytest.approx(expected[row_idx], abs=1e-12)
@@ -88,9 +86,7 @@ def test_multiply_rotation_rows_matches(
 
 @pytest.mark.parametrize("mount_face", range(12))
 def test_cylinder_axis_index_matches(fragment_ns: dict, mount_face: int) -> None:
-    assert fragment_ns["cylinder_axis_index"](mount_face) == cylinder_axis_index(
-        mount_face
-    )
+    assert fragment_ns["cylinder_axis_index"](mount_face) == cylinder_axis_index(mount_face)
 
 
 @pytest.mark.parametrize("axis_index", [0, 1, 2])
@@ -142,8 +138,6 @@ def test_translate_position_matches_vector_add_apply_rotation(
     rotation = _to_float_matrix([[0, 0, 1], [0, 1, 0], [-1, 0, 0]])
     offset = [4.0, 5.0, 6.0]
 
-    expected = vector_add(
-        position, apply_rotation([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], offset)
-    )
+    expected = vector_add(position, apply_rotation([[0, 0, 1], [0, 1, 0], [-1, 0, 0]], offset))
     result = fragment_ns["translate_position"](position, rotation, offset)
     assert result == pytest.approx(expected, abs=1e-12)

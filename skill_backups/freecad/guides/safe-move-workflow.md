@@ -39,18 +39,19 @@ optionally syncs/export CAD artifacts.
 The move solver still operates on the normalized spec:
 
 - `placement.position`: component local origin in world coordinates
-- `placement.mount_face`: numeric install face `0..11`
-- `placement.rotation_matrix`: orthogonal rotation derived from topology
+- `placement.mount_face_id`: owner-qualified box/envelope install face id
+- `placement.component_mount_face_id`: component-local contact face id
+- runtime orientation: derived from the two face ids plus `alignment.in_plane_rotation_deg`
 
 After the move, write the result back to the dataset:
 
 ### `layout_topology.json`
 
-- `placements[*].mount_face_id`: updated from numeric `placement.mount_face`
+- `placements[*].mount_face_id`: updated target install face
 - `placements[*].cabin_id`: `null` on external faces, cabin id on internal faces
 - `placements[*].component_mount_face_id`: preserved component-local contact face
 - `placements[*].alignment.in_plane_rotation_deg`: derived from the final
-  rotation matrix
+  runtime orientation
 
 ### `geom.json`
 
@@ -149,7 +150,7 @@ update STEP or GLB.
 1. Read `layout_topology.json`.
 2. Read `geom.json`.
 3. Normalize the two files into the internal assembly spec.
-4. Identify the current normalized `placement.mount_face`.
+4. Identify the current normalized `placement.mount_face_id`.
 5. Derive the current component contact face from the normalized component.
 6. Decide the target box/envelope face. If the user did not request a face
    change, keep the current face.
@@ -186,9 +187,9 @@ update STEP or GLB.
 - `step_path`: updated STEP path when `--sync-cad` is used
 - `glb_path`: updated GLB path when `--sync-cad` is used
 - `target_envelope_face`: final numeric box/envelope installation face
-- `component_mount_face`: component contact face used for placement
-- `rotation_matrix`: rotation used to keep the original component contact face
-  seated on the target box/envelope face
+- `component_contact_face`: numeric component contact face used for placement
+- runtime orientation: derived orientation used to keep the original component
+  contact face seated on the target box/envelope face
 - `normal_move_component_ignored`: normal-direction move component that was
   removed
 - `requested_move_is_safe`: whether the original in-plane request was safe

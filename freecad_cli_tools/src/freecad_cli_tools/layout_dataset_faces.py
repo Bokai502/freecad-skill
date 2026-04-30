@@ -33,9 +33,7 @@ def component_local_face_to_face_id(face_id: str) -> int:
     """Parse component local-face ids like 'P000.local_ymax' into 0..5 ids."""
     token = face_token_after_dot(face_id, "component_mount_face_id")
     if not token.startswith("local_"):
-        raise LayoutDatasetError(
-            f"Unsupported component_mount_face_id: {face_id!r}"
-        )
+        raise LayoutDatasetError(f"Unsupported component_mount_face_id: {face_id!r}")
     return face_token_to_id(token[len("local_") :], face_id)
 
 
@@ -73,9 +71,7 @@ def resolve_layout_mount_face_id(
         )
 
     if is_external_face(install_face_id):
-        outer_candidates = [
-            face for face in candidates if _layout_face_owner_key(face) == "outer"
-        ]
+        outer_candidates = [face for face in candidates if _layout_face_owner_key(face) == "outer"]
         if len(outer_candidates) == 1:
             return outer_candidates[0]["id"], "outer"
         if len(candidates) == 1:
@@ -90,9 +86,7 @@ def resolve_layout_mount_face_id(
     preferred_owner = _preferred_layout_owner_key(current_placement)
     if preferred_owner is not None:
         owner_matches = [
-            face
-            for face in candidates
-            if _layout_face_owner_key(face) == preferred_owner
+            face for face in candidates if _layout_face_owner_key(face) == preferred_owner
         ]
         if len(owner_matches) == 1:
             return owner_matches[0]["id"], preferred_owner
@@ -102,9 +96,7 @@ def resolve_layout_mount_face_id(
                 f"{preferred_owner!r}: {[face['id'] for face in owner_matches]}"
             )
 
-    internal_candidates = [
-        face for face in candidates if _layout_face_owner_key(face) != "outer"
-    ]
+    internal_candidates = [face for face in candidates if _layout_face_owner_key(face) != "outer"]
     if len(internal_candidates) == 1:
         chosen = internal_candidates[0]
         return chosen["id"], _layout_face_owner_key(chosen)
@@ -126,9 +118,7 @@ def resolve_geom_install_face(geom: dict[str, Any], mount_face_id: str) -> dict[
         raise LayoutDatasetError("geom.install_faces must be a JSON object.")
     face = install_faces.get(mount_face_id)
     if not isinstance(face, dict):
-        raise LayoutDatasetError(
-            f"geom.install_faces[{mount_face_id!r}] is missing."
-        )
+        raise LayoutDatasetError(f"geom.install_faces[{mount_face_id!r}] is missing.")
     return face
 
 
@@ -167,9 +157,7 @@ def dataset_install_pos_from_face(
     if side == "inner":
         install_pos[normal_axis] -= clearance / 2.0
     elif side != "outer":
-        raise LayoutDatasetError(
-            f"install_face.side must be 'inner' or 'outer' (got {side!r})."
-        )
+        raise LayoutDatasetError(f"install_face.side must be 'inner' or 'outer' (got {side!r}).")
     return install_pos
 
 
@@ -179,9 +167,7 @@ def _layout_install_face_candidates(
 ) -> list[dict[str, Any]]:
     install_faces = layout_topology.get("install_faces")
     if not isinstance(install_faces, list) or not install_faces:
-        raise LayoutDatasetError(
-            "layout_topology.install_faces must be a non-empty array."
-        )
+        raise LayoutDatasetError("layout_topology.install_faces must be a non-empty array.")
 
     candidates: list[dict[str, Any]] = []
     for face in install_faces:

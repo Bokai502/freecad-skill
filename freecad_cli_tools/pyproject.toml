@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "freecad-cli-tools"
-version = "0.10.0"
+version = "0.11.0"
 description = "Command-line tools for FreeCAD RPC interaction"
 readme = "README.md"
 license = {text = "MIT"}
@@ -35,8 +35,8 @@ dev = [
 
 [project.scripts]
 freecad-create-assembly = "freecad_cli_tools.cli.build_assembly:main"
+freecad-create-assembly-from-component-info = "freecad_cli_tools.cli.build_component_info_assembly:main"
 freecad-layout-safe-move = "freecad_cli_tools.cli.layout_safe_move:main"
-freecad-replace-component = "freecad_cli_tools.cli.replace_component:main"
 
 [project.urls]
 Homepage = "https://github.com/freecad-mcp/freecad-cli-tools"
