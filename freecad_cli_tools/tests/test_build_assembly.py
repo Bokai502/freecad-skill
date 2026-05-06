@@ -176,3 +176,79 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
     payload = json.loads(capsys.readouterr().out)
     assert payload["save_path"] == str(output_path)
     assert payload["glb_path"] == str(output_path.with_suffix(".glb"))
+    assert payload["progress_percentages"] == {
+        "layout_completion_percent": 100.0,
+        "modeling_percent": 100.0,
+        "export_file_percent": 100.0,
+    }
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+    assert payload["progress_json_path"] == str(progress_log_path)
+    progress_log = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert progress_log["tool"] == "freecad-create-assembly"
+    assert progress_log["progress_percentages"] == payload["progress_percentages"]
+    assert progress_log["output_files"]["step"] == {
+        "path": str(output_path),
+        "exists": True,
+    }
+    assert progress_log["output_files"]["glb"] == {
+        "path": str(output_path.with_suffix(".glb")),
+        "exists": True,
+    }
+
+
+def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, capsys) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "test-19",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 2,
+        }
+
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
+    monkeypatch.setattr(build_assembly, "execute_script_payload", fake_execute_script_payload)
+    monkeypatch.setattr(
+        build_assembly,
+        "load_and_normalize_layout_dataset",
+        lambda *args, **kwargs: sample_normalized_dataset(),
+    )
+    output_path = tmp_path / "assembly_builds" / "test-19" / "outputs" / "geometry_after.step"
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly",
+            "--doc-name",
+            "test-19",
+            "--output",
+            str(output_path),
+        ],
+    )
+
+    build_assembly.main()
+
+    assert output_path.read_text(encoding="utf-8") == "step-data"
+    assert output_path.with_suffix(".glb").read_text(encoding="utf-8") == "glb-data"
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["success"] is True
+    assert payload["save_path"] == str(output_path)
+    assert payload["glb_path"] == str(output_path.with_suffix(".glb"))
+    assert payload["progress_percentages"] == {
+        "layout_completion_percent": 100.0,
+        "modeling_percent": 100.0,
+        "export_file_percent": 100.0,
+    }

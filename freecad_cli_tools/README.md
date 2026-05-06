@@ -74,7 +74,22 @@ you pass explicit paths.
 or unreadable STEP assets fall back to `Part::Box`. Oversized STEP assets also
 fall back to `Part::Box`; use `--max-step-size-mb` to control that threshold or
 `-1` to disable it. The direct-build workflow also exports
-`./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb`.
+`./02_geometry_edit/component_info_assembly.step` and sibling
+`component_info_assembly.glb`.
+
+All first-class CLI outputs include progress percentages:
+
+- `layout_completion_percent`: dataset/layout stage completion.
+- `modeling_percent`: FreeCAD modeling or CAD-sync stage completion.
+- `export_file_percent`: exported-file completion; STEP and GLB count as 50% each.
+
+For dataset-only `freecad-layout-safe-move` runs, no CAD modeling or export is requested, so
+`modeling_percent` and `export_file_percent` are `0.0`.
+The latest percentages are also written to
+`$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`. That file also includes
+an `output_files` object with each produced file path and whether it exists.
+During CAD operations, the FreeCAD-side script refreshes the file as modeling
+and STEP/GLB export stages actually advance.
 
 ## Recommended Move Workflow
 

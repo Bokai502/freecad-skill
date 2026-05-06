@@ -23,6 +23,12 @@ from freecad_cli_tools.cli_support import (
     normalize_runtime_path,
 )
 from freecad_cli_tools.layout_dataset import load_and_normalize_layout_dataset
+from freecad_cli_tools.progress import (
+    ProgressLogWriter,
+    attach_progress_log_path,
+    attach_progress_percentages,
+    get_progress_log_path,
+)
 from freecad_cli_tools.rpc_client import print_result as print_json
 from freecad_cli_tools.rpc_script_fragments import (
     COMPONENT_SHAPE_HELPERS,
@@ -83,14 +89,19 @@ def stage_output_dir(target: Path) -> None:
             os.chmod(directory, 0o777)
 
 
-def collect_runtime_exports(staged_output: Path, final_output: Path) -> None:
+def copy_runtime_export(staged_output: Path, final_output: Path) -> None:
+    if staged_output.resolve() == final_output.resolve():
+        return
     final_output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copy2(staged_output, final_output)
+
+
+def collect_runtime_exports(staged_output: Path, final_output: Path) -> None:
+    copy_runtime_export(staged_output, final_output)
     staged_glb = staged_output.with_suffix(".glb")
     if staged_glb.exists():
         final_glb = final_output.with_suffix(".glb")
-        final_glb.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(staged_glb, final_glb)
+        copy_runtime_export(staged_glb, final_glb)
 
 
 def registry_inputs(
@@ -126,6 +137,20 @@ def main() -> None:
         output_path,
         args.doc_name,
     )
+    output_paths = {
+        "step": output_path,
+        "glb": output_path.with_suffix(".glb"),
+    }
+    progress_log_path = get_progress_log_path()
+    progress_writer = ProgressLogWriter(
+        tool="freecad-create-assembly",
+        progress={
+            "layout_completion_percent": 0.0,
+            "modeling_percent": 0.0,
+            "export_file_percent": 0.0,
+        },
+        output_paths=output_paths,
+    ).start()
 
     registry_run = start_registry_run(
         args,
@@ -146,6 +171,13 @@ def main() -> None:
         )
         stage_input_data(normalized_data, staged_input_path)
         stage_output_dir(staged_output_path)
+        progress_writer.update(
+            progress={
+                "layout_completion_percent": 100.0,
+                "modeling_percent": 0.0,
+                "export_file_percent": 0.0,
+            }
+        )
 
         code = render_rpc_script(
             "assembly_from_layout.py",
@@ -158,6 +190,14 @@ def main() -> None:
                 "__EXPORT_GLB__": "True",
                 "__FIT_VIEW__": "False" if args.no_fit_view else "True",
                 "__VIEW_NAME__": json.dumps(args.view),
+                "__PROGRESS_PATH__": json.dumps(normalize_runtime_path(progress_log_path)),
+                "__PROGRESS_TOOL__": json.dumps("freecad-create-assembly"),
+                "__PROGRESS_OUTPUT_FILES__": json.dumps(
+                    {
+                        name: str(path) if path is not None else None
+                        for name, path in output_paths.items()
+                    }
+                ),
             },
         )
         payload = execute_script_payload(args.host, args.port, code)
@@ -171,6 +211,20 @@ def main() -> None:
         glb_path = payload.get("glb_path")
         step_exists = bool(step_path) and Path(step_path).exists()
         glb_exists = bool(glb_path) and Path(glb_path).exists()
+        progress = attach_progress_percentages(
+            payload,
+            layout_complete=True,
+            modeling_requested=True,
+            modeling_complete=bool(payload.get("success")),
+            step_path=step_path,
+            glb_path=glb_path,
+            export_requested=True,
+        )
+        progress_log_path = progress_writer.update(
+            progress=progress,
+            success=bool(payload.get("success")),
+        )
+        attach_progress_log_path(payload, progress_log_path)
         if payload.get("success") and step_exists and glb_exists:
             registry_status = "success"
             registry_error = None
@@ -210,6 +264,14 @@ def main() -> None:
         print_json(payload)
         exit_on_failure(payload)
     except Exception as exc:
+        progress_writer.update(
+            progress={
+                "layout_completion_percent": 0.0,
+                "modeling_percent": 0.0,
+                "export_file_percent": 0.0,
+            },
+            success=False,
+        )
         finalize_registry_run(
             registry_run,
             status="failed",

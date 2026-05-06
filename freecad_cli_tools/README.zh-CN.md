@@ -72,7 +72,21 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 `display_info.assets.cad_rotated_path` 导入真实 STEP/STP；缺失或不可读时
 回退为 `Part::Box`。超过 `--max-step-size-mb` 的 STEP/STP 也会回退为
 `Part::Box`，传 `-1` 可以关闭这个限制。这个直接构建流程同样输出
-`./02_geometry_edit/geometry_after.step` 和同名 `geometry_after.glb`。
+`./02_geometry_edit/component_info_assembly.step` 和同名
+`component_info_assembly.glb`。
+
+所有一等 CLI 输出都会包含进度百分比：
+
+- `layout_completion_percent`：布局/数据集阶段完成百分比。
+- `modeling_percent`：FreeCAD 建模或 CAD 同步阶段完成百分比。
+- `export_file_percent`：导出文件完成百分比；STEP 和 GLB 各占 50%。
+
+对于只处理数据集的 `freecad-layout-safe-move`，没有请求 CAD 建模和导出，
+因此 `modeling_percent` 与 `export_file_percent` 为 `0.0`。
+最近一次运行的百分比也会写入
+`$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`。该文件还包含
+`output_files` 对象，记录每个产出文件路径及其是否存在。
+执行 CAD 操作时，FreeCAD 侧脚本会在建模和 STEP/GLB 导出阶段实际推进时刷新该文件。
 
 ## 推荐移动流程
 

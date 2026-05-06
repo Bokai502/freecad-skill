@@ -72,7 +72,16 @@ When `./01_layout/geom_component_info.json` exists, `freecad-create-assembly-fro
 combines it with `layout_topology.json` and `geom.json`, uses
 `display_info.assets.cad_rotated_path` when available, falls back to a box when
 the STEP asset is missing or exceeds `--max-step-size-mb`, and writes
-`geometry_after.step` plus sibling `geometry_after.glb`.
+`component_info_assembly.step` plus sibling `component_info_assembly.glb`.
+
+The first-class CLI commands report `layout_completion_percent`,
+`modeling_percent`, and `export_file_percent` in their output. STEP and GLB
+exports each contribute 50% to `export_file_percent`.
+The same values are written to
+`$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`, together with an
+`output_files` object for produced file paths and existence checks.
+During CAD operations, the FreeCAD-side script refreshes the JSON as modeling
+and export stages actually advance.
 
 ### 5. Batch-sync multiple placements
 

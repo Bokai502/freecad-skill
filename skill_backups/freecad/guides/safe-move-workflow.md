@@ -186,6 +186,16 @@ update STEP or GLB.
 - `output_geom_path`: updated `geom.json`
 - `step_path`: updated STEP path when `--sync-cad` is used
 - `glb_path`: updated GLB path when `--sync-cad` is used
+- `progress_percentages`: grouped progress percentages
+- `progress_json_path`: JSON log path under
+  `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`
+- progress log `output_files`: produced `layout_topology`, `geom`, `step`, and
+  `glb` paths with existence checks
+- `layout_completion_percent`: dataset update completion percentage
+- `modeling_percent`: CAD sync/modeling completion percentage; `0.0` when
+  `--sync-cad` is not requested
+- `export_file_percent`: STEP/GLB export completion percentage; STEP and GLB
+  each contribute 50%, and dataset-only runs report `0.0`
 - `target_envelope_face`: final numeric box/envelope installation face
 - `component_contact_face`: numeric component contact face used for placement
 - runtime orientation: derived orientation used to keep the original component
@@ -207,7 +217,9 @@ Report moves in this order:
    stayed the same.
 3. State any ignored normal component.
 4. State blockers if any.
-5. State the updated `layout_topology.json`, `geom.json`, `STEP`, and `GLB` paths.
+5. State `layout_completion_percent`, `modeling_percent`, and `export_file_percent`.
+6. State `progress_json_path`.
+7. State the updated `layout_topology.json`, `geom.json`, `STEP`, and `GLB` paths from the payload and progress log `output_files`.
 
 Do not say the operation fully succeeded unless the dataset, STEP, and GLB are
 all updated when CAD sync was requested.

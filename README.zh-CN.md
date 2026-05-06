@@ -70,7 +70,14 @@ freecad-layout-safe-move --component P005 --install-face 5 --move 228.8367181519
 `layout_topology.json`、`geom.json` 一起使用，优先读取
 `display_info.assets.cad_rotated_path` 指向的 STEP；若 STEP 缺失、不可用，
 或超过 `--max-step-size-mb`，则回退为 box，并输出
-`geometry_after.step` 和同名 `geometry_after.glb`。
+`component_info_assembly.step` 和同名 `component_info_assembly.glb`。
+
+一等 CLI 命令会在输出中报告 `layout_completion_percent`、
+`modeling_percent` 和 `export_file_percent`。STEP 与 GLB 导出各占
+`export_file_percent` 的 50%。
+同样的值会写入 `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`，
+并附带 `output_files` 对象记录产出文件路径和存在状态。
+执行 CAD 操作时，FreeCAD 侧脚本会随着建模和导出阶段的实际推进刷新该 JSON。
 
 ### 5. 批量同步多个位姿
 

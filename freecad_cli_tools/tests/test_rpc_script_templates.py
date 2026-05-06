@@ -6,6 +6,7 @@ import json
 
 import pytest
 
+from freecad_cli_tools.freecad_sync import render_batch_sync_script
 from freecad_cli_tools.rpc_script_fragments import (
     COMPONENT_SHAPE_HELPERS,
     PLACEMENT_HELPERS,
@@ -14,6 +15,14 @@ from freecad_cli_tools.rpc_script_loader import render_rpc_script
 
 _DUMMY_STR = json.dumps("dummy")
 _DUMMY_PATH = json.dumps("/tmp/dummy.json")
+_DUMMY_OUTPUT_FILES = json.dumps(
+    {
+        "layout_topology": "/tmp/layout_topology.json",
+        "geom": "/tmp/geom.json",
+        "step": "/tmp/geometry_after.step",
+        "glb": "/tmp/geometry_after.glb",
+    }
+)
 _DUMMY_UPDATES = json.dumps(
     [
         {
@@ -36,6 +45,9 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__VIEW_NAME__": _DUMMY_STR,
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
         "__COMPONENT_SHAPE_HELPERS__": COMPONENT_SHAPE_HELPERS,
+        "__PROGRESS_PATH__": _DUMMY_PATH,
+        "__PROGRESS_TOOL__": _DUMMY_STR,
+        "__PROGRESS_OUTPUT_FILES__": _DUMMY_OUTPUT_FILES,
     },
     "assembly_from_component_info.py": {
         "__INPUT_PATH__": _DUMMY_PATH,
@@ -44,6 +56,9 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__EXPORT_GLB__": "True",
         "__FIT_VIEW__": "True",
         "__VIEW_NAME__": _DUMMY_STR,
+        "__PROGRESS_PATH__": _DUMMY_PATH,
+        "__PROGRESS_TOOL__": _DUMMY_STR,
+        "__PROGRESS_OUTPUT_FILES__": _DUMMY_OUTPUT_FILES,
     },
     "sync_component_placements.py": {
         "__DOC_NAME__": _DUMMY_STR,
@@ -51,6 +66,9 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__RECOMPUTE__": "True",
         "__EXPORT_STEP_PATH__": _DUMMY_PATH,
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
+        "__PROGRESS_PATH__": _DUMMY_PATH,
+        "__PROGRESS_TOOL__": _DUMMY_STR,
+        "__PROGRESS_OUTPUT_FILES__": _DUMMY_OUTPUT_FILES,
     },
     "export_glb_from_step.py": {
         "__STEP_PATH__": _DUMMY_PATH,
@@ -91,6 +109,39 @@ def test_sync_component_placements_uses_delta_for_part_containers() -> None:
     assert "def apply_delta_placement(" in rendered
     assert "source_placement.inverse()" in rendered
     assert '"mode": "delta"' in rendered
+
+
+def test_render_batch_sync_script_uses_python_none_for_missing_progress_args() -> None:
+    rendered = render_batch_sync_script(
+        "DemoDoc",
+        [
+            {
+                "component": "P001",
+                "position": [0.0, 0.0, 0.0],
+                "orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+            }
+        ],
+    )
+
+    assert "PROGRESS_PATH = None" in rendered
+    assert "PROGRESS_TOOL = None" in rendered
+    assert 'PROGRESS_PATH = "null"' not in rendered
+    assert 'PROGRESS_TOOL = "null"' not in rendered
+
+
+@pytest.mark.parametrize(
+    "script_name",
+    [
+        "assembly_from_layout.py",
+        "assembly_from_component_info.py",
+        "sync_component_placements.py",
+    ],
+)
+def test_freecad_side_scripts_write_progress_json(script_name: str) -> None:
+    rendered = render_rpc_script(script_name, SCRIPT_REPLACEMENTS[script_name])
+    assert "def write_progress(" in rendered
+    assert "output_file_records()" in rendered
+    assert "os.replace(str(temp_path), str(path))" in rendered
 
 
 @pytest.mark.parametrize(

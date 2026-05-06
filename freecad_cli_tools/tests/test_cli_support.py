@@ -15,6 +15,7 @@ from freecad_cli_tools.cli_support import (
     extract_output_payload,
     normalize_runtime_path,
 )
+from freecad_cli_tools.progress import ProgressLogWriter
 from freecad_cli_tools.runtime_config import (
     get_default_artifact_registry_dir,
     get_default_component_info_max_step_size_mb,
@@ -74,6 +75,36 @@ def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:
     assert normalize_runtime_path(target) == str(target.resolve())
 
 
+def test_progress_log_writer_refreshes_output_files(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
+    output_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
+    writer = ProgressLogWriter(
+        tool="test-tool",
+        progress={
+            "layout_completion_percent": 10.0,
+            "modeling_percent": 0.0,
+            "export_file_percent": 0.0,
+        },
+        output_paths={"step": output_path},
+    ).start()
+
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+    first_payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    output_path.parent.mkdir(parents=True)
+    output_path.write_text("step-data", encoding="utf-8")
+    writer.update()
+
+    final_payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert first_payload["output_files"]["step"] == {
+        "path": str(output_path),
+        "exists": False,
+    }
+    assert final_payload["output_files"]["step"] == {
+        "path": str(output_path),
+        "exists": True,
+    }
+
+
 def test_describe_rpc_failure_includes_error_message_and_raw_result() -> None:
     message = describe_rpc_failure(
         {"success": False, "error": "permission denied", "message": "generic failure"}
@@ -117,7 +148,7 @@ def test_runtime_directory_getters_honor_environment_overrides(monkeypatch, tmp_
     monkeypatch.setenv("FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB", "42.5")
 
     assert get_default_workspace_dir() == tmp_path / "workspace"
-    assert get_default_artifact_registry_dir() == (tmp_path / "workspace" / "registry")
+    assert get_default_artifact_registry_dir() == (tmp_path / "workspace" / "logs" / "registry")
     assert get_default_component_info_max_step_size_mb() == 42.5
 
 

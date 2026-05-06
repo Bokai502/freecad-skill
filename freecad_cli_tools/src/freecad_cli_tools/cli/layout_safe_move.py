@@ -41,6 +41,11 @@ from freecad_cli_tools.layout_dataset import (
     save_layout_dataset_files,
     update_layout_dataset_component_placement,
 )
+from freecad_cli_tools.progress import (
+    ProgressLogWriter,
+    get_progress_log_path,
+    progress_percentages,
+)
 from freecad_cli_tools.runtime_config import (
     get_default_geom_path,
     get_default_geometry_after_geom_path,
@@ -166,6 +171,8 @@ def sync_layout_result_to_cad(
     component_id: str,
     component: dict,
     source_component: dict | None = None,
+    progress_path: Path | None = None,
+    progress_output_files: dict[str, str | None] | None = None,
 ) -> dict:
     if not args.sync_cad:
         return {"enabled": False, "success": False}
@@ -208,6 +215,9 @@ def sync_layout_result_to_cad(
             export_step_path=(
                 normalize_runtime_path(export_step_path) if export_step_path is not None else None
             ),
+            progress_path=normalize_runtime_path(progress_path) if progress_path else None,
+            progress_tool="freecad-layout-safe-move",
+            progress_output_files=progress_output_files,
         )
     except SystemExit as exc:
         raise RuntimeError(
@@ -283,6 +293,8 @@ def build_result_payload(
     glb_path: str | None,
     step_exported: bool,
     glb_exported: bool,
+    progress: dict[str, float],
+    progress_json_path: str,
 ) -> dict[str, object]:
     """Build a structured result payload for layout-dataset safe-move."""
     return {
@@ -296,6 +308,11 @@ def build_result_payload(
         "glb_path": glb_path,
         "step_exported": step_exported,
         "glb_exported": glb_exported,
+        "progress_percentages": progress,
+        "progress_json_path": progress_json_path,
+        "layout_completion_percent": progress["layout_completion_percent"],
+        "modeling_percent": progress["modeling_percent"],
+        "export_file_percent": progress["export_file_percent"],
         "target_component": args.component,
         "component_contact_face": component_contact_face,
         "component_contact_face_label": FACE_DEFINITIONS[component_contact_face][0],
@@ -335,6 +352,10 @@ def emit_result_lines(payload: dict[str, object]) -> None:
     print(f"glb_path: {payload['glb_path']}")
     print(f"step_exported: {payload['step_exported']}")
     print(f"glb_exported: {payload['glb_exported']}")
+    print(f"layout_completion_percent: {payload['layout_completion_percent']:.1f}")
+    print(f"modeling_percent: {payload['modeling_percent']:.1f}")
+    print(f"export_file_percent: {payload['export_file_percent']:.1f}")
+    print(f"progress_json_path: {payload['progress_json_path']}")
     print(f"target_component: {payload['target_component']}")
     print(f"component_contact_face: {payload['component_contact_face']}")
     print(f"component_contact_face_label: {payload['component_contact_face_label']}")
@@ -439,6 +460,27 @@ def main() -> int:
     if args.sync_cad and not args.doc_name:
         raise ValueError("--doc-name is required when --sync-cad is used.")
     move = [float(value) for value in args.move]
+    planned_step_output_path = resolve_step_output_path(args, layout_topology_output_path)
+    output_paths = {
+        "layout_topology": layout_topology_output_path,
+        "geom": geom_output_path,
+        "step": planned_step_output_path,
+        "glb": (
+            planned_step_output_path.with_suffix(".glb")
+            if planned_step_output_path is not None
+            else None
+        ),
+    }
+    progress_writer = ProgressLogWriter(
+        tool="freecad-layout-safe-move",
+        progress={
+            "layout_completion_percent": 0.0,
+            "modeling_percent": 0.0,
+            "export_file_percent": 0.0,
+        },
+        output_paths=output_paths,
+    ).start()
+    progress_log_path = get_progress_log_path()
     registry_run = start_registry_run(
         args,
         tool="freecad-layout-safe-move",
@@ -458,6 +500,13 @@ def main() -> int:
             geom_input_path,
         )
         data = normalize_layout_dataset(layout_topology, geom)
+        progress_writer.update(
+            progress={
+                "layout_completion_percent": 25.0,
+                "modeling_percent": 0.0,
+                "export_file_percent": 0.0,
+            }
+        )
         components = data.get("components", {})
         if args.component not in components:
             available = ", ".join(sorted(components))
@@ -548,6 +597,13 @@ def main() -> int:
         final_ok, final_blockers = analyze_position(
             analysis_context, final_position, target_orientation_rows
         )
+        progress_writer.update(
+            progress={
+                "layout_completion_percent": 75.0,
+                "modeling_percent": 0.0,
+                "export_file_percent": 0.0,
+            }
+        )
         if solution_found and not final_ok:
             raise RuntimeError(
                 f"Failed to find a collision-free position for {args.component}. "
@@ -573,6 +629,13 @@ def main() -> int:
             geom_output_path,
             updated_geom,
         )
+        progress_writer.update(
+            progress={
+                "layout_completion_percent": 100.0,
+                "modeling_percent": 0.0,
+                "export_file_percent": 0.0,
+            }
+        )
 
         try:
             cad_sync = sync_layout_result_to_cad(
@@ -582,6 +645,11 @@ def main() -> int:
                 args.component,
                 updated["components"][args.component],
                 source_component=target,
+                progress_path=progress_log_path,
+                progress_output_files={
+                    name: str(path) if path is not None else None
+                    for name, path in output_paths.items()
+                },
             )
         except Exception as exc:
             cad_sync = {
@@ -600,6 +668,18 @@ def main() -> int:
             step_exists,
             glb_exists,
         ) = classify_cad_sync_result(cad_sync)
+        progress = progress_percentages(
+            layout_complete=True,
+            modeling_requested=args.sync_cad,
+            modeling_complete=bool(cad_sync.get("success")),
+            step_path=step_path,
+            glb_path=glb_path,
+            export_requested=args.sync_cad,
+        )
+        progress_log_path = progress_writer.update(
+            progress=progress,
+            success=registry_status == "success",
+        )
         payload = build_result_payload(
             success=registry_status == "success",
             layout_topology_input_path=layout_topology_input_path,
@@ -631,6 +711,8 @@ def main() -> int:
             glb_path=glb_path,
             step_exported=step_exists,
             glb_exported=glb_exists,
+            progress=progress,
+            progress_json_path=str(progress_log_path),
         )
         finalize_registry_run(
             registry_run,
@@ -655,6 +737,14 @@ def main() -> int:
         emit_result_lines(payload)
         return 2 if registry_status == "partial_success" else 0
     except Exception as exc:
+        progress_writer.update(
+            progress={
+                "layout_completion_percent": 0.0,
+                "modeling_percent": 0.0,
+                "export_file_percent": 0.0,
+            },
+            success=False,
+        )
         finalize_registry_run(
             registry_run,
             status="failed",

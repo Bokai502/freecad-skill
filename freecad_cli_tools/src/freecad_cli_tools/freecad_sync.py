@@ -99,6 +99,9 @@ def render_batch_sync_script(
     *,
     recompute: bool = False,
     export_step_path: str | None = None,
+    progress_path: str | None = None,
+    progress_tool: str | None = None,
+    progress_output_files: dict[str, str | None] | None = None,
 ) -> str:
     """Render the FreeCAD-side batch placement sync script."""
     return render_rpc_script(
@@ -111,6 +114,13 @@ def render_batch_sync_script(
             "__EXPORT_STEP_PATH__": (
                 json.dumps(export_step_path) if export_step_path is not None else "None"
             ),
+            "__PROGRESS_PATH__": (
+                json.dumps(progress_path) if progress_path is not None else "None"
+            ),
+            "__PROGRESS_TOOL__": (
+                json.dumps(progress_tool) if progress_tool is not None else "None"
+            ),
+            "__PROGRESS_OUTPUT_FILES__": json.dumps(progress_output_files or {}),
         },
     )
 
@@ -123,6 +133,9 @@ def execute_batch_sync(
     *,
     recompute: bool = False,
     export_step_path: str | None = None,
+    progress_path: str | None = None,
+    progress_tool: str | None = None,
+    progress_output_files: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     """Execute a batch placement sync against the target FreeCAD document."""
     code = render_batch_sync_script(
@@ -130,6 +143,9 @@ def execute_batch_sync(
         updates,
         recompute=recompute,
         export_step_path=export_step_path,
+        progress_path=progress_path,
+        progress_tool=progress_tool,
+        progress_output_files=progress_output_files,
     )
     payload = execute_script_payload(host, port, code)
     if not payload.get("success"):

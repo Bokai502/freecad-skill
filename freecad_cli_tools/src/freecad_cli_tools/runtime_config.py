@@ -170,7 +170,7 @@ def get_default_artifact_registry_dir() -> Path:
     return Path(
         get_runtime_setting(
             "FREECAD_ARTIFACT_REGISTRY_DIR",
-            str(get_default_workspace_dir() / "registry"),
+            str(get_default_workspace_dir() / "logs" / "registry"),
         )
     )
 

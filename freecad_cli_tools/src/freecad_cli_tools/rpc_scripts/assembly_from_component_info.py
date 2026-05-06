@@ -1,5 +1,7 @@
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import FreeCAD
@@ -14,6 +16,63 @@ SAVE_PATH = __SAVE_PATH__
 EXPORT_GLB = __EXPORT_GLB__
 FIT_VIEW = __FIT_VIEW__
 VIEW_NAME = __VIEW_NAME__
+PROGRESS_PATH = __PROGRESS_PATH__
+PROGRESS_TOOL = __PROGRESS_TOOL__
+PROGRESS_OUTPUT_FILES = __PROGRESS_OUTPUT_FILES__
+LAST_PROGRESS = {
+    "layout_completion_percent": 100.0,
+    "modeling_percent": 0.0,
+    "export_file_percent": 0.0,
+}
+
+
+def utc_now_iso():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def output_file_records():
+    records = {}
+    for name, path in (PROGRESS_OUTPUT_FILES or {}).items():
+        records[name] = {
+            "path": path,
+            "exists": bool(path) and Path(path).exists(),
+        }
+    return records
+
+
+def write_progress(layout_percent, modeling_percent, export_percent, success=False):
+    global LAST_PROGRESS
+    if not PROGRESS_PATH:
+        return
+    progress = {
+        "layout_completion_percent": float(layout_percent),
+        "modeling_percent": float(modeling_percent),
+        "export_file_percent": float(export_percent),
+    }
+    LAST_PROGRESS = dict(progress)
+    write_progress_payload(progress, success=success)
+
+
+def write_progress_payload(progress, success=False):
+    if not PROGRESS_PATH:
+        return
+    path = Path(PROGRESS_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "tool": PROGRESS_TOOL,
+        "updated_at": utc_now_iso(),
+        "success": bool(success),
+        "progress_percentages": progress,
+        "output_files": output_file_records(),
+        **progress,
+    }
+    temp_path = path.with_name(f".{path.name}.tmp")
+    temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(str(temp_path), str(path))
+
+
+def mark_progress_failed():
+    write_progress_payload(dict(LAST_PROGRESS), success=False)
 
 
 def build_envelope(doc, assembly, data):
@@ -134,7 +193,9 @@ def collect_glb_export_objects(objects):
 def export_step_and_glb(objects, step_path):
     step_path = str(Path(step_path))
     glb_path = str(Path(step_path).with_suffix(".glb"))
+    write_progress(100.0, 100.0, 0.0)
     Import.export(objects, step_path)
+    write_progress(100.0, 100.0, 50.0)
     glb_objects = collect_glb_export_objects(objects)
     export_options = None
     if hasattr(ImportGui, "exportOptions"):
@@ -149,12 +210,15 @@ def export_step_and_glb(objects, step_path):
             ImportGui.export(glb_objects, glb_path, export_options)
         except TypeError:
             ImportGui.export(glb_objects, glb_path)
+    write_progress(100.0, 100.0, 100.0, success=True)
     return step_path, glb_path
 
 
 def export_step(objects, step_path):
     step_path = str(Path(step_path))
+    write_progress(100.0, 100.0, 0.0)
     Import.export(objects, step_path)
+    write_progress(100.0, 100.0, 50.0)
     return step_path
 
 
@@ -357,6 +421,7 @@ def create_step_component(doc, part, component_id, component, target_bbox, step_
 
 
 try:
+    write_progress(100.0, 0.0, 0.0)
     path = Path(INPUT_PATH)
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
@@ -386,7 +451,9 @@ try:
     fallback_components_by_reason = {}
     step_template_cache = {}
 
-    for component_id, component in data.get("components", {}).items():
+    components = list(data.get("components", {}).items())
+    total_components = max(len(components), 1)
+    for index, (component_id, component) in enumerate(components, start=1):
         target_bbox = component_target_bbox(component)
         source = component.get("source") or {}
         fallback_reason = source.get("fallback_reason")
@@ -423,8 +490,11 @@ try:
             fallback_box_component_ids.append(component_id)
             if fallback_reason:
                 fallback_components_by_reason.setdefault(fallback_reason, []).append(component_id)
+        write_progress(100.0, (index / total_components) * 90.0, 0.0)
 
+    write_progress(100.0, 95.0, 0.0)
     doc.recompute()
+    write_progress(100.0, 100.0, 0.0)
     if EXPORT_GLB:
         save_path, glb_path = export_step_and_glb([assembly], SAVE_PATH)
     else:
@@ -455,5 +525,6 @@ try:
         )
     )
 except Exception as exc:
+    mark_progress_failed()
     print(json.dumps({"success": False, "error": str(exc)}))
     sys.exit(1)

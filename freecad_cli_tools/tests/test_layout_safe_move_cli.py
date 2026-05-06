@@ -175,6 +175,7 @@ def test_layout_safe_move_writes_registry_record(monkeypatch, tmp_path: Path) ->
     output_geom_path = tmp_path / "geom.updated.json"
     registry_dir = tmp_path / "registry"
     write_dataset(layout_path, geom_path)
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
     monkeypatch.setattr(
         sys,
@@ -214,6 +215,26 @@ def test_layout_safe_move_writes_registry_record(monkeypatch, tmp_path: Path) ->
     assert manifest["outputs"]["geom_path"] == str(output_geom_path)
     assert Path(manifest["outputs"]["layout_topology_path"]).exists()
     assert Path(manifest["outputs"]["geom_path"]).exists()
+    assert manifest["result"]["progress_percentages"] == {
+        "layout_completion_percent": 100.0,
+        "modeling_percent": 0.0,
+        "export_file_percent": 0.0,
+    }
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+    assert manifest["result"]["progress_json_path"] == str(progress_log_path)
+    progress_log = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert progress_log["tool"] == "freecad-layout-safe-move"
+    assert progress_log["progress_percentages"] == manifest["result"]["progress_percentages"]
+    assert progress_log["output_files"]["layout_topology"] == {
+        "path": str(output_layout_path),
+        "exists": True,
+    }
+    assert progress_log["output_files"]["geom"] == {
+        "path": str(output_geom_path),
+        "exists": True,
+    }
+    assert progress_log["output_files"]["step"] == {"path": None, "exists": False}
+    assert progress_log["output_files"]["glb"] == {"path": None, "exists": False}
 
 
 def test_layout_safe_move_install_face_writes_orientation_rows(monkeypatch, tmp_path: Path) -> None:
@@ -222,6 +243,7 @@ def test_layout_safe_move_install_face_writes_orientation_rows(monkeypatch, tmp_
     output_layout_path = tmp_path / "layout_topology.updated.json"
     output_geom_path = tmp_path / "geom.updated.json"
     write_external_dataset(layout_path, geom_path)
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setattr(
         sys,
         "argv",
@@ -352,6 +374,7 @@ def test_layout_safe_move_records_partial_success_when_cad_sync_fails(
     output_geom_path = tmp_path / "geom.updated.json"
     registry_dir = tmp_path / "registry"
     write_dataset(layout_path, geom_path)
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
     monkeypatch.setattr(
         layout_safe_move,
@@ -412,6 +435,7 @@ def test_layout_safe_move_records_step_and_glb_outputs_on_sync_success(
     step_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
     glb_path = tmp_path / "02_geometry_edit" / "geometry_after.glb"
     write_dataset(layout_path, geom_path)
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
 
     def fake_sync(*args, **kwargs):
@@ -468,6 +492,27 @@ def test_layout_safe_move_records_step_and_glb_outputs_on_sync_success(
     assert manifest["outputs"]["glb_path"] == str(glb_path)
     assert Path(manifest["outputs"]["step_path"]).exists()
     assert Path(manifest["outputs"]["glb_path"]).exists()
+    assert manifest["result"]["progress_percentages"] == {
+        "layout_completion_percent": 100.0,
+        "modeling_percent": 100.0,
+        "export_file_percent": 100.0,
+    }
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+    assert manifest["result"]["progress_json_path"] == str(progress_log_path)
+    progress_log = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert progress_log["progress_percentages"] == manifest["result"]["progress_percentages"]
+    assert progress_log["output_files"]["layout_topology"]["path"] == str(output_layout_path)
+    assert progress_log["output_files"]["layout_topology"]["exists"] is True
+    assert progress_log["output_files"]["geom"]["path"] == str(output_geom_path)
+    assert progress_log["output_files"]["geom"]["exists"] is True
+    assert progress_log["output_files"]["step"] == {
+        "path": str(step_path),
+        "exists": True,
+    }
+    assert progress_log["output_files"]["glb"] == {
+        "path": str(glb_path),
+        "exists": True,
+    }
 
 
 def test_layout_safe_move_records_partial_success_when_glb_export_missing(
@@ -481,6 +526,7 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
     step_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
     glb_path = tmp_path / "02_geometry_edit" / "geometry_after.glb"
     write_dataset(layout_path, geom_path)
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
 
     def fake_sync(*args, **kwargs):
@@ -533,6 +579,27 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
     assert manifest["outputs"]["step_path"] == str(step_path)
     assert manifest["outputs"]["glb_path"] == str(glb_path)
     assert manifest["error"]["code"] == "GLB_EXPORT_INCOMPLETE"
+    assert manifest["result"]["progress_percentages"] == {
+        "layout_completion_percent": 100.0,
+        "modeling_percent": 100.0,
+        "export_file_percent": 50.0,
+    }
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+    assert manifest["result"]["progress_json_path"] == str(progress_log_path)
+    progress_log = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert progress_log["progress_percentages"] == manifest["result"]["progress_percentages"]
+    assert progress_log["output_files"]["layout_topology"]["path"] == str(output_layout_path)
+    assert progress_log["output_files"]["layout_topology"]["exists"] is True
+    assert progress_log["output_files"]["geom"]["path"] == str(output_geom_path)
+    assert progress_log["output_files"]["geom"]["exists"] is True
+    assert progress_log["output_files"]["step"] == {
+        "path": str(step_path),
+        "exists": True,
+    }
+    assert progress_log["output_files"]["glb"] == {
+        "path": str(glb_path),
+        "exists": False,
+    }
 
 
 def test_layout_safe_move_defaults_to_geometry_after_outputs_without_touching_source(

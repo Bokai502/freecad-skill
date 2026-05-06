@@ -1,5 +1,7 @@
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 import FreeCAD
@@ -10,6 +12,63 @@ DOC_NAME = __DOC_NAME__
 UPDATES = __UPDATES__
 RECOMPUTE = __RECOMPUTE__
 EXPORT_STEP_PATH = __EXPORT_STEP_PATH__
+PROGRESS_PATH = __PROGRESS_PATH__
+PROGRESS_TOOL = __PROGRESS_TOOL__
+PROGRESS_OUTPUT_FILES = __PROGRESS_OUTPUT_FILES__
+LAST_PROGRESS = {
+    "layout_completion_percent": 100.0,
+    "modeling_percent": 0.0,
+    "export_file_percent": 0.0,
+}
+
+
+def utc_now_iso():
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def output_file_records():
+    records = {}
+    for name, path in (PROGRESS_OUTPUT_FILES or {}).items():
+        records[name] = {
+            "path": path,
+            "exists": bool(path) and Path(path).exists(),
+        }
+    return records
+
+
+def write_progress(layout_percent, modeling_percent, export_percent, success=False):
+    global LAST_PROGRESS
+    if not PROGRESS_PATH:
+        return
+    progress = {
+        "layout_completion_percent": float(layout_percent),
+        "modeling_percent": float(modeling_percent),
+        "export_file_percent": float(export_percent),
+    }
+    LAST_PROGRESS = dict(progress)
+    write_progress_payload(progress, success=success)
+
+
+def write_progress_payload(progress, success=False):
+    if not PROGRESS_PATH:
+        return
+    path = Path(PROGRESS_PATH)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "tool": PROGRESS_TOOL,
+        "updated_at": utc_now_iso(),
+        "success": bool(success),
+        "progress_percentages": progress,
+        "output_files": output_file_records(),
+        **progress,
+    }
+    temp_path = path.with_name(f".{path.name}.tmp")
+    temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    os.replace(str(temp_path), str(path))
+
+
+def mark_progress_failed():
+    write_progress_payload(dict(LAST_PROGRESS), success=False)
 
 
 def vec(v):
@@ -41,7 +100,9 @@ def export_step_and_glb(objects, step_path):
     Path(step_path).parent.mkdir(parents=True, exist_ok=True)
     glb_path = str(Path(step_path).with_suffix(".glb"))
 
+    write_progress(100.0, 100.0, 0.0)
     Import.export(objects, step_path)
+    write_progress(100.0, 100.0, 50.0)
 
     export_options = None
     if hasattr(ImportGui, "exportOptions"):
@@ -58,6 +119,7 @@ def export_step_and_glb(objects, step_path):
         except TypeError:
             ImportGui.export(objects, glb_path)
 
+    write_progress(100.0, 100.0, 100.0, success=True)
     return step_path, glb_path
 
 
@@ -92,12 +154,14 @@ def find_export_objects(doc):
 
 
 try:
+    write_progress(100.0, 0.0, 0.0)
     doc = FreeCAD.getDocument(DOC_NAME)
     if doc is None:
         raise RuntimeError(f"document not found: {DOC_NAME}")
 
     applied = []
-    for update in UPDATES:
+    total_updates = max(len(UPDATES), 1)
+    for index, update in enumerate(UPDATES, start=1):
         component_id = update["component"]
         part_placement = make_placement(update["position"], update["orientation_rows"])
         has_source_placement = "source_position" in update and "source_orientation_rows" in update
@@ -165,6 +229,7 @@ try:
             )
 
         applied.append({"component": component_id, "updates": placements})
+        write_progress(100.0, (index / total_updates) * 90.0, 0.0)
 
     exported_step_path = None
     exported_glb_path = None
@@ -173,7 +238,9 @@ try:
 
     performed_recompute = bool(RECOMPUTE or EXPORT_STEP_PATH)
     if performed_recompute:
+        write_progress(100.0, 95.0, 0.0)
         doc.recompute()
+        write_progress(100.0, 100.0, 0.0)
 
     if EXPORT_STEP_PATH:
         export_objects, export_mode = find_export_objects(doc)
@@ -203,5 +270,6 @@ try:
         )
     )
 except Exception as exc:
+    mark_progress_failed()
     print(json.dumps({"success": False, "error": str(exc)}))
     sys.exit(1)

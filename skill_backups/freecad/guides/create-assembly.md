@@ -157,12 +157,21 @@ Set component colors, call `doc.recompute()`, switch to an isometric fitted view
 - `geometry_after.step`
 - sibling `geometry_after.glb`
 
+The CLI result includes:
+
+- `layout_completion_percent`
+- `modeling_percent`
+- `export_file_percent`
+- `progress_json_path`: `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`
+- progress log `output_files.step` and `output_files.glb`
+
 ## Rules
 
 - Prefer `--layout-topology` + `--geom` for the new dataset.
 - If these flags are omitted, use `./01_layout/layout_topology.json` and `./01_layout/geom.json` from the configured workspace root.
 - If `--output` is omitted, write `./02_geometry_edit/geometry_after.step` and sibling `.glb`.
 - If `--output` is provided, use only its directory or parent path; the exported filenames must still be `geometry_after.step` and `geometry_after.glb`.
+- Include `layout_completion_percent`, `modeling_percent`, and `export_file_percent` in reported results. STEP and GLB exports each contribute 50% to `export_file_percent`. Also report `progress_json_path`.
 - Treat `sample.yaml` as backup only; do not use it as the primary build input.
 - Preserve `component_id` from `layout_topology.json` as the user-facing CAD object id.
 - Derive runtime orientation from topology instead of assuming identity for external parts.
