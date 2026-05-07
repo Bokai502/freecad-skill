@@ -80,10 +80,10 @@ For each component in `geom_component_info.json`:
    - preferred: `bbox.min/max`
    - fallback: `position + dims`
 4. Read `cad_rotated_path` from `display_info.assets.cad_rotated_path`.
-5. If the STEP exists and is within the allowed size threshold, import it and
-   translate it so:
-   - the contact edge along the mount axis matches the target bbox contact edge
-   - the cross-section center matches the target bbox center
+5. If the STEP exists and is within the allowed size threshold, import it,
+   derive the runtime orientation from `component_mount_face_id ->
+   mount_face_id` plus `alignment.in_plane_rotation_deg`, rotate the geometry
+   into that orientation first, then align the rotated bbox to the target bbox.
 6. If the STEP is unavailable or oversized, create a `Part::Box` exactly
    covering the target bbox.
 
@@ -99,6 +99,10 @@ freecad-create-assembly-from-component-info \
 ```
 
 ## Output Files
+
+Note: this command can be slow when it imports real STEP/STP CAD assets and
+exports STEP/GLB files. Be patient and wait for the progress log or final
+artifacts before assuming the build has stalled.
 
 The command writes CAD artifacts under the configured workspace by default:
 

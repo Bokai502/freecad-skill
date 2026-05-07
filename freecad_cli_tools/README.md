@@ -61,8 +61,8 @@ freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
 freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 ```
 
-By default, relative CLI paths are resolved against `FREECAD_WORKSPACE_DIR` from
-the runtime config or environment. `freecad-create-assembly` reads
+By default, relative CLI paths are resolved against the explicit workspace root
+from `--workspace` or `FREECAD_WORKSPACE_DIR`. `freecad-create-assembly` reads
 `./01_layout/layout_topology.json` and `./01_layout/geom.json`, then writes
 `./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb` unless
 you pass explicit paths.
@@ -90,6 +90,12 @@ The latest percentages are also written to
 an `output_files` object with each produced file path and whether it exists.
 During CAD operations, the FreeCAD-side script refreshes the file as modeling
 and STEP/GLB export stages actually advance.
+
+Validate a workspace before running a full build:
+
+```bash
+freecad-validate-workspace --workspace /abs/path/to/workspace
+```
 
 ## Recommended Move Workflow
 
@@ -165,10 +171,12 @@ to reading from `./01_layout` and writing new dataset files plus
 `geometry_after.step` / `geometry_after.glb` under `./02_geometry_edit`, so the
 source dataset remains unchanged unless the user explicitly overrides the paths.
 
-Runtime defaults are resolved in this order: `FREECAD_RUNTIME_CONFIG`, project
-`.freecad/freecad_runtime.conf`, project `freecad_runtime.conf`, user
-`~/.config/freecad-cli-tools/runtime.conf`, then the legacy
-[../config/freecad_runtime.conf](../config/freecad_runtime.conf) fallback.
+Workspace resolution is intentionally strict:
+
+- preferred: pass `--workspace /abs/path/to/workspace`
+- fallback: export `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
+
+No project config, user config, or legacy runtime-config discovery remains.
 
 For multi-component placement updates, `freecad-sync-placements` accepts a JSON list like:
 
@@ -205,8 +213,8 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 
 ## Requirements
 
-- For RPC commands: FreeCAD with the MCP addon running on the host/port from the runtime config or environment
-- Relative input and output paths are resolved against `FREECAD_WORKSPACE_DIR` from the runtime config or environment
+- For RPC commands: FreeCAD with the MCP addon running on the host/port from the CLI flags or environment
+- Relative input and output paths are resolved against the explicit workspace root from `--workspace` or `FREECAD_WORKSPACE_DIR`
 - For offline layout-dataset use of `freecad-layout-safe-move`: Python 3.9+ only
 - Python 3.9+
 

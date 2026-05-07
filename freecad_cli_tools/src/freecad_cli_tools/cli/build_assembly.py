@@ -42,6 +42,7 @@ from freecad_cli_tools.runtime_config import (
     resolve_geometry_after_step_path,
     resolve_workspace_path,
 )
+from freecad_cli_tools.workspace import add_workspace_arg, validate_workspace_inputs, validate_workspace_root
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,6 +51,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--layout-topology", help="Path to layout_topology.json.")
     parser.add_argument("--geom", help="Path to geom.json.")
+    add_workspace_arg(parser)
     parser.add_argument("--doc-name", required=True, help="Name of the FreeCAD document to create.")
     parser.add_argument(
         "--output",
@@ -126,6 +128,12 @@ def registry_inputs(
 
 def main() -> None:
     args = parse_args()
+    validate_workspace_root(args.workspace)
+    validate_workspace_inputs(
+        args.workspace,
+        require_layout_topology=args.layout_topology is None,
+        require_geom=args.geom is None,
+    )
     layout_topology_path = resolve_workspace_path(
         args.layout_topology or get_default_layout_topology_path()
     )

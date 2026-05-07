@@ -8,13 +8,13 @@
 
 1. 直接在 Linux 环境启动 `freecad`
 2. 确认 `FreeCADMCP` 插件已经自动启动 XML-RPC 服务
-3. 使用 `freecad-*` CLI 命令连接运行时配置中的 RPC 地址
+3. 使用 `freecad-*` CLI 命令连接 RPC 地址，并显式传入工作区
 
 ## 前提条件
 
 - Linux 环境里已经安装 `freecad`
 - FreeCAD 已安装 `FreeCADMCP` 插件
-- RPC 服务默认监听运行时配置中的地址
+- 运行 CLI 前需要显式提供工作区
 
 ## 常用命令
 
@@ -28,18 +28,16 @@ freecad
 
 ```bash
 freecad-list-docs
-freecad-create-assembly --doc-name LayoutAssembly
+freecad-validate-workspace --workspace /abs/path/to/workspace
+freecad-create-assembly --workspace /abs/path/to/workspace --doc-name LayoutAssembly
 ```
 
 ## 配置
 
-运行时默认值按以下顺序解析：
+工作区只允许两种来源：
 
-1. `FREECAD_RUNTIME_CONFIG`
-2. 当前项目 `.freecad/freecad_runtime.conf`
-3. 当前项目 `freecad_runtime.conf`
-4. 用户级 `~/.config/freecad-cli-tools/runtime.conf`
-5. 兼容兜底：[config/freecad_runtime.conf](./config/freecad_runtime.conf)
+1. CLI 参数 `--workspace /abs/path/to/workspace`
+2. 环境变量 `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
 
 常用配置项：
 
@@ -52,5 +50,6 @@ freecad-create-assembly --doc-name LayoutAssembly
 如果你只想记住一个入口，就记这个：
 
 ```bash
+export FREECAD_WORKSPACE_DIR=/abs/path/to/workspace
 freecad
 ```

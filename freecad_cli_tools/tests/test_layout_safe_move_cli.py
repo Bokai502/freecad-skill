@@ -637,3 +637,48 @@ def test_layout_safe_move_defaults_to_geometry_after_outputs_without_touching_so
     assert geom_path.read_text(encoding="utf-8") == original_geom
     assert output_layout_path.exists()
     assert output_geom_path.exists()
+
+
+def test_layout_safe_move_allows_explicit_input_paths_when_workspace_defaults_are_missing(
+    monkeypatch, tmp_path: Path
+) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    inputs_dir = tmp_path / "inputs"
+    inputs_dir.mkdir()
+    layout_path = inputs_dir / "layout_topology.json"
+    geom_path = inputs_dir / "geom.json"
+    output_layout_path = tmp_path / "layout_topology.updated.json"
+    output_geom_path = tmp_path / "geom.updated.json"
+    write_dataset(layout_path, geom_path)
+
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-layout-safe-move",
+            "--workspace",
+            str(workspace),
+            "--layout-topology",
+            str(layout_path),
+            "--geom",
+            str(geom_path),
+            "--layout-topology-output",
+            str(output_layout_path),
+            "--geom-output",
+            str(output_geom_path),
+            "--component",
+            "P001",
+            "--move",
+            "0",
+            "10",
+            "0",
+        ],
+    )
+
+    exit_code = layout_safe_move.main()
+
+    assert exit_code == 0
+    assert output_layout_path.exists()
+    assert output_geom_path.exists()

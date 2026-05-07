@@ -299,3 +299,143 @@ def test_main_uses_runtime_default_step_size_limit(monkeypatch, tmp_path: Path, 
     assert captured["max_step_size_mb"] == 77.0
     payload = json.loads(capsys.readouterr().out)
     assert payload["success"] is True
+
+
+def test_main_accepts_explicit_workspace_without_environment(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "GeomInfoAssembly",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 0,
+            "components": [],
+            "step_component_ids": [],
+            "box_component_ids": [],
+            "fallback_box_component_ids": [],
+            "fallback_components_by_reason": {},
+        }
+
+    workspace = tmp_path / "workspace"
+    layout_path = workspace / "01_layout" / "layout_topology.json"
+    geom_path = workspace / "01_layout" / "geom.json"
+    component_info_path = workspace / "01_layout" / "geom_component_info.json"
+    component_info_path.parent.mkdir(parents=True, exist_ok=True)
+    layout_path.write_text("{}", encoding="utf-8")
+    geom_path.write_text("{}", encoding="utf-8")
+    component_info_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.setattr(build_component_info_assembly, "render_rpc_script", fake_render)
+    monkeypatch.setattr(
+        build_component_info_assembly,
+        "execute_script_payload",
+        fake_execute_script_payload,
+    )
+    monkeypatch.setattr(
+        build_component_info_assembly,
+        "load_and_normalize_component_info_assembly",
+        lambda *args, **kwargs: {"schema_version": "geom_component_assembly/1.0", "envelope": {}, "components": {}},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly-from-component-info",
+            "--workspace",
+            str(workspace),
+            "--doc-name",
+            "GeomInfoAssembly",
+        ],
+    )
+
+    build_component_info_assembly.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["success"] is True
+
+
+def test_main_allows_explicit_input_paths_when_workspace_defaults_are_missing(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "GeomInfoAssembly",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 0,
+            "components": [],
+            "step_component_ids": [],
+            "box_component_ids": [],
+            "fallback_box_component_ids": [],
+            "fallback_components_by_reason": {},
+        }
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    explicit_inputs = tmp_path / "explicit-inputs"
+    explicit_inputs.mkdir()
+    layout_path = explicit_inputs / "layout_topology.json"
+    geom_path = explicit_inputs / "geom.json"
+    component_info_path = explicit_inputs / "geom_component_info.json"
+    layout_path.write_text("{}", encoding="utf-8")
+    geom_path.write_text("{}", encoding="utf-8")
+    component_info_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.setattr(build_component_info_assembly, "render_rpc_script", fake_render)
+    monkeypatch.setattr(
+        build_component_info_assembly,
+        "execute_script_payload",
+        fake_execute_script_payload,
+    )
+    monkeypatch.setattr(
+        build_component_info_assembly,
+        "load_and_normalize_component_info_assembly",
+        lambda *args, **kwargs: {"schema_version": "geom_component_assembly/1.0", "envelope": {}, "components": {}},
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly-from-component-info",
+            "--workspace",
+            str(workspace),
+            "--layout-topology",
+            str(layout_path),
+            "--geom",
+            str(geom_path),
+            "--geom-component-info",
+            str(component_info_path),
+            "--doc-name",
+            "GeomInfoAssembly",
+        ],
+    )
+
+    build_component_info_assembly.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["success"] is True

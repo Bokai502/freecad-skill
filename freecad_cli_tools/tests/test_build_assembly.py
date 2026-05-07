@@ -142,6 +142,11 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
             "component_count": 2,
         }
 
+    layout_dir = tmp_path / "01_layout"
+    layout_dir.mkdir(parents=True, exist_ok=True)
+    (layout_dir / "layout_topology.json").write_text("{}", encoding="utf-8")
+    (layout_dir / "geom.json").write_text("{}", encoding="utf-8")
+
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
     monkeypatch.setattr(build_assembly, "execute_script_payload", fake_execute_script_payload)
@@ -216,6 +221,11 @@ def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, c
             "component_count": 2,
         }
 
+    layout_dir = tmp_path / "01_layout"
+    layout_dir.mkdir(parents=True, exist_ok=True)
+    (layout_dir / "layout_topology.json").write_text("{}", encoding="utf-8")
+    (layout_dir / "geom.json").write_text("{}", encoding="utf-8")
+
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
     monkeypatch.setattr(build_assembly, "execute_script_payload", fake_execute_script_payload)
@@ -252,3 +262,64 @@ def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, c
         "modeling_percent": 100.0,
         "export_file_percent": 100.0,
     }
+
+
+def test_main_allows_explicit_input_paths_when_workspace_defaults_are_missing(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    captured: dict = {}
+
+    def fake_render(script_name: str, replacements: dict) -> str:
+        captured["replacements"] = replacements
+        return "rendered-code"
+
+    def fake_execute_script_payload(host: str, port: int, code: str) -> dict:
+        staged_output = Path(json.loads(captured["replacements"]["__SAVE_PATH__"]))
+        staged_output.parent.mkdir(parents=True, exist_ok=True)
+        staged_output.write_text("step-data", encoding="utf-8")
+        staged_output.with_suffix(".glb").write_text("glb-data", encoding="utf-8")
+        return {
+            "success": True,
+            "document": "SampleLayoutAssembly",
+            "save_path": str(staged_output),
+            "glb_path": str(staged_output.with_suffix(".glb")),
+            "component_count": 0,
+        }
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    explicit_inputs = tmp_path / "explicit-inputs"
+    explicit_inputs.mkdir()
+    layout_path = explicit_inputs / "layout_topology.json"
+    geom_path = explicit_inputs / "geom.json"
+    layout_path.write_text("{}", encoding="utf-8")
+    geom_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.setattr(build_assembly, "render_rpc_script", fake_render)
+    monkeypatch.setattr(build_assembly, "execute_script_payload", fake_execute_script_payload)
+    monkeypatch.setattr(
+        build_assembly,
+        "load_and_normalize_layout_dataset",
+        lambda *args, **kwargs: sample_normalized_dataset(),
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-create-assembly",
+            "--workspace",
+            str(workspace),
+            "--layout-topology",
+            str(layout_path),
+            "--geom",
+            str(geom_path),
+            "--doc-name",
+            "SampleLayoutAssembly",
+        ],
+    )
+
+    build_assembly.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["success"] is True

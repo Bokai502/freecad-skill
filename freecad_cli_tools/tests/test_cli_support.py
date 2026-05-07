@@ -21,51 +21,18 @@ from freecad_cli_tools.runtime_config import (
     get_default_component_info_max_step_size_mb,
     get_default_geometry_after_step_path,
     get_default_workspace_dir,
-    get_runtime_config_candidates,
-    load_runtime_config,
-    parse_runtime_config,
     resolve_geometry_after_step_path,
-    resolve_runtime_config_path,
     resolve_workspace_path,
+    set_default_workspace_dir,
 )
+from freecad_cli_tools.workspace import validate_workspace_inputs, validate_workspace_root
 
 
-def test_parse_runtime_config_ignores_comments_and_blank_lines(tmp_path: Path) -> None:
-    config_path = tmp_path / "freecad_runtime.conf"
-    config_path.write_text(
-        "\n# comment\nFREECAD_RPC_PORT=9876\nFREECAD_WORKSPACE_DIR=/tmp/workspace\n",
-        encoding="utf-8",
-    )
+def test_get_default_workspace_dir_requires_environment(monkeypatch) -> None:
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
 
-    config = parse_runtime_config(config_path)
-
-    assert config == {
-        "FREECAD_RPC_PORT": "9876",
-        "FREECAD_WORKSPACE_DIR": "/tmp/workspace",
-    }
-
-
-def test_runtime_config_uses_explicit_config_path(monkeypatch, tmp_path: Path) -> None:
-    config_path = tmp_path / "custom.conf"
-    config_path.write_text("FREECAD_RPC_PORT=9999\n", encoding="utf-8")
-    monkeypatch.setenv("FREECAD_RUNTIME_CONFIG", str(config_path))
-    load_runtime_config.cache_clear()
-
-    assert get_runtime_config_candidates() == [config_path]
-    assert resolve_runtime_config_path() == config_path
-    assert load_runtime_config()["FREECAD_RPC_PORT"] == "9999"
-
-
-def test_runtime_config_prefers_project_config_before_legacy(monkeypatch, tmp_path: Path) -> None:
-    config_path = tmp_path / ".freecad" / "freecad_runtime.conf"
-    config_path.parent.mkdir()
-    config_path.write_text("FREECAD_WORKSPACE_DIR=/tmp/project-workspace\n", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-    monkeypatch.delenv("FREECAD_RUNTIME_CONFIG", raising=False)
-    load_runtime_config.cache_clear()
-
-    assert resolve_runtime_config_path() == config_path
-    assert load_runtime_config()["FREECAD_WORKSPACE_DIR"] == "/tmp/project-workspace"
+    with pytest.raises(RuntimeError, match="FREECAD_WORKSPACE_DIR is not set"):
+        get_default_workspace_dir()
 
 
 def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:
@@ -160,6 +127,63 @@ def test_resolve_workspace_path_uses_configured_workspace_root(monkeypatch, tmp_
     )
     absolute = tmp_path / "abs" / "geom.json"
     assert resolve_workspace_path(absolute) == absolute
+
+
+def test_set_default_workspace_dir_overrides_environment(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+
+    resolved = set_default_workspace_dir(tmp_path / "workspace")
+
+    assert resolved == (tmp_path / "workspace").resolve()
+    assert get_default_workspace_dir() == resolved
+
+
+def test_validate_workspace_inputs_requires_default_files(monkeypatch, tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "01_layout").mkdir(parents=True)
+    (workspace / "01_layout" / "layout_topology.json").write_text("{}", encoding="utf-8")
+    (workspace / "01_layout" / "geom.json").write_text("{}", encoding="utf-8")
+
+    resolved, inputs = validate_workspace_inputs(workspace, require_component_info=False)
+
+    assert resolved == workspace.resolve()
+    assert inputs["layout_topology"] == (workspace / "01_layout" / "layout_topology.json").resolve()
+    assert inputs["geom"] == (workspace / "01_layout" / "geom.json").resolve()
+
+
+def test_validate_workspace_inputs_reports_missing_absolute_paths(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    (workspace / "01_layout").mkdir(parents=True)
+    (workspace / "01_layout" / "layout_topology.json").write_text("{}", encoding="utf-8")
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        validate_workspace_inputs(workspace, require_component_info=True)
+
+    message = str(excinfo.value)
+    assert str((workspace / "01_layout" / "geom.json").resolve()) in message
+    assert str((workspace / "01_layout" / "geom_component_info.json").resolve()) in message
+
+
+def test_validate_workspace_root_accepts_workspace_without_default_inputs(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    assert validate_workspace_root(workspace) == workspace.resolve()
+
+
+def test_validate_workspace_inputs_can_skip_default_file_checks(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+
+    resolved, inputs = validate_workspace_inputs(
+        workspace,
+        require_layout_topology=False,
+        require_geom=False,
+        require_component_info=False,
+    )
+
+    assert resolved == workspace.resolve()
+    assert inputs == {}
 
 
 def test_resolve_geometry_after_step_path_forces_geometry_after_basename(

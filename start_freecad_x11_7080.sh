@@ -2,59 +2,6 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LEGACY_RUNTIME_CONFIG="${SCRIPT_DIR}/config/freecad_runtime.conf"
-
-find_runtime_config() {
-  if [[ -n "${FREECAD_RUNTIME_CONFIG:-}" ]]; then
-    printf '%s\n' "${FREECAD_RUNTIME_CONFIG}"
-    return 0
-  fi
-
-  local user_config_home="${XDG_CONFIG_HOME:-${HOME}/.config}"
-  local candidate
-  for candidate in \
-    "${PWD}/.freecad/freecad_runtime.conf" \
-    "${PWD}/freecad_runtime.conf" \
-    "${user_config_home}/freecad-cli-tools/runtime.conf" \
-    "${LEGACY_RUNTIME_CONFIG}"; do
-    if [[ -f "${candidate}" ]]; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-  done
-}
-
-RUNTIME_CONFIG_PATH="$(find_runtime_config || true)"
-
-load_runtime_config() {
-  local config_path="$1"
-  if [[ ! -f "${config_path}" ]]; then
-    return 0
-  fi
-
-  while IFS= read -r raw_line || [[ -n "${raw_line}" ]]; do
-    local line="${raw_line#"${raw_line%%[![:space:]]*}"}"
-    line="${line%"${line##*[![:space:]]}"}"
-    if [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]]; then
-      continue
-    fi
-    local key="${line%%=*}"
-    local value="${line#*=}"
-    key="${key%"${key##*[![:space:]]}"}"
-    value="${value#"${value%%[![:space:]]*}"}"
-    value="${value%"${value##*[![:space:]]}"}"
-    case "${key}" in
-      FREECAD_RPC_HOST|FREECAD_RPC_PORT|FREECAD_WORKSPACE_DIR|FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB|FREECAD_RPC_PROBE_TIMEOUT_SECONDS|FREECAD_STARTUP_WAIT_SECONDS)
-        if [[ -z "${!key:-}" ]]; then
-          printf -v "${key}" '%s' "${value}"
-          export "${key}"
-        fi
-        ;;
-    esac
-  done < "${config_path}"
-}
-
-load_runtime_config "${RUNTIME_CONFIG_PATH}"
 
 ACTION="${1:-start}"
 
@@ -110,7 +57,7 @@ write_resource_snapshot() {
     echo "hostname=$(hostname)"
     echo "nproc=$(nproc 2>/dev/null || echo unknown)"
     echo "freecad_rpc=${FREECAD_RPC_HOST:-localhost}:${FREECAD_RPC_PORT:-9876}"
-    echo "workspace_dir=${FREECAD_WORKSPACE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+    echo "workspace_dir=${FREECAD_WORKSPACE_DIR:-<unset>}"
     echo "component_info_max_step_size_mb=${FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB}"
     echo
     echo "[free -h]"
@@ -188,9 +135,8 @@ stop_session() {
 status_session() {
   echo "DISPLAY=${DISPLAY_NUM} VNC=${VNC_PORT} noVNC=${NOVNC_PORT}"
   echo "freecad_bin=${FREECAD_BIN}"
-  echo "runtime_config=${RUNTIME_CONFIG_PATH}"
   echo "freecad_rpc=${FREECAD_RPC_HOST:-localhost}:${FREECAD_RPC_PORT:-9876}"
-  echo "workspace_dir=${FREECAD_WORKSPACE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}"
+  echo "workspace_dir=${FREECAD_WORKSPACE_DIR:-<unset>}"
   echo "component_info_max_step_size_mb=${FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB}"
   if is_port_listening "${VNC_PORT}"; then
     echo "backend: localhost:${VNC_PORT} is listening"
@@ -235,10 +181,21 @@ case "${ACTION}" in
     ;;
   *)
     echo "用法: $0 [start|stop|restart|fresh-start|prepare-heavy|status|probe]"
-    echo "可选环境变量: DISPLAY_NUM=:11 VNC_PORT=5911 NOVNC_PORT=7080 FREECAD_BIN=/home/xie/.local/bin/freecad FREECAD_RUNTIME_CONFIG=${LEGACY_RUNTIME_CONFIG}"
+    echo "必需环境变量: FREECAD_WORKSPACE_DIR=/abs/path/to/workspace"
+    echo "可选环境变量: DISPLAY_NUM=:11 VNC_PORT=5911 NOVNC_PORT=7080 FREECAD_BIN=/home/xie/.local/bin/freecad FREECAD_RPC_HOST=localhost FREECAD_RPC_PORT=9876 FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB=100"
     exit 1
     ;;
 esac
+
+if [[ -z "${FREECAD_WORKSPACE_DIR:-}" ]]; then
+  echo "未设置 FREECAD_WORKSPACE_DIR。请先 export FREECAD_WORKSPACE_DIR=/abs/path/to/workspace"
+  exit 1
+fi
+
+if [[ "${FREECAD_WORKSPACE_DIR}" != /* ]]; then
+  echo "FREECAD_WORKSPACE_DIR 必须是绝对路径：${FREECAD_WORKSPACE_DIR}"
+  exit 1
+fi
 
 if [[ ! -x "${FREECAD_BIN}" ]]; then
   echo "未找到 FreeCAD 可执行文件：${FREECAD_BIN}"
@@ -271,10 +228,9 @@ if ! has_freecad_x_client; then
   start_detached "${FREECAD_LOG}.launch" env DISPLAY="${DISPLAY_NUM}" \
     LIBGL_ALWAYS_SOFTWARE=1 \
     MESA_GL_VERSION_OVERRIDE=3.3 \
-    FREECAD_RUNTIME_CONFIG="${RUNTIME_CONFIG_PATH}" \
     FREECAD_RPC_HOST="${FREECAD_RPC_HOST:-localhost}" \
     FREECAD_RPC_PORT="${FREECAD_RPC_PORT:-9876}" \
-    FREECAD_WORKSPACE_DIR="${FREECAD_WORKSPACE_DIR:-$(cd "${SCRIPT_DIR}/.." && pwd)}" \
+    FREECAD_WORKSPACE_DIR="${FREECAD_WORKSPACE_DIR}" \
     "${FREECAD_BIN}" --write-log --log-file "${FREECAD_LOG}"
   for _ in $(seq 1 "${FREECAD_STARTUP_WAIT_SECONDS}"); do
     sleep 1

@@ -14,8 +14,8 @@ freecad-create-assembly \
   --doc-name LayoutAssembly
 ```
 
-By default, the CLI resolves relative paths from `FREECAD_WORKSPACE_DIR` in
-the runtime config or environment, reads `./01_layout/layout_topology.json` and
+By default, the CLI resolves relative paths from the explicit workspace root
+from `--workspace` or `FREECAD_WORKSPACE_DIR`, reads `./01_layout/layout_topology.json` and
 `./01_layout/geom.json`, then exports the placeholder assembly to
 `./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb`.
 

@@ -60,7 +60,7 @@ freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
 freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 ```
 
-默认情况下，相对 CLI 路径会基于运行时配置或环境变量中的
+默认情况下，相对 CLI 路径会基于 `--workspace` 或环境变量中的
 `FREECAD_WORKSPACE_DIR` 解析。
 `freecad-create-assembly` 会读取 `./01_layout/layout_topology.json` 和
 `./01_layout/geom.json`，并输出 `./02_geometry_edit/geometry_after.step`
@@ -87,6 +87,12 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`。该文件还包含
 `output_files` 对象，记录每个产出文件路径及其是否存在。
 执行 CAD 操作时，FreeCAD 侧脚本会在建模和 STEP/GLB 导出阶段实际推进时刷新该文件。
+
+如果想在完整构建前先检查工作区，可以执行：
+
+```bash
+freecad-validate-workspace --workspace /abs/path/to/workspace
+```
 
 ## 推荐移动流程
 
@@ -141,10 +147,12 @@ freecad-create-assembly \
 
 补充说明：外部安装面（6-11）虽然会跳过内部包络包含约束，但仍会使用 `envelope.outer_size` 检查目标墙面的面内边界，避免组件沿墙面滑出边缘。如果请求路径跨出了这个二维轮廓，命令会截断到最近安全前缀，并在阻塞原因中包含 `FACE_BOUNDARY`。
 
-运行时默认值按以下顺序解析：`FREECAD_RUNTIME_CONFIG`、项目内
-`.freecad/freecad_runtime.conf`、项目内 `freecad_runtime.conf`、用户级
-`~/.config/freecad-cli-tools/runtime.conf`，最后才使用兼容兜底的
-[../config/freecad_runtime.conf](../config/freecad_runtime.conf)。
+工作区解析现在是严格模式：
+
+- 推荐：显式传入 `--workspace /abs/path/to/workspace`
+- 兜底：提前导出 `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
+
+已经不再支持项目配置、用户配置或 legacy runtime config 自动发现。
 
 对于多组件位姿更新，`freecad-sync-placements` 接受如下 JSON 列表：
 
@@ -181,8 +189,8 @@ freecad-create-assembly \
 
 ## 依赖要求
 
-- 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务使用运行时配置或环境变量中的主机和端口
-- 相对输入输出路径会基于运行时配置或环境变量中的 `FREECAD_WORKSPACE_DIR` 解析
+- 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务使用 CLI 参数或环境变量中的主机和端口
+- 相对输入输出路径会基于 `--workspace` 或 `FREECAD_WORKSPACE_DIR` 解析
 - 对于离线 layout dataset 模式的 `freecad-layout-safe-move`：只需要 Python 3.9+
 - Python 3.9+
 

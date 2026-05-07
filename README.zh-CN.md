@@ -29,9 +29,12 @@ freecad
 ```
 
 请确保已安装 FreeCADMCP 插件，并且 XML-RPC 服务已启动。运行时默认值来自
-`FREECAD_RUNTIME_CONFIG`、项目内 `.freecad/freecad_runtime.conf`、用户级
-`~/.config/freecad-cli-tools/runtime.conf`，或作为兼容兜底的
-[config/freecad_runtime.conf](./config/freecad_runtime.conf)。
+在运行任何 CLI 之前，必须二选一：
+
+- 命令行显式传入 `--workspace /abs/path/to/workspace`
+- 或提前导出 `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
+
+现在已经不再支持项目配置、用户配置或 legacy runtime config 的自动发现。
 
 ### 2. 安装 CLI 工具包
 
@@ -60,8 +63,8 @@ freecad-layout-safe-move --component P005 --install-face 5 --move 228.8367181519
 对于外部安装面，同一条命令会以 `envelope.outer_size` 作为墙面参考，让组件保持在壳体外侧，
 同时继续约束它只能在目标安装面的二维边界内移动，避免沿墙面滑出边缘。
 
-在当前工作区的 skill 流程中，CLI 相对路径会基于运行时配置或环境变量里的
-`FREECAD_WORKSPACE_DIR` 解析。默认从 `./01_layout` 读取源输入，并把
+在当前工作区的 skill 流程中，CLI 相对路径会基于 `--workspace` 或
+`FREECAD_WORKSPACE_DIR` 指定的工作区根目录解析。默认从 `./01_layout` 读取源输入，并把
 新的数据集、STEP、GLB 输出到 `./02_geometry_edit`，统一使用
 `geometry_after` 作为文件名前缀，因此不会修改原始文件。
 
@@ -78,6 +81,12 @@ freecad-layout-safe-move --component P005 --install-face 5 --move 228.8367181519
 同样的值会写入 `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`，
 并附带 `output_files` 对象记录产出文件路径和存在状态。
 执行 CAD 操作时，FreeCAD 侧脚本会随着建模和导出阶段的实际推进刷新该 JSON。
+
+如果希望在正式构建前先检查工作区，可以执行：
+
+```bash
+freecad-validate-workspace --workspace /abs/path/to/workspace
+```
 
 ### 5. 批量同步多个位姿
 

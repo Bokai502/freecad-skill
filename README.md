@@ -29,10 +29,12 @@ freecad
 ```
 
 Make sure the FreeCADMCP addon is installed and has started the XML-RPC service.
-Runtime defaults come from `FREECAD_RUNTIME_CONFIG`, a project config such as
-`.freecad/freecad_runtime.conf`, the user config
-`~/.config/freecad-cli-tools/runtime.conf`, or the legacy
-[config/freecad_runtime.conf](./config/freecad_runtime.conf) fallback.
+Before running any CLI, either:
+
+- pass `--workspace /abs/path/to/workspace` on the command
+- or export `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
+
+There is no longer any project config, user config, or legacy runtime-config discovery.
 
 ### 2. Install the CLI package
 
@@ -63,7 +65,7 @@ keeps the component on the outside of the shell, and still constrains motion to 
 2D footprint so it cannot slide past the wall edge.
 
 In the current workspace skill workflow, relative CLI paths are resolved against
-`FREECAD_WORKSPACE_DIR` from the runtime config or environment.
+the explicit workspace root from `--workspace` or `FREECAD_WORKSPACE_DIR`.
 By default, source inputs are read from `./01_layout`, while generated dataset,
 STEP, and GLB outputs are written to `./02_geometry_edit` using the base name
 `geometry_after` so the originals are not modified.
@@ -82,6 +84,12 @@ The same values are written to
 `output_files` object for produced file paths and existence checks.
 During CAD operations, the FreeCAD-side script refreshes the JSON as modeling
 and export stages actually advance.
+
+You can validate the workspace before a longer build:
+
+```bash
+freecad-validate-workspace --workspace /abs/path/to/workspace
+```
 
 ### 5. Batch-sync multiple placements
 

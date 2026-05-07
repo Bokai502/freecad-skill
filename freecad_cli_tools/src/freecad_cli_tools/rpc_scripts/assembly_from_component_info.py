@@ -1,6 +1,7 @@
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,10 +25,179 @@ LAST_PROGRESS = {
     "modeling_percent": 0.0,
     "export_file_percent": 0.0,
 }
+TIMINGS = {
+    "build_seconds": {},
+    "step_template_seconds": {},
+    "exports": {},
+}
+
+FACE_DEFINITIONS = {
+    0: ("-x", 0, -1),
+    1: ("x", 0, 1),
+    2: ("-y", 1, -1),
+    3: ("y", 1, 1),
+    4: ("-z", 2, -1),
+    5: ("z", 2, 1),
+    6: ("ext-x", 0, -1),
+    7: ("ext+x", 0, 1),
+    8: ("ext-y", 1, -1),
+    9: ("ext+y", 1, 1),
+    10: ("ext-z", 2, -1),
+    11: ("ext+z", 2, 1),
+}
+IDENTITY_ROTATION_ROWS = [
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0],
+]
 
 
 def utc_now_iso():
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def matrix_to_rotation(matrix_rows):
+    matrix = FreeCAD.Matrix()
+    matrix.A11 = float(matrix_rows[0][0])
+    matrix.A12 = float(matrix_rows[0][1])
+    matrix.A13 = float(matrix_rows[0][2])
+    matrix.A14 = 0.0
+    matrix.A21 = float(matrix_rows[1][0])
+    matrix.A22 = float(matrix_rows[1][1])
+    matrix.A23 = float(matrix_rows[1][2])
+    matrix.A24 = 0.0
+    matrix.A31 = float(matrix_rows[2][0])
+    matrix.A32 = float(matrix_rows[2][1])
+    matrix.A33 = float(matrix_rows[2][2])
+    matrix.A34 = 0.0
+    matrix.A41 = 0.0
+    matrix.A42 = 0.0
+    matrix.A43 = 0.0
+    matrix.A44 = 1.0
+    return FreeCAD.Placement(matrix).Rotation
+
+
+def determinant3(matrix_rows):
+    return (
+        matrix_rows[0][0] * (matrix_rows[1][1] * matrix_rows[2][2] - matrix_rows[1][2] * matrix_rows[2][1])
+        - matrix_rows[0][1] * (matrix_rows[1][0] * matrix_rows[2][2] - matrix_rows[1][2] * matrix_rows[2][0])
+        + matrix_rows[0][2] * (matrix_rows[1][0] * matrix_rows[2][1] - matrix_rows[1][1] * matrix_rows[2][0])
+    )
+
+
+def signed_permutation_rotations():
+    rotations = []
+    import itertools
+    for perm in itertools.permutations(range(3)):
+        for signs in itertools.product((-1, 1), repeat=3):
+            matrix_rows = [[0.0, 0.0, 0.0] for _ in range(3)]
+            for row, col in enumerate(perm):
+                matrix_rows[row][col] = float(signs[row])
+            if determinant3(matrix_rows) == 1:
+                rotations.append(matrix_rows)
+    return rotations
+
+
+ROTATION_ROWS = signed_permutation_rotations()
+
+
+def is_external_face(face_id):
+    return int(face_id) >= 6
+
+
+def face_normal(face_id):
+    _, axis, direction = FACE_DEFINITIONS[int(face_id)]
+    normal = [0.0, 0.0, 0.0]
+    normal[axis] = float(direction)
+    return normal
+
+
+def apply_rotation_rows(rotation_rows, point):
+    return [
+        sum(float(rotation_rows[row][col]) * float(point[col]) for col in range(3))
+        for row in range(3)
+    ]
+
+
+def multiply_rotation_rows(left_rows, right_rows):
+    return [
+        [
+            sum(float(left_rows[row][k]) * float(right_rows[k][col]) for k in range(3))
+            for col in range(3)
+        ]
+        for row in range(3)
+    ]
+
+
+def installation_contact_world_face(install_face):
+    install_face = int(install_face)
+    if is_external_face(install_face):
+        return (install_face - 6) ^ 1
+    return install_face
+
+
+def choose_rotation_rows(component_face, target_envelope_face):
+    source = face_normal(component_face)
+    target = face_normal(installation_contact_world_face(target_envelope_face))
+    candidates = [
+        matrix_rows
+        for matrix_rows in ROTATION_ROWS
+        if apply_rotation_rows(matrix_rows, source) == target
+    ]
+    if not candidates:
+        raise RuntimeError("No valid orthogonal rotation found for requested face change.")
+    candidates.sort(key=lambda rows: sum(rows[i][i] for i in range(3)), reverse=True)
+    return candidates[0]
+
+
+def rotation_about_axis(axis_index, quarter_turns):
+    turns = int(quarter_turns) % 4
+    if turns == 0:
+        return [row[:] for row in IDENTITY_ROTATION_ROWS]
+    if axis_index == 0:
+        step = [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
+    elif axis_index == 1:
+        step = [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]
+    elif axis_index == 2:
+        step = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
+    else:
+        raise RuntimeError(f"Invalid rotation axis index {axis_index!r}")
+    result = [row[:] for row in IDENTITY_ROTATION_ROWS]
+    for _ in range(turns):
+        result = multiply_rotation_rows(step, result)
+    return result
+
+
+def normalize_spin_quarter_turns(angle_degrees):
+    quarter_turns = float(angle_degrees) / 90.0
+    rounded = round(quarter_turns)
+    if abs(quarter_turns - rounded) > 1e-9:
+        raise RuntimeError("Spin angle must be a multiple of 90 degrees.")
+    return int(rounded) % 4
+
+
+def apply_in_plane_spin_rows(base_rotation, target_envelope_face, spin_quarter_turns):
+    _, axis_index, direction = FACE_DEFINITIONS[int(target_envelope_face)]
+    signed_turns = spin_quarter_turns if direction > 0 else -spin_quarter_turns
+    return multiply_rotation_rows(
+        rotation_about_axis(axis_index, signed_turns),
+        base_rotation,
+    )
+
+
+def orientation_rows_from_normalized_placement(placement):
+    install_face = int(placement.get("install_face"))
+    component_face = int(placement.get("component_local_face"))
+    orientation_rows = choose_rotation_rows(component_face, install_face)
+    alignment = placement.get("alignment") or {}
+    spin_degrees = float(alignment.get("in_plane_rotation_deg", 0.0) or 0.0)
+    if abs(spin_degrees) > 1e-9:
+        orientation_rows = apply_in_plane_spin_rows(
+            orientation_rows,
+            install_face,
+            normalize_spin_quarter_turns(spin_degrees),
+        )
+    return orientation_rows
 
 
 def output_file_records():
@@ -194,7 +364,9 @@ def export_step_and_glb(objects, step_path):
     step_path = str(Path(step_path))
     glb_path = str(Path(step_path).with_suffix(".glb"))
     write_progress(100.0, 100.0, 0.0)
+    step_started = time.monotonic()
     Import.export(objects, step_path)
+    TIMINGS["exports"]["step_export_seconds"] = time.monotonic() - step_started
     write_progress(100.0, 100.0, 50.0)
     glb_objects = collect_glb_export_objects(objects)
     export_options = None
@@ -204,12 +376,16 @@ def export_step_and_glb(objects, step_path):
         except Exception:
             export_options = None
     if export_options is None:
+        glb_started = time.monotonic()
         ImportGui.export(glb_objects, glb_path)
     else:
         try:
+            glb_started = time.monotonic()
             ImportGui.export(glb_objects, glb_path, export_options)
         except TypeError:
+            glb_started = time.monotonic()
             ImportGui.export(glb_objects, glb_path)
+    TIMINGS["exports"]["glb_export_seconds"] = time.monotonic() - glb_started
     write_progress(100.0, 100.0, 100.0, success=True)
     return step_path, glb_path
 
@@ -296,6 +472,18 @@ def build_shape_template(shape_objects):
     return Part.makeCompound(shapes)
 
 
+def transformed_shape_and_bbox(shape, rotation_rows):
+    transformed = shape.copy()
+    transformed.Placement = FreeCAD.Placement(
+        FreeCAD.Vector(0.0, 0.0, 0.0),
+        matrix_to_rotation(rotation_rows),
+    )
+    bb = transformed.BoundBox
+    if bb is None or not bb.isValid():
+        return transformed, None
+    return transformed, bb
+
+
 def component_target_bbox(component):
     bbox = component.get("target_bbox") or {}
     minimum = bbox.get("min")
@@ -328,22 +516,33 @@ def cleanup_imported_objects(doc, imported_objects):
             doc.removeObject(obj.Name)
         except Exception:
             pass
-    if imported_objects:
-        try:
-            doc.recompute()
-        except Exception:
-            pass
 
 
-def build_step_template(doc, step_path):
-    before = {o.Name for o in doc.Objects}
-    Import.insert(step_path, doc.Name)
-    doc.recompute()
-    new_objs = [o for o in doc.Objects if o.Name not in before]
-    if not new_objs:
-        return None
-
+def close_document_quietly(doc_name):
     try:
+        FreeCAD.closeDocument(doc_name)
+    except Exception:
+        pass
+
+
+def build_step_template(step_path):
+    temp_doc_name = f"StepTemplate_{abs(hash(step_path))}"
+    for existing_name, existing_doc in list(FreeCAD.listDocuments().items()):
+        if existing_name == temp_doc_name or getattr(existing_doc, "Label", "") == temp_doc_name:
+            close_document_quietly(existing_name)
+
+    temp_doc = FreeCAD.newDocument(temp_doc_name)
+    if temp_doc.Label != temp_doc_name:
+        temp_doc.Label = temp_doc_name
+    started = time.monotonic()
+    try:
+        before = {o.Name for o in temp_doc.Objects}
+        Import.insert(step_path, temp_doc.Name)
+        temp_doc.recompute()
+        new_objs = [o for o in temp_doc.Objects if o.Name not in before]
+        if not new_objs:
+            return None
+
         top_level_new = [o for o in new_objs if not getattr(o, "InList", [])]
         template_roots = top_level_new or new_objs
         shape_objects = collect_shape_objects(template_roots)
@@ -361,7 +560,8 @@ def build_step_template(doc, step_path):
             "shape_object_count": len(shape_objects),
         }
     finally:
-        cleanup_imported_objects(doc, new_objs)
+        TIMINGS["step_template_seconds"][step_path] = time.monotonic() - started
+        close_document_quietly(temp_doc.Name)
 
 
 def create_step_component(doc, part, component_id, component, target_bbox, step_template_cache):
@@ -380,13 +580,16 @@ def create_step_component(doc, part, component_id, component, target_bbox, step_
     template = step_template_cache.get(step_path)
     cache_hit = template is not None
     if template is None:
-        template = build_step_template(doc, step_path)
+        template = build_step_template(step_path)
         if template is not None:
             step_template_cache[step_path] = template
     if template is None:
         return create_box_component(doc, part, component_id, component, target_bbox)
 
-    rb = template["bbox"]
+    rotation_rows = orientation_rows_from_normalized_placement(placement)
+    rotated_shape, rb = transformed_shape_and_bbox(template["shape"], rotation_rows)
+    if rb is None:
+        return create_box_component(doc, part, component_id, component, target_bbox)
     rb_center = bbox_center_from_bounds(rb)
     target_center = [
         (target_bbox["min"][axis] + target_bbox["max"][axis]) / 2.0 for axis in range(3)
@@ -403,7 +606,7 @@ def create_step_component(doc, part, component_id, component, target_bbox, step_
             delta[axis] = target_center[axis] - rb_center[axis]
 
     solid = doc.addObject("Part::Feature", component_id)
-    instance_shape = template["shape"].copy()
+    instance_shape = rotated_shape.copy()
     instance_shape.translate(FreeCAD.Vector(*delta))
     solid.Shape = instance_shape
     apply_color(solid, component.get("color"), transparency=0)
@@ -414,6 +617,7 @@ def create_step_component(doc, part, component_id, component, target_bbox, step_
         "object_names": [solid.Name],
         "fallback": False,
         "translation": delta,
+        "rotation_rows": rotation_rows,
         "step_path": step_path,
         "cache_hit": cache_hit,
         "shape_object_count": int(template.get("shape_object_count", 1)),
@@ -421,6 +625,7 @@ def create_step_component(doc, part, component_id, component, target_bbox, step_
 
 
 try:
+    build_started = time.monotonic()
     write_progress(100.0, 0.0, 0.0)
     path = Path(INPUT_PATH)
     with path.open("r", encoding="utf-8") as handle:
@@ -438,10 +643,10 @@ try:
         doc.Label = DOC_NAME
     FreeCAD.setActiveDocument(doc.Name)
 
-    try:
-        assembly = doc.addObject("Assembly::AssemblyObject", "Assembly")
-    except Exception:
-        assembly = doc.addObject("App::Part", "Assembly")
+    # This workflow builds a static export assembly, not a kinematic one.
+    # Using App::Part avoids triggering the Assembly workbench solver (MbD),
+    # which can stall execute_code for large imported STEP payloads.
+    assembly = doc.addObject("App::Part", "Assembly")
 
     envelope_name = build_envelope(doc, assembly, data)
     created = []
@@ -454,6 +659,7 @@ try:
     components = list(data.get("components", {}).items())
     total_components = max(len(components), 1)
     for index, (component_id, component) in enumerate(components, start=1):
+        component_started = time.monotonic()
         target_bbox = component_target_bbox(component)
         source = component.get("source") or {}
         fallback_reason = source.get("fallback_reason")
@@ -490,6 +696,7 @@ try:
             fallback_box_component_ids.append(component_id)
             if fallback_reason:
                 fallback_components_by_reason.setdefault(fallback_reason, []).append(component_id)
+        TIMINGS["build_seconds"][component_id] = time.monotonic() - component_started
         write_progress(100.0, (index / total_components) * 90.0, 0.0)
 
     write_progress(100.0, 95.0, 0.0)
@@ -518,6 +725,10 @@ try:
                 "box_component_ids": box_component_ids,
                 "fallback_box_component_ids": fallback_box_component_ids,
                 "fallback_components_by_reason": fallback_components_by_reason,
+                "timings": {
+                    **TIMINGS,
+                    "total_build_seconds": time.monotonic() - build_started,
+                },
                 "envelope_object": envelope_name,
                 "view_name": VIEW_NAME,
                 "view_updated": view_updated,

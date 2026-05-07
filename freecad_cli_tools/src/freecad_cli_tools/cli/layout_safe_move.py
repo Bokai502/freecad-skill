@@ -54,6 +54,7 @@ from freecad_cli_tools.runtime_config import (
     resolve_geometry_after_step_path,
     resolve_workspace_path,
 )
+from freecad_cli_tools.workspace import add_workspace_arg, validate_workspace_inputs, validate_workspace_root
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,6 +72,7 @@ def parse_args() -> argparse.Namespace:
             "'./01_layout/layout_topology.json' under the configured workspace root."
         ),
     )
+    add_workspace_arg(parser)
     parser.add_argument(
         "--geom",
         help=(
@@ -445,6 +447,12 @@ def classify_cad_sync_result(
 
 def main() -> int:
     args = parse_args()
+    validate_workspace_root(args.workspace)
+    validate_workspace_inputs(
+        args.workspace,
+        require_layout_topology=args.layout_topology is None,
+        require_geom=args.geom is None,
+    )
     layout_topology_input_path = resolve_workspace_path(
         args.layout_topology or get_default_layout_topology_path()
     )

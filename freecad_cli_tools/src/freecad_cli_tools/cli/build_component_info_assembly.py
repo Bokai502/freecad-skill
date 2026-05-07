@@ -39,6 +39,7 @@ from freecad_cli_tools.runtime_config import (
     get_default_workspace_dir,
     resolve_workspace_path,
 )
+from freecad_cli_tools.workspace import add_workspace_arg, validate_workspace_inputs, validate_workspace_root
 
 COMPONENT_INFO_ASSEMBLY_STEM = "component_info_assembly"
 
@@ -55,6 +56,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--layout-topology", help="Path to layout_topology.json.")
     parser.add_argument("--geom", help="Path to geom.json.")
+    add_workspace_arg(parser)
     parser.add_argument(
         "--geom-component-info",
         help=(
@@ -169,6 +171,13 @@ def registry_inputs(
 
 def main() -> None:
     args = parse_args()
+    validate_workspace_root(args.workspace)
+    validate_workspace_inputs(
+        args.workspace,
+        require_layout_topology=args.layout_topology is None,
+        require_geom=args.geom is None,
+        require_component_info=args.geom_component_info is None,
+    )
     layout_topology_path = resolve_workspace_path(
         args.layout_topology or get_default_layout_topology_path()
     )

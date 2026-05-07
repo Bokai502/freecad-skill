@@ -8,15 +8,11 @@ description: "FreeCAD workflow for layout_topology.json, geom.json, and geom_com
 ## Prerequisites
 
 - Use the packaged CLI entry points under `/data/lbk/freecad_skills/freecad-skill/freecad_cli_tools` instead of ad hoc Python when a command already exists.
-- Resolve relative paths from `FREECAD_WORKSPACE_DIR` in the runtime config or environment. Runtime config lookup prefers `FREECAD_RUNTIME_CONFIG`, then project `.freecad/freecad_runtime.conf`, then user config, with `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf` kept as a fallback.
-- Before running any FreeCAD CLI, resolve and report the effective workspace root. Use this order exactly:
-  1. `FREECAD_WORKSPACE_DIR` environment variable, if set.
-  2. `FREECAD_WORKSPACE_DIR` from `FREECAD_RUNTIME_CONFIG`, if that environment variable points to a config file.
-  3. `FREECAD_WORKSPACE_DIR` from the first project config found at `.freecad/freecad_runtime.conf` or `freecad_runtime.conf` under the current working directory.
-  4. `FREECAD_WORKSPACE_DIR` from the user config at `$XDG_CONFIG_HOME/freecad-cli-tools/runtime.conf` or `~/.config/freecad-cli-tools/runtime.conf`.
-  5. `FREECAD_WORKSPACE_DIR` from `/data/lbk/freecad_skills/freecad-skill/config/freecad_runtime.conf`.
-- If the resolved workspace is missing or still relative, stop and report the ambiguity instead of guessing from the current directory or the skill directory.
-- Expect FreeCAD RPC at the host and port configured in that file. If RPC is unavailable, report the connection problem clearly instead of guessing.
+- Resolve relative paths only from an explicit workspace root:
+  1. `--workspace /abs/path/to/workspace`
+  2. `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
+- If neither source is present, or the workspace path is not absolute, stop immediately instead of guessing from the current directory, repo root, skill directory, or any config file.
+- Expect FreeCAD RPC at the host and port from CLI flags or environment. If RPC is unavailable, report the connection problem clearly instead of guessing.
 
 ## Route The Request
 
@@ -33,7 +29,7 @@ description: "FreeCAD workflow for layout_topology.json, geom.json, and geom_com
 - The component-info CAD-asset build also uses `./01_layout/geom_component_info.json` by default, but only after the route rules select `guides/create-assembly-from-component-info.md`.
 - Default output paths live under `./02_geometry_edit` under `FREECAD_WORKSPACE_DIR`.
 - Never infer dataset input paths from the repository root, the skill backup directory, or the process `cwd` once a workspace root has been resolved. Expand defaults to absolute paths before reasoning about missing files or running commands.
-- If default input files are not present under the resolved workspace, do not search broadly for similarly named files. Ask for or require an explicit `FREECAD_WORKSPACE_DIR`, `FREECAD_RUNTIME_CONFIG`, `--layout-topology`, and `--geom` path.
+- If default input files are not present under the resolved workspace, do not search broadly for similarly named files. Ask for or require an explicit `--workspace`, `FREECAD_WORKSPACE_DIR`, `--layout-topology`, and `--geom` path.
 - Placeholder and safe-move CAD artifacts must be named `geometry_after.step` and `geometry_after.glb`. Component-info CAD-asset builds must be named `component_info_assembly.step` and `component_info_assembly.glb`. If a CLI accepts an output path, use it only to choose the directory or parent path unless the guide says otherwise.
 - `freecad-layout-safe-move` writes non-destructive dataset outputs such as `geometry_after.layout_topology.json` and `geometry_after.geom.json`. Do not overwrite the source dataset unless the workflow explicitly says to.
 - Preserve the component-local contact face when changing the installation face. Derive runtime orientation from `placement.mount_face_id`, `placement.component_mount_face_id`, and `placement.alignment.in_plane_rotation_deg` instead of storing `placement.rotation_matrix`.
