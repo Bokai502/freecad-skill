@@ -53,9 +53,9 @@ available, falls back to box placeholders when needed, and exports:
 | `--geom-component-info` | no | Source `geom_component_info.json`. Defaults to `./01_layout/geom_component_info.json`. |
 | `--doc-name` | yes | FreeCAD document name to create. |
 | `--output` | no | Optional STEP output path or directory. Export names remain `component_info_assembly.step` and `component_info_assembly.glb`. |
-| `--max-step-size-mb` | no | Maximum STEP/STP size to import before falling back to a box. Use `-1` to disable the limit. |
+| `--max-step-size-mb` | no | Maximum STEP/STP size to import before falling back to a box. Defaults to `FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB`, then `/data/lbk/codex_web/config.json` field `freecad.componentInfoMaxStepSizeMb`, then `100`. Use `-1` to disable the limit. |
 | `--no-fit-view` | no | Skip GUI fit/view update. |
-| `--host`, `--port` | no | FreeCAD RPC settings. |
+| `--host`, `--port` | no | FreeCAD RPC settings. Defaults come from `FREECAD_RPC_HOST` / `FREECAD_RPC_PORT`, then `/data/lbk/codex_web/config.json` fields `freecad.rpcHost` / `freecad.rpcPort`. |
 
 ## Data Mapping
 
@@ -89,6 +89,12 @@ For each component in `geom_component_info.json`:
 
 ## Command Pattern
 
+Read resolved defaults first:
+
+```bash
+freecad-runtime-config
+```
+
 ```bash
 freecad-create-assembly-from-component-info \
   --layout-topology ./01_layout/layout_topology.json \
@@ -104,11 +110,12 @@ Note: this command can be slow when it imports real STEP/STP CAD assets and
 exports STEP/GLB files. Be patient and wait for the progress log or final
 artifacts before assuming the build has stalled.
 
-The command writes CAD artifacts under the configured workspace by default:
+The command writes CAD artifacts under the configured workspace reported by
+`freecad-runtime-config` by default:
 
-- STEP: `$FREECAD_WORKSPACE_DIR/02_geometry_edit/component_info_assembly.step`
-- GLB: `$FREECAD_WORKSPACE_DIR/02_geometry_edit/component_info_assembly.glb`
-- Progress JSON: `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`
+- STEP: `<configured workspace>/02_geometry_edit/component_info_assembly.step`
+- GLB: `<configured workspace>/02_geometry_edit/component_info_assembly.glb`
+- Progress JSON: `<configured workspace>/logs/progress_percentages.json`
 
 If `--output` is provided, it only selects the output directory or parent path.
 The exported filenames still remain `component_info_assembly.step` and

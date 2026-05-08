@@ -9,15 +9,21 @@ from topology and geometry only.
 
 ## Preferred CLI
 
+Read resolved defaults first:
+
+```bash
+freecad-runtime-config
+```
+
 ```bash
 freecad-create-assembly \
   --doc-name LayoutAssembly
 ```
 
-By default, the CLI resolves relative paths from the explicit workspace root
-from `--workspace` or `FREECAD_WORKSPACE_DIR`, reads `./01_layout/layout_topology.json` and
-`./01_layout/geom.json`, then exports the placeholder assembly to
-`./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb`.
+By default, the CLI resolves relative paths from the configured workspace root
+reported by `freecad-runtime-config`, reads the reported
+`layout_topology_path` and `geom_path`, then exports the placeholder assembly to
+the reported `geometry_after_step_path` and sibling `geometry_after.glb`.
 
 FreeCAD consumes a normalized intermediate spec during RPC execution and exports
 the placeholder model directly to `geometry_after.step` and
@@ -162,7 +168,7 @@ The CLI result includes:
 - `layout_completion_percent`
 - `modeling_percent`
 - `export_file_percent`
-- `progress_json_path`: `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`
+- `progress_json_path`: `<configured workspace>/logs/progress_percentages.json`
 - progress log `output_files.step` and `output_files.glb`
 
 ## Rules

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 import pytest
 
+import freecad_cli_tools.runtime_config as runtime_config
 from freecad_cli_tools.artifact_registry import (
     artifact_entry,
     finalize_registry_run,
     start_registry_run,
 )
+from freecad_cli_tools.cli import runtime_config as runtime_config_command
 from freecad_cli_tools.cli_support import (
     describe_rpc_failure,
     extract_output_payload,
@@ -20,6 +23,8 @@ from freecad_cli_tools.runtime_config import (
     get_default_artifact_registry_dir,
     get_default_component_info_max_step_size_mb,
     get_default_geometry_after_step_path,
+    get_default_rpc_host,
+    get_default_rpc_port,
     get_default_workspace_dir,
     resolve_geometry_after_step_path,
     resolve_workspace_path,
@@ -28,11 +33,100 @@ from freecad_cli_tools.runtime_config import (
 from freecad_cli_tools.workspace import validate_workspace_inputs, validate_workspace_root
 
 
-def test_get_default_workspace_dir_requires_environment(monkeypatch) -> None:
+def write_runtime_config(monkeypatch, tmp_path: Path, freecad_config: dict) -> Path:
+    config_path = tmp_path / "config.json"
+    config_path.write_text(json.dumps({"freecad": freecad_config}), encoding="utf-8")
+    monkeypatch.setattr(runtime_config, "CODEX_WEB_CONFIG_PATH", config_path)
+    monkeypatch.setattr(runtime_config, "_CONFIG_CACHE", None)
+    monkeypatch.setattr(
+        runtime_config,
+        "FALLBACK_RPC_PORT",
+        runtime_config._get_freecad_config_value("rpcPort", "9877") or "9877",
+    )
+    monkeypatch.setattr(
+        runtime_config,
+        "FREECAD_WORKSPACE_DIR",
+        runtime_config._get_freecad_config_value("workspaceDir"),
+    )
+    return config_path
+
+
+def test_get_default_workspace_dir_requires_environment_or_config(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    config_path = tmp_path / "missing-config.json"
+    monkeypatch.setattr(runtime_config, "CODEX_WEB_CONFIG_PATH", config_path)
+    monkeypatch.setattr(runtime_config, "_CONFIG_CACHE", None)
+    monkeypatch.setattr(runtime_config, "FREECAD_WORKSPACE_DIR", None)
 
     with pytest.raises(RuntimeError, match="FREECAD_WORKSPACE_DIR is not set"):
         get_default_workspace_dir()
+
+
+def test_runtime_config_reads_codex_web_freecad_defaults(monkeypatch, tmp_path: Path) -> None:
+    workspace = tmp_path / "configured-workspace"
+    write_runtime_config(
+        monkeypatch,
+        tmp_path,
+        {
+            "workspaceDir": str(workspace),
+            "rpcHost": "127.0.0.1",
+            "rpcPort": 9988,
+            "componentInfoMaxStepSizeMb": 12.5,
+        },
+    )
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.delenv("FREECAD_RPC_HOST", raising=False)
+    monkeypatch.delenv("FREECAD_RPC_PORT", raising=False)
+    monkeypatch.delenv("FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB", raising=False)
+
+    assert get_default_workspace_dir() == workspace.resolve()
+    assert get_default_rpc_host() == "127.0.0.1"
+    assert get_default_rpc_port() == 9988
+    assert get_default_component_info_max_step_size_mb() == 12.5
+
+
+def test_runtime_config_cli_prints_resolved_values(monkeypatch, tmp_path: Path, capsys) -> None:
+    workspace = tmp_path / "workspace"
+    write_runtime_config(
+        monkeypatch,
+        tmp_path,
+        {
+            "workspaceDir": str(workspace),
+            "rpcHost": "127.0.0.1",
+            "rpcPort": 9988,
+            "componentInfoMaxStepSizeMb": 12.5,
+        },
+    )
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.delenv("FREECAD_RPC_HOST", raising=False)
+    monkeypatch.delenv("FREECAD_RPC_PORT", raising=False)
+    monkeypatch.delenv("FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB", raising=False)
+    monkeypatch.setattr(sys, "argv", ["freecad-runtime-config"])
+
+    runtime_config_command.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["workspace_dir"] == str(workspace.resolve())
+    assert payload["rpc_host"] == "127.0.0.1"
+    assert payload["rpc_port"] == 9988
+    assert payload["component_info_max_step_size_mb"] == 12.5
+    assert payload["layout_topology_path"] == str(
+        workspace.resolve() / "01_layout" / "layout_topology.json"
+    )
+
+
+def test_runtime_config_cli_prints_single_key(monkeypatch, tmp_path: Path, capsys) -> None:
+    workspace = tmp_path / "workspace"
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(workspace), "rpcPort": 9988})
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.delenv("FREECAD_RPC_PORT", raising=False)
+    monkeypatch.setattr(sys, "argv", ["freecad-runtime-config", "--key", "rpc_port"])
+
+    runtime_config_command.main()
+
+    assert json.loads(capsys.readouterr().out) == {"rpc_port": 9988}
 
 
 def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:

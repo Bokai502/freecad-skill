@@ -2,46 +2,91 @@
 
 Workspace resolution is intentionally strict:
 - prefer explicit `--workspace` handled by CLI entry points
-- otherwise require `FREECAD_WORKSPACE_DIR` in the environment
+- otherwise use `FREECAD_WORKSPACE_DIR` or the codex-web config
 
 No project config, user config, or legacy config discovery remains.
 """
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
+from typing import Any
+
+CODEX_WEB_CONFIG_PATH = Path("/data/lbk/codex_web/config.json")
+_CONFIG_CACHE: dict[str, Any] | None = None
+
+
+def _load_codex_web_config() -> dict[str, Any]:
+    """Return the codex-web config if it is available and valid."""
+    global _CONFIG_CACHE
+    if _CONFIG_CACHE is not None:
+        return _CONFIG_CACHE
+
+    try:
+        payload = json.loads(CODEX_WEB_CONFIG_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        payload = {}
+
+    _CONFIG_CACHE = payload if isinstance(payload, dict) else {}
+    return _CONFIG_CACHE
+
+
+def _get_freecad_config_value(key: str, default: str | None = None) -> str | None:
+    freecad_config = _load_codex_web_config().get("freecad", {})
+    if not isinstance(freecad_config, dict):
+        return default
+
+    value = freecad_config.get(key)
+    if value is None:
+        return default
+    if isinstance(value, str) and not value.strip():
+        return default
+    return str(value)
+
 
 FALLBACK_RPC_HOST = "localhost"
-FALLBACK_RPC_PORT = "9877"
+FALLBACK_RPC_PORT = _get_freecad_config_value("rpcPort", "9877")
 FALLBACK_COMPONENT_INFO_MAX_STEP_SIZE_MB = "100"
+FREECAD_WORKSPACE_DIR = _get_freecad_config_value("workspaceDir")
 DEFAULT_LAYOUT_INPUT_DIR = Path("./01_layout")
 DEFAULT_GEOMETRY_EDIT_DIR = Path("./02_geometry_edit")
 DEFAULT_GEOMETRY_AFTER_STEM = "geometry_after"
 
 
-def get_runtime_setting(key: str, default: str) -> str:
-    """Return a runtime setting from environment only."""
-    return os.getenv(key, default)
+def get_runtime_setting(key: str, default: str, config_key: str | None = None) -> str:
+    """Return a runtime setting from environment, codex-web config, or fallback."""
+    env_value = os.getenv(key)
+    if env_value is not None and env_value.strip():
+        return env_value
+    if config_key is not None:
+        config_value = _get_freecad_config_value(config_key)
+        if config_value is not None:
+            return config_value
+    return default
 
 
 def get_default_rpc_host() -> str:
     """Return the configured default RPC host."""
-    return get_runtime_setting("FREECAD_RPC_HOST", FALLBACK_RPC_HOST)
+    return get_runtime_setting("FREECAD_RPC_HOST", FALLBACK_RPC_HOST, "rpcHost")
 
 
 def get_default_rpc_port() -> int:
     """Return the configured default RPC port."""
-    return int(get_runtime_setting("FREECAD_RPC_PORT", FALLBACK_RPC_PORT))
+    return int(get_runtime_setting("FREECAD_RPC_PORT", FALLBACK_RPC_PORT, "rpcPort"))
 
 
 def get_default_workspace_dir() -> Path:
-    """Return the workspace root from environment, or fail fast."""
+    """Return the workspace root from environment or codex-web config."""
     raw = os.getenv("FREECAD_WORKSPACE_DIR")
     if raw is None or not raw.strip():
+        raw = FREECAD_WORKSPACE_DIR
+    if raw is None or not raw.strip():
         raise RuntimeError(
-            "FREECAD_WORKSPACE_DIR is not set. Pass --workspace to the CLI entry point "
-            "or export FREECAD_WORKSPACE_DIR before running the command."
+            "FREECAD_WORKSPACE_DIR is not set and freecad.workspaceDir is not configured "
+            f"in {CODEX_WEB_CONFIG_PATH}. Pass --workspace to the CLI entry point, export "
+            "FREECAD_WORKSPACE_DIR, or configure freecad.workspaceDir before running the command."
         )
     return Path(raw).expanduser().resolve()
 
@@ -59,6 +104,7 @@ def get_default_component_info_max_step_size_mb() -> float:
         get_runtime_setting(
             "FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB",
             FALLBACK_COMPONENT_INFO_MAX_STEP_SIZE_MB,
+            "componentInfoMaxStepSizeMb",
         )
     )
 

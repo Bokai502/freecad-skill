@@ -97,6 +97,12 @@ Collect these before running a move:
 
 ## Command Patterns
 
+Read resolved defaults first:
+
+```bash
+freecad-runtime-config
+```
+
 ### Move On Current Face
 
 Use this when the user only asks to move a component on its current installation
@@ -188,7 +194,9 @@ update STEP or GLB.
 - `glb_path`: updated GLB path when `--sync-cad` is used
 - `progress_percentages`: grouped progress percentages
 - `progress_json_path`: JSON log path under
-  `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`
+  `<configured workspace>/logs/progress_percentages.json`; use
+  `freecad-runtime-config` to read the configured workspace root before running
+  the move command
 - progress log `output_files`: produced `layout_topology`, `geom`, `step`, and
   `glb` paths with existence checks
 - `layout_completion_percent`: dataset update completion percentage
