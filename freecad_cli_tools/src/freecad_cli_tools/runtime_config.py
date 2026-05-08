@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 
 FALLBACK_RPC_HOST = "localhost"
-FALLBACK_RPC_PORT = "9876"
+FALLBACK_RPC_PORT = "9877"
 FALLBACK_COMPONENT_INFO_MAX_STEP_SIZE_MB = "100"
 DEFAULT_LAYOUT_INPUT_DIR = Path("./01_layout")
 DEFAULT_GEOMETRY_EDIT_DIR = Path("./02_geometry_edit")

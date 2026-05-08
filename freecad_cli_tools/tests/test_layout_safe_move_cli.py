@@ -302,7 +302,7 @@ def test_sync_layout_result_to_cad_sends_source_pose(monkeypatch, tmp_path: Path
         doc_name="DemoDoc",
         step_output=None,
         host="localhost",
-        port=9876,
+        port=9877,
         component_object=None,
         part_object=None,
         component="P022",
