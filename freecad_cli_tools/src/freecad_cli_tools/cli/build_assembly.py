@@ -80,7 +80,10 @@ def stage_input_data(data: dict[str, object], target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     for directory in (target.parent, target.parent.parent, target.parent.parent.parent):
         if directory.exists():
-            os.chmod(directory, 0o777)
+            try:
+                os.chmod(directory, 0o777)
+            except PermissionError:
+                pass
     target.write_text(json.dumps(data, indent=2), encoding="utf-8")
 
 
@@ -88,14 +91,17 @@ def stage_output_dir(target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     for directory in (target.parent, target.parent.parent, target.parent.parent.parent):
         if directory.exists():
-            os.chmod(directory, 0o777)
+            try:
+                os.chmod(directory, 0o777)
+            except PermissionError:
+                pass
 
 
 def copy_runtime_export(staged_output: Path, final_output: Path) -> None:
     if staged_output.resolve() == final_output.resolve():
         return
     final_output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(staged_output, final_output)
+    shutil.copyfile(staged_output, final_output)
 
 
 def collect_runtime_exports(staged_output: Path, final_output: Path) -> None:

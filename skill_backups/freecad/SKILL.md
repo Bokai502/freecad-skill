@@ -8,12 +8,12 @@ description: "FreeCAD workflow for layout_topology.json, geom.json, and geom_com
 ## Prerequisites
 
 - Use the packaged CLI entry points under `/data/lbk/freecad_skills/freecad-skill/freecad_cli_tools` instead of ad hoc Python when a command already exists.
-- Before running a workflow command, call `freecad-runtime-config` to read the resolved workspace, RPC settings, default input paths, default output paths, and component-info STEP size limit.
-- Resolve relative paths only from the configured workspace root reported by `freecad-runtime-config`; that command applies this priority order:
-  1. CLI/workflow `--workspace /abs/path/to/workspace`
-  2. `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
-  3. `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`
-- If no workspace source is present, or the workspace path is not absolute, stop immediately instead of guessing from the current directory, repo root, or skill directory.
+- Before running a workflow command, call `freecad-runtime-config` to read the resolved workspace, RPC settings, default input paths, default output paths, and component-info STEP size limit. If the workflow will pass `--workspace`, set `FREECAD_WORKSPACE_DIR` to the same workspace before calling `freecad-runtime-config`; the runtime-config command does not accept a `--workspace` argument.
+- Resolve relative input and output paths only from the configured workspace root. Workflow commands apply this priority order:
+  1. CLI/workflow `--workspace /path/to/workspace`; relative workspace values are resolved to an absolute path by the CLI before defaults are expanded.
+  2. `FREECAD_WORKSPACE_DIR=/path/to/workspace`; relative values are resolved to an absolute path by the CLI runtime config.
+  3. `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`; relative values are resolved to an absolute path by the CLI runtime config.
+- If no workspace source is present, stop immediately instead of guessing from the current directory, repo root, or skill directory. If a workspace source is relative, use the absolute path reported by `freecad-runtime-config` or by the workflow command's resolved outputs.
 - Expect FreeCAD RPC at the `rpc_host` and `rpc_port` reported by `freecad-runtime-config`, unless the active workflow command is given explicit `--host` or `--port` overrides. If RPC is unavailable, report the connection problem clearly instead of guessing.
 
 ## Route The Request
