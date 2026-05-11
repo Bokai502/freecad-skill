@@ -8,11 +8,13 @@ description: "FreeCAD workflow for layout_topology.json, geom.json, and geom_com
 ## Prerequisites
 
 - Use the packaged CLI entry points under `/data/lbk/freecad_skills/freecad-skill/freecad_cli_tools` instead of ad hoc Python when a command already exists.
-- Before running a workflow command, call `freecad-runtime-config` to read the resolved workspace, RPC settings, default input paths, default output paths, and component-info STEP size limit. If the workflow will pass `--workspace`, set `FREECAD_WORKSPACE_DIR` to the same workspace before calling `freecad-runtime-config`; the runtime-config command does not accept a `--workspace` argument.
+- Before running a workflow command, call `freecad-runtime-config` to read the resolved workspace, RPC settings, default input paths, default output paths, and component-info STEP size limit.
+- `freecad-runtime-config` does not accept `--workspace`. To inspect defaults for a specific workspace, set `FREECAD_WORKSPACE_DIR=/path/to/workspace` for that command, for example `FREECAD_WORKSPACE_DIR=/data/lbk/codex_web/FreeCAD_data/v4_data freecad-runtime-config`.
+- Workflow commands such as `freecad-create-assembly`, `freecad-create-assembly-from-component-info`, and `freecad-layout-safe-move` do accept `--workspace`. When you plan to pass `--workspace` to a workflow command, call `freecad-runtime-config` first with `FREECAD_WORKSPACE_DIR` set to the same workspace so the inspected defaults match the workflow run.
 - Resolve relative input and output paths only from the configured workspace root. Workflow commands apply this priority order:
-  1. CLI/workflow `--workspace /path/to/workspace`; relative workspace values are resolved to an absolute path by the CLI before defaults are expanded.
-  2. `FREECAD_WORKSPACE_DIR=/path/to/workspace`; relative values are resolved to an absolute path by the CLI runtime config.
-  3. `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`; relative values are resolved to an absolute path by the CLI runtime config.
+  1. CLI/workflow `--workspace /path/to/workspace`; relative paths are resolved under that workspace.
+  2. `FREECAD_WORKSPACE_DIR=/path/to/workspace`; relative paths are resolved under that workspace.
+  3. `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`; relative paths are resolved under that workspace.
 - If no workspace source is present, stop immediately instead of guessing from the current directory, repo root, or skill directory. If a workspace source is relative, use the absolute path reported by `freecad-runtime-config` or by the workflow command's resolved outputs.
 - Expect FreeCAD RPC at the `rpc_host` and `rpc_port` reported by `freecad-runtime-config`, unless the active workflow command is given explicit `--host` or `--port` overrides. If RPC is unavailable, report the connection problem clearly instead of guessing.
 
@@ -31,7 +33,7 @@ description: "FreeCAD workflow for layout_topology.json, geom.json, and geom_com
 - The component-info CAD-asset build also uses `./01_layout/geom_component_info.json` by default, but only after the route rules select `guides/create-assembly-from-component-info.md`.
 - Default output paths live under `./02_geometry_edit` under the configured workspace root.
 - Never infer dataset input paths from the repository root, the skill backup directory, or the process `cwd` once a workspace root has been resolved. Expand defaults to absolute paths before reasoning about missing files or running commands.
-- If default input files are not present under the resolved workspace, do not search broadly for similarly named files. Ask for or require an explicit `--workspace`, `FREECAD_WORKSPACE_DIR`, `freecad.workspaceDir`, `--layout-topology`, and `--geom` path.
+- If default input files are not present under the resolved workspace, do not search broadly for similarly named files. Ask for or require an explicit workflow `--workspace`, `FREECAD_WORKSPACE_DIR`, `freecad.workspaceDir`, `--layout-topology`, and `--geom` path. Do not pass `--workspace` to `freecad-runtime-config`; use `FREECAD_WORKSPACE_DIR` for that command.
 - Placeholder and safe-move CAD artifacts must be named `geometry_after.step` and `geometry_after.glb`. Component-info CAD-asset builds must be named `component_info_assembly.step` and `component_info_assembly.glb`. If a CLI accepts an output path, use it only to choose the directory or parent path unless the guide says otherwise.
 - `freecad-layout-safe-move` writes non-destructive dataset outputs such as `geometry_after.layout_topology.json` and `geometry_after.geom.json`. Do not overwrite the source dataset unless the workflow explicitly says to.
 - Preserve the component-local contact face when changing the installation face. Derive runtime orientation from `placement.mount_face_id`, `placement.component_mount_face_id`, and `placement.alignment.in_plane_rotation_deg` instead of storing `placement.rotation_matrix`.

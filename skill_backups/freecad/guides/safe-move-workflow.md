@@ -97,10 +97,16 @@ Collect these before running a move:
 
 ## Command Patterns
 
-Read resolved defaults first:
+Read resolved defaults first. `freecad-runtime-config` does not accept
+`--workspace`; use `FREECAD_WORKSPACE_DIR` when you need to inspect a specific
+workspace:
 
 ```bash
 freecad-runtime-config
+```
+
+```bash
+FREECAD_WORKSPACE_DIR=/abs/path/to/workspace freecad-runtime-config
 ```
 
 ### Move On Current Face
@@ -110,6 +116,7 @@ surface.
 
 ```bash
 freecad-layout-safe-move \
+  --workspace /abs/path/to/workspace \
   --component P022 \
   --move 20 0 0 \
   --sync-cad \

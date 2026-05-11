@@ -89,14 +89,21 @@ For each component in `geom_component_info.json`:
 
 ## Command Pattern
 
-Read resolved defaults first:
+Read resolved defaults first. `freecad-runtime-config` does not accept
+`--workspace`; use `FREECAD_WORKSPACE_DIR` when you need to inspect a specific
+workspace:
 
 ```bash
 freecad-runtime-config
 ```
 
 ```bash
+FREECAD_WORKSPACE_DIR=/abs/path/to/workspace freecad-runtime-config
+```
+
+```bash
 freecad-create-assembly-from-component-info \
+  --workspace /abs/path/to/workspace \
   --layout-topology ./01_layout/layout_topology.json \
   --geom ./01_layout/geom.json \
   --geom-component-info ./01_layout/geom_component_info.json \
@@ -110,8 +117,10 @@ Note: this command can be slow when it imports real STEP/STP CAD assets and
 exports STEP/GLB files. Be patient and wait for the progress log or final
 artifacts before assuming the build has stalled.
 
-The command writes CAD artifacts under the configured workspace reported by
-`freecad-runtime-config` by default:
+The command writes CAD artifacts under the workflow `--workspace` when
+provided, then under `FREECAD_WORKSPACE_DIR` or configured defaults. If you
+inspect defaults with `freecad-runtime-config`, use the same workspace through
+`FREECAD_WORKSPACE_DIR`:
 
 - STEP: `<configured workspace>/02_geometry_edit/component_info_assembly.step`
 - GLB: `<configured workspace>/02_geometry_edit/component_info_assembly.glb`

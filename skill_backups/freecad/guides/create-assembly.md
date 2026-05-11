@@ -9,19 +9,26 @@ from topology and geometry only.
 
 ## Preferred CLI
 
-Read resolved defaults first:
+Read resolved defaults first. `freecad-runtime-config` does not accept
+`--workspace`; use `FREECAD_WORKSPACE_DIR` when you need to inspect a specific
+workspace:
 
 ```bash
 freecad-runtime-config
 ```
 
 ```bash
+FREECAD_WORKSPACE_DIR=/abs/path/to/workspace freecad-runtime-config
+```
+
+```bash
 freecad-create-assembly \
+  --workspace /abs/path/to/workspace \
   --doc-name LayoutAssembly
 ```
 
-By default, the CLI resolves relative paths from the configured workspace root
-reported by `freecad-runtime-config`, reads the reported
+By default, the CLI resolves relative paths from the workflow `--workspace`
+when provided, then from `FREECAD_WORKSPACE_DIR` or configured defaults. It reads the reported
 `layout_topology_path` and `geom_path`, then exports the placeholder assembly to
 the reported `geometry_after_step_path` and sibling `geometry_after.glb`.
 
