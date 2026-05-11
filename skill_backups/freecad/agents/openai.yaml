@@ -1,4 +1,4 @@
 interface:
   display_name: "FreeCAD"
-  short_description: "Build, move, and replace FreeCAD assemblies"
-  default_prompt: "Use $freecad to build, move, or replace components in the FreeCAD layout-dataset workflow."
+  short_description: "Run FreeCAD layout CLI workflows"
+  default_prompt: "Use $freecad to inspect runtime/workspace config, build layout or component-info assemblies, safely move components, and verify STEP/GLB workflow outputs."

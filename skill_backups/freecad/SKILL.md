@@ -1,6 +1,6 @@
 ---
 name: freecad
-description: "FreeCAD workflow for layout_topology.json, geom.json, and geom_component_info.json assembly generation plus safe component moves. Use when Codex needs to operate the FreeCAD CLI or RPC workflow in this repo to build a placeholder assembly, build a direct STEP-or-box assembly from component info, or move a component safely and optionally sync CAD."
+description: "FreeCAD CLI/RPC workflow for this repo's layout dataset. Use when Codex needs to inspect FreeCAD runtime/workspace config, build placeholder assemblies from layout_topology.json + geom.json, build CAD-asset assemblies from geom_component_info.json or STEP/STP component assets, safely move or re-seat components, export STEP/GLB artifacts, or debug FreeCAD workflow command arguments and progress logs."
 ---
 
 # FreeCAD
@@ -20,11 +20,11 @@ description: "FreeCAD workflow for layout_topology.json, geom.json, and geom_com
 
 ## Route The Request
 
-- Read exactly one guide first unless the user request truly spans multiple workflows.
-- Use `guides/safe-move-workflow.md` for generic move, rotate, re-seat, collision-check, or "adjust this part" requests. Treat this as the default entry point.
-- Use `guides/create-assembly.md` only when the user explicitly asks to build or rebuild a placeholder assembly from `layout_topology.json + geom.json`.
-- Use `guides/create-assembly-from-component-info.md` only when the user explicitly asks to build a brand-new assembly from real CAD assets, STEP/STP files, or `geom_component_info.json` `display_info.assets.cad_rotated_path` entries.
-- If the user does not explicitly mention real CAD/STEP/STP assets, `cad_rotated_path`, or a component-info CAD-asset build, do not read or use `guides/create-assembly-from-component-info.md`; use the placeholder assembly or safe-move workflow instead.
+- Read exactly one guide first unless the request truly spans multiple workflows.
+- Use `guides/safe-move-workflow.md` for move, rotate, re-seat, install-face changes, collision checks, or requests to adjust an existing component. Treat this as the default entry point for component edits.
+- Use `guides/create-assembly-from-component-info.md` when the request mentions or provides `geom_component_info.json`, `cad_rotated_path`, STEP/STP CAD assets, real component CAD, component-info assembly, or the command `freecad-create-assembly-from-component-info`.
+- Use `guides/create-assembly.md` when the request is to build or rebuild an assembly from the layout dataset without component-info CAD assets, especially from `layout_topology.json + geom.json` or the command `freecad-create-assembly`.
+- If the user asks only about workspace/config/CLI argument behavior, stay in this file unless a workflow guide is needed.
 
 ## Hard Rules
 
