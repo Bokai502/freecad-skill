@@ -67,6 +67,14 @@ def parse_args() -> argparse.Namespace:
         description="Print resolved FreeCAD CLI runtime configuration as JSON."
     )
     parser.add_argument(
+        "--workspace",
+        type=Path,
+        help=(
+            "Workspace root to inspect. This is accepted for compatibility with workflow "
+            "commands and is applied only to this process."
+        ),
+    )
+    parser.add_argument(
         "--key",
         choices=RUNTIME_CONFIG_KEYS,
         help="Print only one resolved runtime configuration value.",
@@ -76,6 +84,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.workspace is not None:
+        runtime_config.set_default_workspace_dir(args.workspace)
     payload = build_runtime_config_payload()
     if args.key:
         print(json.dumps({args.key: payload[args.key]}, indent=2, ensure_ascii=False))

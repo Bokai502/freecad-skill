@@ -129,6 +129,47 @@ def test_runtime_config_cli_prints_single_key(monkeypatch, tmp_path: Path, capsy
     assert json.loads(capsys.readouterr().out) == {"rpc_port": 9988}
 
 
+def test_runtime_config_cli_accepts_workspace_argument(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
+    configured_workspace = tmp_path / "configured-workspace"
+    cli_workspace = tmp_path / "cli-workspace"
+    write_runtime_config(
+        monkeypatch,
+        tmp_path,
+        {"workspaceDir": str(configured_workspace), "rpcPort": 9988},
+    )
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.delenv("WORKSPACE_DIR", raising=False)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["freecad-runtime-config", "--workspace", str(cli_workspace)],
+    )
+
+    runtime_config_command.main()
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["workspace_dir"] == str(cli_workspace.resolve())
+    assert payload["layout_topology_path"] == str(
+        cli_workspace.resolve() / "01_layout" / "layout_topology.json"
+    )
+
+
+def test_freecad_workspace_dir_precedes_workspace_dir(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "freecad-workspace"))
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path / "pipeline-workspace"))
+
+    assert get_default_workspace_dir() == (tmp_path / "freecad-workspace").resolve()
+
+
+def test_workspace_dir_is_supported_as_fallback(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+    monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path / "pipeline-workspace"))
+
+    assert get_default_workspace_dir() == (tmp_path / "pipeline-workspace").resolve()
+
+
 def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:
     target = tmp_path / "example.step"
     target.write_text("ok", encoding="utf-8")
@@ -255,7 +296,7 @@ def test_validate_workspace_inputs_reports_missing_absolute_paths(tmp_path: Path
 
     message = str(excinfo.value)
     assert str((workspace / "01_layout" / "geom.json").resolve()) in message
-    assert str((workspace / "01_layout" / "geom_component_info.json").resolve()) in message
+    assert str((workspace / "component_info" / "geom_component_info.json").resolve()) in message
 
 
 def test_validate_workspace_root_accepts_workspace_without_default_inputs(tmp_path: Path) -> None:

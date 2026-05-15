@@ -69,7 +69,7 @@ you pass explicit paths.
 
 `freecad-create-assembly-from-component-info` reads
 `./01_layout/layout_topology.json`, `./01_layout/geom.json`, and
-`./01_layout/geom_component_info.json`, then imports each component from
+`./component_info/geom_component_info.json`, then imports each component from
 `display_info.assets.cad_rotated_path` when a readable STEP/STP exists. Missing
 or unreadable STEP assets fall back to `Part::Box`. Oversized STEP assets also
 fall back to `Part::Box`; use `--max-step-size-mb` to control that threshold or

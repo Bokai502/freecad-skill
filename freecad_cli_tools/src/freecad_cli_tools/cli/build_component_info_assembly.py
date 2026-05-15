@@ -33,6 +33,7 @@ from freecad_cli_tools.rpc_client import print_result as print_json
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
 from freecad_cli_tools.runtime_config import (
     get_default_component_info_max_step_size_mb,
+    get_default_geom_component_info_path,
     get_default_geom_path,
     get_default_geometry_edit_dir,
     get_default_layout_topology_path,
@@ -61,7 +62,7 @@ def parse_args() -> argparse.Namespace:
         "--geom-component-info",
         help=(
             "Path to geom_component_info.json. Defaults to "
-            "'./01_layout/geom_component_info.json' under the configured workspace root."
+            "'./component_info/geom_component_info.json' under the configured workspace root."
         ),
     )
     parser.add_argument("--doc-name", required=True, help="Name of the FreeCAD document to create.")
@@ -86,10 +87,6 @@ def parse_args() -> argparse.Namespace:
     add_connection_args(parser)
     add_registry_args(parser)
     return parser.parse_args()
-
-
-def get_default_geom_component_info_path() -> Path:
-    return resolve_workspace_path(Path("./01_layout/geom_component_info.json"))
 
 
 def get_default_component_info_assembly_step_path() -> Path:

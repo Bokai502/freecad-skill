@@ -30,7 +30,7 @@ description: "FreeCAD CLI/RPC workflow for this repo's layout dataset. Use when 
 
 - Treat `layout_topology.json` plus `geom.json` as the only source of truth. Do not use `sample.yaml`; it is backup-only.
 - Default dataset input paths are `./01_layout/layout_topology.json` and `./01_layout/geom.json` under the configured workspace root.
-- The component-info CAD-asset build also uses `./01_layout/geom_component_info.json` by default, but only after the route rules select `guides/create-assembly-from-component-info.md`.
+- The component-info CAD-asset build also uses `./component_info/geom_component_info.json` by default, but only after the route rules select `guides/create-assembly-from-component-info.md`. `./component_info/bom_component_info.json` is colocated there for BOM metadata, but the current CAD-asset build does not read it.
 - Default output paths live under `./02_geometry_edit` under the configured workspace root.
 - Never infer dataset input paths from the repository root, the skill backup directory, or the process `cwd` once a workspace root has been resolved. Expand defaults to absolute paths before reasoning about missing files or running commands.
 - If default input files are not present under the resolved workspace, do not search broadly for similarly named files. Ask for or require an explicit workflow `--workspace`, `FREECAD_WORKSPACE_DIR`, `freecad.workspaceDir`, `--layout-topology`, and `--geom` path. Do not pass `--workspace` to `freecad-runtime-config`; use `FREECAD_WORKSPACE_DIR` for that command.
@@ -43,7 +43,9 @@ description: "FreeCAD CLI/RPC workflow for this repo's layout dataset. Use when 
   - `freecad-layout-safe-move`
 - After CAD geometry changes, recompute and fit the view unless the active command exposes and uses an explicit opt-out such as `--no-fit-view`.
 - Verify outputs after execution. If the dataset update succeeds but STEP or GLB export is missing, report partial success rather than full success.
-- Check and report CLI progress fields: `layout_completion_percent`, `modeling_percent`, and `export_file_percent`. STEP and GLB exports each contribute 50% to `export_file_percent`. The latest values are written to `<configured workspace>/logs/progress_percentages.json` by the CLI and FreeCAD-side scripts as layout, modeling, and export stages advance; `output_files` records produced file paths and existence checks.
+- Check and report CLI progress fields: `layout_completion_percent`, `modeling_percent`, and `export_file_percent`. STEP and GLB exports each contribute 50% to `export_file_percent`. The latest values are written to `<configured workspace>/logs/progress_percentages.json` by the CLI and FreeCAD-side scripts as layout, modeling, and export stages advance.
+- When that progress file already contains the BOM pipeline schema (`schema_version: "1.0"` with `steps`), FreeCAD must not replace the file with its standalone payload. Merge FreeCAD progress into the `geometry-edit` step: set `steps[].percent` for `geometry-edit` to the average of the three FreeCAD progress fields, keep it in the range `0-100`, attach the detailed values under `freecad_progress`, recompute `overall_percent`, and preserve top-level `output_files` for frontend display.
+- When the progress file does not contain the BOM pipeline schema, the CLI may keep writing the standalone FreeCAD progress payload for direct FreeCAD use.
 
 ## Workflow Notes
 

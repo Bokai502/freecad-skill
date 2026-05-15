@@ -68,7 +68,7 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 
 `freecad-create-assembly-from-component-info` 会读取
 `./01_layout/layout_topology.json`、`./01_layout/geom.json` 和
-`./01_layout/geom_component_info.json`，优先从
+`./component_info/geom_component_info.json`，优先从
 `display_info.assets.cad_rotated_path` 导入真实 STEP/STP；缺失或不可读时
 回退为 `Part::Box`。超过 `--max-step-size-mb` 的 STEP/STP 也会回退为
 `Part::Box`，传 `-1` 可以关闭这个限制。这个直接构建流程同样输出

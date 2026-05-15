@@ -82,7 +82,7 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
     workspace = tmp_path / "workspace"
     layout_path = workspace / "01_layout" / "layout_topology.json"
     geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "01_layout" / "geom_component_info.json"
+    component_info_path = workspace / "component_info" / "geom_component_info.json"
     component_info_path.parent.mkdir(parents=True, exist_ok=True)
     layout_path.write_text("{}", encoding="utf-8")
     geom_path.write_text("{}", encoding="utf-8")
@@ -177,7 +177,7 @@ def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, c
     workspace = tmp_path / "workspace"
     layout_path = workspace / "01_layout" / "layout_topology.json"
     geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "01_layout" / "geom_component_info.json"
+    component_info_path = workspace / "component_info" / "geom_component_info.json"
     component_info_path.parent.mkdir(parents=True, exist_ok=True)
     layout_path.write_text("{}", encoding="utf-8")
     geom_path.write_text("{}", encoding="utf-8")
@@ -260,7 +260,7 @@ def test_main_uses_runtime_default_step_size_limit(monkeypatch, tmp_path: Path, 
     workspace = tmp_path / "workspace"
     layout_path = workspace / "01_layout" / "layout_topology.json"
     geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "01_layout" / "geom_component_info.json"
+    component_info_path = workspace / "component_info" / "geom_component_info.json"
     component_info_path.parent.mkdir(parents=True, exist_ok=True)
     layout_path.write_text("{}", encoding="utf-8")
     geom_path.write_text("{}", encoding="utf-8")
@@ -331,7 +331,7 @@ def test_main_accepts_explicit_workspace_without_environment(
     workspace = tmp_path / "workspace"
     layout_path = workspace / "01_layout" / "layout_topology.json"
     geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "01_layout" / "geom_component_info.json"
+    component_info_path = workspace / "component_info" / "geom_component_info.json"
     component_info_path.parent.mkdir(parents=True, exist_ok=True)
     layout_path.write_text("{}", encoding="utf-8")
     geom_path.write_text("{}", encoding="utf-8")

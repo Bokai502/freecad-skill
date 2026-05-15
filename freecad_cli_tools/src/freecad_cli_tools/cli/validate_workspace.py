@@ -24,7 +24,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--require-component-info",
         action="store_true",
-        help="Also require 01_layout/geom_component_info.json.",
+        help="Also require component_info/geom_component_info.json.",
     )
     parser.add_argument(
         "--check-rpc",

@@ -4,13 +4,15 @@ Build a brand-new FreeCAD assembly from component-info CAD assets:
 
 - `layout_topology.json`
 - `geom.json`
-- `geom_component_info.json`
+- `component_info/geom_component_info.json`
 
 Use this workflow only when the request needs the extra
 `geom_component_info.json` data, especially
 `display_info.assets.cad_rotated_path`. It is the CAD-asset build path: import
 real STEP/STP components when available, and fall back to simple boxes only for
 components whose CAD asset is missing, unreadable, not STEP/STP, or too large.
+`bom_component_info.json` lives in the same `component_info/` directory for BOM
+metadata, but this workflow does not read it.
 
 Do not use this guide for the plain placeholder build from only
 `layout_topology.json + geom.json`; use `create-assembly.md` for that case.
@@ -29,7 +31,7 @@ available, falls back to box placeholders when needed, and exports:
   - `component_mount_face_id`
   - `alignment`
 - `geom.json` provides envelope truth through `outer_shell`.
-- `geom_component_info.json` provides component build truth:
+- `component_info/geom_component_info.json` provides component build truth:
   - target bbox or `position + dims`
   - `category`
   - `color`
@@ -50,7 +52,7 @@ available, falls back to box placeholders when needed, and exports:
 |------|----------|-------------|
 | `--layout-topology` | no | Source `layout_topology.json`. Defaults to `./01_layout/layout_topology.json`. |
 | `--geom` | no | Source `geom.json`. Defaults to `./01_layout/geom.json`. |
-| `--geom-component-info` | no | Source `geom_component_info.json`. Defaults to `./01_layout/geom_component_info.json`. |
+| `--geom-component-info` | no | Source `geom_component_info.json`. Defaults to `./component_info/geom_component_info.json`. |
 | `--doc-name` | yes | FreeCAD document name to create. |
 | `--output` | no | Optional STEP output path or directory. Export names remain `component_info_assembly.step` and `component_info_assembly.glb`. |
 | `--max-step-size-mb` | no | Maximum STEP/STP size to import before falling back to a box. Defaults to `FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB`, then `/data/lbk/codex_web/config.json` field `freecad.componentInfoMaxStepSizeMb`, then `100`. Use `-1` to disable the limit. |
@@ -106,7 +108,7 @@ freecad-create-assembly-from-component-info \
   --workspace /abs/path/to/workspace \
   --layout-topology ./01_layout/layout_topology.json \
   --geom ./01_layout/geom.json \
-  --geom-component-info ./01_layout/geom_component_info.json \
+  --geom-component-info ./component_info/geom_component_info.json \
   --max-step-size-mb 100 \
   --doc-name DirectAssembly
 ```

@@ -2,7 +2,7 @@
 
 Workspace resolution is intentionally strict:
 - prefer explicit `--workspace` handled by CLI entry points
-- otherwise use `FREECAD_WORKSPACE_DIR` or the codex-web config
+- otherwise use `FREECAD_WORKSPACE_DIR`, `WORKSPACE_DIR`, or the codex-web config
 
 No project config, user config, or legacy config discovery remains.
 """
@@ -46,11 +46,21 @@ def _get_freecad_config_value(key: str, default: str | None = None) -> str | Non
     return str(value)
 
 
+def _get_config_workspace_dir() -> str | None:
+    config = _load_codex_web_config()
+    value = config.get("WORKSPACE_DIR")
+    if isinstance(value, str) and value.strip():
+        return value
+    return _get_freecad_config_value("workspaceDir")
+
+
 FALLBACK_RPC_HOST = "localhost"
 FALLBACK_RPC_PORT = _get_freecad_config_value("rpcPort", "9877")
 FALLBACK_COMPONENT_INFO_MAX_STEP_SIZE_MB = "100"
-FREECAD_WORKSPACE_DIR = _get_freecad_config_value("workspaceDir")
+CONFIG_WORKSPACE_DIR = _get_config_workspace_dir()
+FREECAD_WORKSPACE_DIR = CONFIG_WORKSPACE_DIR
 DEFAULT_LAYOUT_INPUT_DIR = Path("./01_layout")
+DEFAULT_COMPONENT_INFO_INPUT_DIR = Path("./component_info")
 DEFAULT_GEOMETRY_EDIT_DIR = Path("./02_geometry_edit")
 DEFAULT_GEOMETRY_AFTER_STEM = "geometry_after"
 
@@ -81,12 +91,16 @@ def get_default_workspace_dir() -> Path:
     """Return the workspace root from environment or codex-web config."""
     raw = os.getenv("FREECAD_WORKSPACE_DIR")
     if raw is None or not raw.strip():
+        raw = os.getenv("WORKSPACE_DIR")
+    if raw is None or not raw.strip():
         raw = FREECAD_WORKSPACE_DIR
     if raw is None or not raw.strip():
         raise RuntimeError(
-            "FREECAD_WORKSPACE_DIR is not set and freecad.workspaceDir is not configured "
+            "FREECAD_WORKSPACE_DIR is not set, WORKSPACE_DIR is not set, "
+            "and freecad.workspaceDir is not configured "
             f"in {CODEX_WEB_CONFIG_PATH}. Pass --workspace to the CLI entry point, export "
-            "FREECAD_WORKSPACE_DIR, or configure freecad.workspaceDir before running the command."
+            "FREECAD_WORKSPACE_DIR, export WORKSPACE_DIR, or configure freecad.workspaceDir "
+            "before running the command."
         )
     return Path(raw).expanduser().resolve()
 
@@ -95,6 +109,7 @@ def set_default_workspace_dir(path: str | Path) -> Path:
     """Set the workspace root explicitly for the current process."""
     resolved = Path(path).expanduser().resolve()
     os.environ["FREECAD_WORKSPACE_DIR"] = str(resolved)
+    os.environ["WORKSPACE_DIR"] = str(resolved)
     return resolved
 
 
@@ -129,7 +144,7 @@ def get_default_geom_path() -> Path:
 
 def get_default_geom_component_info_path() -> Path:
     """Return the default geom_component_info.json path."""
-    return resolve_workspace_path(DEFAULT_LAYOUT_INPUT_DIR / "geom_component_info.json")
+    return resolve_workspace_path(DEFAULT_COMPONENT_INFO_INPUT_DIR / "geom_component_info.json")
 
 
 def get_default_geometry_edit_dir() -> Path:
