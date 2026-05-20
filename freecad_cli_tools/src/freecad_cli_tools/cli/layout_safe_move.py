@@ -47,14 +47,14 @@ from freecad_cli_tools.progress import (
     progress_percentages,
 )
 from freecad_cli_tools.runtime_config import (
-    get_default_geom_path,
-    get_default_geometry_after_geom_path,
-    get_default_geometry_after_layout_topology_path,
-    get_default_layout_topology_path,
-    resolve_geometry_after_step_path,
     resolve_workspace_path,
 )
-from freecad_cli_tools.workspace import add_workspace_arg, validate_workspace_inputs, validate_workspace_root
+from freecad_cli_tools.workspace import add_workspace_arg, validate_workspace_root
+
+
+DEFAULT_SAFE_MOVE_INPUT_DIR = Path("00_inputs")
+DEFAULT_SAFE_MOVE_OUTPUT_DIR = Path("01_cad")
+GEOMETRY_AFTER_STEM = "geometry_after"
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,7 +69,7 @@ def parse_args() -> argparse.Namespace:
         "--layout-topology",
         help=(
             "Path to the source layout_topology.json file. Defaults to "
-            "'./01_layout/layout_topology.json' under the configured workspace root."
+            "'./00_inputs/layout_topology.json' under the configured workspace root."
         ),
     )
     add_workspace_arg(parser)
@@ -77,14 +77,14 @@ def parse_args() -> argparse.Namespace:
         "--geom",
         help=(
             "Path to the source geom.json file. Defaults to "
-            "'./01_layout/geom.json' under the configured workspace root."
+            "'./00_inputs/geom.json' under the configured workspace root."
         ),
     )
     parser.add_argument(
         "--layout-topology-output",
         help=(
             "Optional output layout_topology.json path. Defaults to "
-            "'./02_geometry_edit/geometry_after.layout_topology.json' under the "
+            "'./01_cad/geometry_after.layout_topology.json' under the "
             "configured workspace root."
         ),
     )
@@ -92,7 +92,7 @@ def parse_args() -> argparse.Namespace:
         "--geom-output",
         help=(
             "Optional output geom.json path. Defaults to "
-            "'./02_geometry_edit/geometry_after.geom.json' under the configured "
+            "'./01_cad/geometry_after.geom.json' under the configured "
             "workspace root."
         ),
     )
@@ -118,21 +118,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--sync-cad",
         action="store_true",
+        default=True,
         help=(
-            "After writing the updated dataset files, sync the component position "
-            "into a FreeCAD document."
+            "Sync the component position into a FreeCAD document after writing dataset files. "
+            "This is enabled by default."
         ),
     )
     parser.add_argument(
+        "--no-sync-cad",
+        dest="sync_cad",
+        action="store_false",
+        help="Only write dataset JSON files; do not update FreeCAD or export STEP/GLB.",
+    )
+    parser.add_argument(
         "--doc-name",
-        help="FreeCAD document name to update when --sync-cad is used.",
+        default="LayoutAssembly",
+        help="FreeCAD document name to update. Default: LayoutAssembly.",
     )
     parser.add_argument(
         "--step-output",
         help=(
             "STEP export path or directory to use after CAD sync. The exported "
             "STEP/GLB filenames are always 'geometry_after.step' and "
-            "'geometry_after.glb'. Defaults to './02_geometry_edit' under the "
+            "'geometry_after.glb'. Defaults to './01_cad' under the "
             "configured workspace root."
         ),
     )
@@ -145,6 +153,15 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Exact FreeCAD container object name for the component. "
             "Defaults to '<component>_part'."
+        ),
+    )
+    parser.add_argument(
+        "--format",
+        choices=("text", "json"),
+        default="text",
+        help=(
+            "Output format. 'text' preserves the existing key/value output; "
+            "'json' prints the structured result payload."
         ),
     )
     add_connection_args(parser)
@@ -160,10 +177,28 @@ def resolve_step_output_path(
     if not args.sync_cad:
         return None
     if args.step_output:
-        return resolve_geometry_after_step_path(args.step_output).resolve()
-    if not args.doc_name:
-        raise ValueError("--doc-name is required when --sync-cad is used.")
-    return resolve_geometry_after_step_path().resolve()
+        return resolve_safe_move_step_path(args.step_output).resolve()
+    return resolve_safe_move_step_path().resolve()
+
+
+def resolve_safe_move_step_path(path: str | Path | None = None) -> Path:
+    if path is None:
+        return resolve_workspace_path(DEFAULT_SAFE_MOVE_OUTPUT_DIR) / f"{GEOMETRY_AFTER_STEM}.step"
+    candidate = resolve_workspace_path(path)
+    if candidate.suffix:
+        return candidate.with_name(f"{GEOMETRY_AFTER_STEM}.step")
+    return candidate / f"{GEOMETRY_AFTER_STEM}.step"
+
+
+def default_safe_move_layout_topology_output_path() -> Path:
+    return (
+        resolve_workspace_path(DEFAULT_SAFE_MOVE_OUTPUT_DIR)
+        / f"{GEOMETRY_AFTER_STEM}.layout_topology.json"
+    )
+
+
+def default_safe_move_geom_output_path() -> Path:
+    return resolve_workspace_path(DEFAULT_SAFE_MOVE_OUTPUT_DIR) / f"{GEOMETRY_AFTER_STEM}.geom.json"
 
 
 def sync_layout_result_to_cad(
@@ -178,8 +213,6 @@ def sync_layout_result_to_cad(
 ) -> dict:
     if not args.sync_cad:
         return {"enabled": False, "success": False}
-    if not args.doc_name:
-        raise ValueError("--doc-name is required when --sync-cad is used.")
     export_step_path = resolve_step_output_path(args, layout_topology_output_path)
 
     position = [float(value) for value in component["placement"]["position"]]
@@ -448,25 +481,19 @@ def classify_cad_sync_result(
 def main() -> int:
     args = parse_args()
     validate_workspace_root(args.workspace)
-    validate_workspace_inputs(
-        args.workspace,
-        require_layout_topology=args.layout_topology is None,
-        require_geom=args.geom is None,
-    )
     layout_topology_input_path = resolve_workspace_path(
-        args.layout_topology or get_default_layout_topology_path()
+        args.layout_topology or DEFAULT_SAFE_MOVE_INPUT_DIR / "layout_topology.json"
     )
-    geom_input_path = resolve_workspace_path(args.geom or get_default_geom_path())
+    geom_input_path = resolve_workspace_path(args.geom or DEFAULT_SAFE_MOVE_INPUT_DIR / "geom.json")
+    for input_path in (layout_topology_input_path, geom_input_path):
+        if not input_path.exists():
+            raise FileNotFoundError(f"required input file not found: {input_path}")
     layout_topology_output_path = resolve_workspace_path(
-        args.layout_topology_output or get_default_geometry_after_layout_topology_path()
+        args.layout_topology_output or default_safe_move_layout_topology_output_path()
     )
-    geom_output_path = resolve_workspace_path(
-        args.geom_output or get_default_geometry_after_geom_path()
-    )
+    geom_output_path = resolve_workspace_path(args.geom_output or default_safe_move_geom_output_path())
     if args.step_output and not args.sync_cad:
-        raise ValueError("--step-output requires --sync-cad.")
-    if args.sync_cad and not args.doc_name:
-        raise ValueError("--doc-name is required when --sync-cad is used.")
+        raise ValueError("--step-output requires CAD sync; remove --no-sync-cad.")
     move = [float(value) for value in args.move]
     planned_step_output_path = resolve_step_output_path(args, layout_topology_output_path)
     output_paths = {
@@ -481,10 +508,14 @@ def main() -> int:
     }
     progress_writer = ProgressLogWriter(
         tool="freecad-layout-safe-move",
+        workflow="modify_cad",
+        command="layout safe-move",
+        stage="layout_safe_move",
         progress={
             "layout_completion_percent": 0.0,
             "modeling_percent": 0.0,
             "export_file_percent": 0.0,
+            "validation_percent": 0.0,
         },
         output_paths=output_paths,
     ).start()
@@ -513,6 +544,7 @@ def main() -> int:
                 "layout_completion_percent": 25.0,
                 "modeling_percent": 0.0,
                 "export_file_percent": 0.0,
+                "validation_percent": 0.0,
             }
         )
         components = data.get("components", {})
@@ -610,6 +642,7 @@ def main() -> int:
                 "layout_completion_percent": 75.0,
                 "modeling_percent": 0.0,
                 "export_file_percent": 0.0,
+                "validation_percent": 0.0,
             }
         )
         if solution_found and not final_ok:
@@ -642,6 +675,7 @@ def main() -> int:
                 "layout_completion_percent": 100.0,
                 "modeling_percent": 0.0,
                 "export_file_percent": 0.0,
+                "validation_percent": 0.0,
             }
         )
 
@@ -687,6 +721,8 @@ def main() -> int:
         progress_log_path = progress_writer.update(
             progress=progress,
             success=registry_status == "success",
+            status=registry_status,
+            error=registry_error,
         )
         payload = build_result_payload(
             success=registry_status == "success",
@@ -742,7 +778,10 @@ def main() -> int:
                 artifact_entry("glb", glb_path),
             ],
         )
-        emit_result_lines(payload)
+        if args.format == "json":
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            emit_result_lines(payload)
         return 2 if registry_status == "partial_success" else 0
     except Exception as exc:
         progress_writer.update(
@@ -750,8 +789,14 @@ def main() -> int:
                 "layout_completion_percent": 0.0,
                 "modeling_percent": 0.0,
                 "export_file_percent": 0.0,
+                "validation_percent": 0.0,
             },
             success=False,
+            status="failed",
+            error={
+                "code": "LAYOUT_DATASET_SAFE_MOVE_EXCEPTION",
+                "message": str(exc),
+            },
         )
         finalize_registry_run(
             registry_run,

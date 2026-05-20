@@ -7,6 +7,17 @@ from pathlib import Path
 from freecad_cli_tools.cli import build_component_info_assembly
 
 
+def write_default_inputs(workspace: Path) -> None:
+    input_dir = workspace / "00_inputs"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    (input_dir / "layout_topology.json").write_text("{}", encoding="utf-8")
+    (input_dir / "geom.json").write_text("{}", encoding="utf-8")
+    (input_dir / "real_bom.json").write_text(
+        json.dumps({"schema_version": "1.0", "source": {}, "items": []}),
+        encoding="utf-8",
+    )
+
+
 def sample_normalized_component_info_assembly() -> dict[str, object]:
     return {
         "schema_version": "geom_component_assembly/1.0",
@@ -80,13 +91,7 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
         }
 
     workspace = tmp_path / "workspace"
-    layout_path = workspace / "01_layout" / "layout_topology.json"
-    geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "component_info" / "geom_component_info.json"
-    component_info_path.parent.mkdir(parents=True, exist_ok=True)
-    layout_path.write_text("{}", encoding="utf-8")
-    geom_path.write_text("{}", encoding="utf-8")
-    component_info_path.write_text("{}", encoding="utf-8")
+    write_default_inputs(workspace)
 
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(workspace))
     monkeypatch.setattr(build_component_info_assembly, "render_rpc_script", fake_render)
@@ -133,6 +138,7 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
         "layout_completion_percent": 100.0,
         "modeling_percent": 100.0,
         "export_file_percent": 100.0,
+        "validation_percent": 0.0,
     }
     progress_log_path = workspace / "logs" / "progress_percentages.json"
     assert payload["progress_json_path"] == str(progress_log_path)
@@ -175,13 +181,7 @@ def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, c
         }
 
     workspace = tmp_path / "workspace"
-    layout_path = workspace / "01_layout" / "layout_topology.json"
-    geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "component_info" / "geom_component_info.json"
-    component_info_path.parent.mkdir(parents=True, exist_ok=True)
-    layout_path.write_text("{}", encoding="utf-8")
-    geom_path.write_text("{}", encoding="utf-8")
-    component_info_path.write_text("{}", encoding="utf-8")
+    write_default_inputs(workspace)
 
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(workspace))
     monkeypatch.setattr(build_component_info_assembly, "render_rpc_script", fake_render)
@@ -228,6 +228,7 @@ def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, c
         "layout_completion_percent": 100.0,
         "modeling_percent": 100.0,
         "export_file_percent": 100.0,
+        "validation_percent": 0.0,
     }
 
 
@@ -258,13 +259,7 @@ def test_main_uses_runtime_default_step_size_limit(monkeypatch, tmp_path: Path, 
         }
 
     workspace = tmp_path / "workspace"
-    layout_path = workspace / "01_layout" / "layout_topology.json"
-    geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "component_info" / "geom_component_info.json"
-    component_info_path.parent.mkdir(parents=True, exist_ok=True)
-    layout_path.write_text("{}", encoding="utf-8")
-    geom_path.write_text("{}", encoding="utf-8")
-    component_info_path.write_text("{}", encoding="utf-8")
+    write_default_inputs(workspace)
 
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(workspace))
     monkeypatch.setenv("FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB", "77")
@@ -299,6 +294,8 @@ def test_main_uses_runtime_default_step_size_limit(monkeypatch, tmp_path: Path, 
     assert captured["max_step_size_mb"] == 77.0
     payload = json.loads(capsys.readouterr().out)
     assert payload["success"] is True
+    assert payload["save_path"] == str(workspace / "01_cad" / "component_info_assembly.step")
+    assert payload["glb_path"] == str(workspace / "01_cad" / "component_info_assembly.glb")
 
 
 def test_main_accepts_explicit_workspace_without_environment(
@@ -329,13 +326,7 @@ def test_main_accepts_explicit_workspace_without_environment(
         }
 
     workspace = tmp_path / "workspace"
-    layout_path = workspace / "01_layout" / "layout_topology.json"
-    geom_path = workspace / "01_layout" / "geom.json"
-    component_info_path = workspace / "component_info" / "geom_component_info.json"
-    component_info_path.parent.mkdir(parents=True, exist_ok=True)
-    layout_path.write_text("{}", encoding="utf-8")
-    geom_path.write_text("{}", encoding="utf-8")
-    component_info_path.write_text("{}", encoding="utf-8")
+    write_default_inputs(workspace)
 
     monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
     monkeypatch.setattr(build_component_info_assembly, "render_rpc_script", fake_render)
@@ -365,6 +356,8 @@ def test_main_accepts_explicit_workspace_without_environment(
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["success"] is True
+    assert payload["save_path"] == str(workspace / "01_cad" / "component_info_assembly.step")
+    assert payload["glb_path"] == str(workspace / "01_cad" / "component_info_assembly.glb")
 
 
 def test_main_allows_explicit_input_paths_when_workspace_defaults_are_missing(
@@ -400,9 +393,14 @@ def test_main_allows_explicit_input_paths_when_workspace_defaults_are_missing(
     explicit_inputs.mkdir()
     layout_path = explicit_inputs / "layout_topology.json"
     geom_path = explicit_inputs / "geom.json"
+    real_bom_path = explicit_inputs / "real_bom.json"
     component_info_path = explicit_inputs / "geom_component_info.json"
     layout_path.write_text("{}", encoding="utf-8")
     geom_path.write_text("{}", encoding="utf-8")
+    real_bom_path.write_text(
+        json.dumps({"schema_version": "1.0", "source": {}, "items": []}),
+        encoding="utf-8",
+    )
     component_info_path.write_text("{}", encoding="utf-8")
 
     monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
@@ -428,6 +426,8 @@ def test_main_allows_explicit_input_paths_when_workspace_defaults_are_missing(
             str(layout_path),
             "--geom",
             str(geom_path),
+            "--real-bom",
+            str(real_bom_path),
             "--geom-component-info",
             str(component_info_path),
             "--doc-name",

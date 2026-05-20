@@ -19,6 +19,7 @@ LAST_PROGRESS = {
     "layout_completion_percent": 100.0,
     "modeling_percent": 0.0,
     "export_file_percent": 0.0,
+    "validation_percent": 0.0,
 }
 
 
@@ -36,6 +37,23 @@ def output_file_records():
     return records
 
 
+def read_existing_progress(path):
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def overall_percent(progress):
+    keys = (
+        "modeling_percent",
+        "export_file_percent",
+        "validation_percent",
+    )
+    return round(sum(float(progress.get(key, 0.0)) for key in keys) / len(keys), 2)
+
+
 def write_progress(layout_percent, modeling_percent, export_percent, success=False):
     global LAST_PROGRESS
     if not PROGRESS_PATH:
@@ -44,6 +62,7 @@ def write_progress(layout_percent, modeling_percent, export_percent, success=Fal
         "layout_completion_percent": float(layout_percent),
         "modeling_percent": float(modeling_percent),
         "export_file_percent": float(export_percent),
+        "validation_percent": 0.0,
     }
     LAST_PROGRESS = dict(progress)
     write_progress_payload(progress, success=success)
@@ -55,12 +74,17 @@ def write_progress_payload(progress, success=False):
     path = Path(PROGRESS_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
+        "schema_version": "freecad_progress/1.0",
+        "workflow": "modify_cad",
+        "command": "layout safe-move",
+        "stage": "layout_safe_move",
+        "status": "success" if success else "running",
         "tool": PROGRESS_TOOL,
         "updated_at": utc_now_iso(),
         "success": bool(success),
-        "progress_percentages": progress,
-        "output_files": output_file_records(),
-        **progress,
+        "overall_percent": overall_percent(progress),
+        "error": None,
+        **{key: value for key, value in progress.items() if key != "layout_completion_percent"},
     }
     temp_path = path.with_name(f".{path.name}.tmp")
     temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

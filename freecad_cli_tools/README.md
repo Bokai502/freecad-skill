@@ -11,14 +11,14 @@ Chinese version: [README.zh-CN.md](./README.zh-CN.md)
 ### Method 1: Install from source
 
 ```bash
-cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+cd /data/lbk/codex_web/freecad_skills/freecad-skill/freecad_cli_tools
 python -m pip install -e .
 ```
 
 ### Method 2: Build and install wheel
 
 ```bash
-cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+cd /data/lbk/codex_web/freecad_skills/freecad-skill/freecad_cli_tools
 python -m pip install build
 python -m build
 python -m pip install dist/freecad_cli_tools-*.whl
@@ -26,56 +26,70 @@ python -m pip install dist/freecad_cli_tools-*.whl
 
 ## Usage
 
-After installation, all commands are available directly:
+From a source checkout, run the unified CLI module from the package directory:
 
 ```bash
-# Document operations
-freecad-create-doc "MyDocument"
-freecad-list-docs
+cd /data/lbk/codex_web/freecad_skills/freecad-skill/freecad_cli_tools
 
-# Object operations
-freecad-create-obj "MyDoc" "Part::Box" "Box1" -p '{"Length": 100}'
-freecad-edit-obj "MyDoc" "Box1" '{"Length": 200}'
-freecad-del-obj "MyDoc" "Box1"
-freecad-get-objs "MyDoc"
-freecad-get-obj "MyDoc" "Box1"
+# Configuration
+python -m freecad_cli_tools.cli.main config show
 
-# Library operations
-freecad-get-parts
-freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
-
-# Code execution and view
-freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
-freecad-get-view Isometric --output table.png
-freecad-create-assembly --doc-name LayoutAssembly
-freecad-create-assembly-from-component-info --doc-name DirectAssembly
+# Assembly generation
+python -m freecad_cli_tools.cli.main assembly create-from-component-info --doc-name DirectAssembly
+python -m freecad_cli_tools.cli.main cad build
+python -m freecad_cli_tools.cli.main cad validate
 
 # Safe move with layout_topology.json + geom.json
-freecad-layout-safe-move --component P001 --move 50 50 0
-freecad-layout-safe-move --component P001 --move 50 50 0 --sync-cad --doc-name LayoutAssembly
-freecad-layout-safe-move --component P002 --install-face 4 --move 0 0 0
-freecad-sync-placements --doc-name LayoutAssembly --updates-file updates.json
-
-# Document-only fallback commands
-freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
-freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
+python -m freecad_cli_tools.cli.main layout safe-move --component P001 --move 50 50 0
+python -m freecad_cli_tools.cli.main layout safe-move --component P001 --move 50 50 0 --format json
+python -m freecad_cli_tools.cli.main layout safe-move --component P001 --move 50 50 0 --no-sync-cad
+python -m freecad_cli_tools.cli.main layout safe-move --component P002 --install-face 4 --move 0 0 0
 ```
 
-By default, relative CLI paths are resolved against the explicit workspace root
-from `--workspace` or `FREECAD_WORKSPACE_DIR`. `freecad-create-assembly` reads
-`./01_layout/layout_topology.json` and `./01_layout/geom.json`, then writes
-`./02_geometry_edit/geometry_after.step` and sibling `geometry_after.glb` unless
-you pass explicit paths.
+After editable or wheel installation, `freecad-tools` is available as the
+short console-script alias for the same commands.
 
-`freecad-create-assembly-from-component-info` reads
-`./01_layout/layout_topology.json`, `./01_layout/geom.json`, and
-`./component_info/geom_component_info.json`, then imports each component from
-`display_info.assets.cad_rotated_path` when a readable STEP/STP exists. Missing
-or unreadable STEP assets fall back to `Part::Box`. Oversized STEP assets also
-fall back to `Part::Box`; use `--max-step-size-mb` to control that threshold or
-`-1` to disable it. The direct-build workflow also exports
-`./02_geometry_edit/component_info_assembly.step` and sibling
+Workspace-scoped commands resolve relative paths from
+`/data/lbk/codex_web/config.json` field `freecad.workspaceDir`. The
+`--workspace` flag is kept only as a deprecated compatibility option and does
+not override the configured workspace.
+
+`python -m freecad_cli_tools.cli.main assembly create-from-component-info` reads
+`./00_inputs/real_bom.json`, `./00_inputs/layout_topology.json`, and
+`./00_inputs/geom.json`. It resolves real STEP/STP assets from
+`real_bom.source.template_csv` using each BOM item's `semantic_name`; if
+`--geom-component-info` is supplied, that file overrides the synthesized
+component info. Missing or unreadable STEP assets fall back to `Part::Box`.
+Oversized STEP assets also fall back to `Part::Box`; use `--max-step-size-mb`
+to control that threshold or `-1` to disable it. The direct-build workflow exports
+`./01_cad/component_info_assembly.step` and sibling
 `component_info_assembly.glb`.
+
+`python -m freecad_cli_tools.cli.main cad build` reads `./00_inputs/real_bom.json`,
+`./00_inputs/layout_topology.json`, and `./00_inputs/geom.json`, then writes
+the CAD-stage bundle under `./01_cad`:
+
+- `geometry_after.step`
+- `geometry_after.glb`
+- `simulation_input.json`
+- `cad_agent_output.json`
+
+It also writes compatibility after-state files such as
+`geometry_after.geom.json`, `geometry_after.layout_topology.json`,
+`geometry_after_registry.json`, plus COMSOL input files at
+`comsol_inputs/coord.txt` and `comsol_inputs/channels_input.npz`.
+
+`python -m freecad_cli_tools.cli.main cad validate` validates the `./01_cad` bundle against
+`./00_inputs` and writes the validation report directly into
+`./01_cad/cad_agent_output.json` under the `validation` key. By default it also
+captures six face views of the active CAD document through FreeCAD RPC, writes
+`./01_cad/freecad_screenshot_top.png`,
+`./01_cad/freecad_screenshot_bottom.png`,
+`./01_cad/freecad_screenshot_front.png`,
+`./01_cad/freecad_screenshot_back.png`,
+`./01_cad/freecad_screenshot_left.png`, and
+`./01_cad/freecad_screenshot_right.png`, and records the image paths under the
+top-level `screenshot` key. Pass `--no-screenshot` to skip image capture.
 
 All first-class CLI outputs include progress percentages:
 
@@ -83,38 +97,30 @@ All first-class CLI outputs include progress percentages:
 - `modeling_percent`: FreeCAD modeling or CAD-sync stage completion.
 - `export_file_percent`: exported-file completion; STEP and GLB count as 50% each.
 
-For dataset-only `freecad-layout-safe-move` runs, no CAD modeling or export is requested, so
+For dataset-only `python -m freecad_cli_tools.cli.main layout safe-move` runs, no CAD modeling or export is requested, so
 `modeling_percent` and `export_file_percent` are `0.0`.
 The latest percentages are also written to
-`$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`. That file also includes
+`<configured workspace>/logs/progress_percentages.json`. That file also includes
 an `output_files` object with each produced file path and whether it exists.
 During CAD operations, the FreeCAD-side script refreshes the file as modeling
 and STEP/GLB export stages actually advance.
-
-Validate a workspace before running a full build:
-
-```bash
-freecad-validate-workspace --workspace /abs/path/to/workspace
-```
 
 ## Recommended Move Workflow
 
 Use the layout dataset as the source of truth whenever you have
 `layout_topology.json` and `geom.json`:
 
-1. Run `freecad-layout-safe-move` on the dataset pair.
-2. Let it compute a safe move and write new dataset files under `./02_geometry_edit`.
-3. If needed, pass `--sync-cad --doc-name <doc>` so the same command updates the FreeCAD document.
-4. Only run `freecad-create-assembly` when you explicitly need a regenerated CAD document.
-
-Use `freecad-check-collision` and `freecad-move-obj` only as document-only
-fallbacks when no dataset source is available.
+1. Run `python -m freecad_cli_tools.cli.main layout safe-move` on the dataset pair.
+2. Let it compute a safe move, write new dataset files under `./01_cad`, and update the CAD STEP/GLB artifacts.
+3. Use `--no-sync-cad` only when you explicitly want a JSON-only offline update.
+4. Use `python -m freecad_cli_tools.cli.main cad build` when you need to rebuild the full CAD-stage bundle from `00_inputs`.
 
 ## Layout Dataset Safe Move Command
 
-`freecad-layout-safe-move` is the layout-dataset move command. It can run as an
-offline dataset preprocessing command, and it can also sync the approved result
-into a running FreeCAD document.
+`python -m freecad_cli_tools.cli.main layout safe-move` is the layout-dataset move command. By default
+it syncs the approved result into a running FreeCAD document and exports
+`geometry_after.step` plus `geometry_after.glb`; pass `--no-sync-cad` for a
+JSON-only offline update.
 
 Use it when you want to:
 
@@ -124,25 +130,10 @@ Use it when you want to:
   different envelope face
 - keep internal components (faces 0–5) inside `envelope.inner_size`, or place external components
   (faces 6–11) on the outside of the envelope using `envelope.outer_size`
-- write the updated dataset placement and geometry fields into new JSON files under `./02_geometry_edit`
-- optionally update the matching component in an open FreeCAD document
+- write the updated dataset placement and geometry fields into new JSON files under `./01_cad`
+- update the matching component in an open FreeCAD document and export STEP/GLB by default
 - keep external-face moves inside the selected wall's in-plane 2D footprint and surface
   `FACE_BOUNDARY` when a requested path would slide past the wall edge
-
-To build a new CAD document from the layout dataset, use:
-
-```bash
-freecad-create-assembly \
-  --doc-name LayoutAssembly
-```
-
-This command creates:
-
-- an `Assembly` container
-- an `Envelope_part` with an `EnvelopeShell` when the normalized dataset envelope exists
-- one `App::Part` plus one solid per component, currently `Part::Box` or `Part::Cylinder`
-- a placeholder `.step` export and a sibling `.glb` export for the assembly
-- an automatic fitted GUI view after generation
 
 The command treats `placement.position` as the component local-bounds minimum
 corner and performs collision-safe moves for the component's current
@@ -158,42 +149,22 @@ envelope center) and the envelope-boundary containment check is skipped. `--inst
 the requested move can be combined. If the full requested move is safe, it applies it directly. If not, it
 finds the closest safe prefix on that segment. If no safe point exists on the requested segment, it
 reports that no solution was found and still writes the constrained dataset
-state. When `--sync-cad` is supplied, it then updates the matching component object in the target
-FreeCAD document directly from the computed final placement.
+state. Unless `--no-sync-cad` is supplied, it then updates the matching component object in the
+target FreeCAD document directly from the computed final placement and exports STEP/GLB.
 
 External-face note: although faces `6-11` skip the inner-envelope containment check, they are still
 clamped to the selected wall's in-plane boundary using `envelope.outer_size`. When the requested
 segment would cross that footprint, the command truncates the move to the closest safe prefix and
 includes `FACE_BOUNDARY` in the blocker list.
 
-In the `skills_test` workspace workflow, move and rotation requests now default
-to reading from `./01_layout` and writing new dataset files plus
-`geometry_after.step` / `geometry_after.glb` under `./02_geometry_edit`, so the
+In the v9 workspace workflow, move and rotation requests now default
+to reading from `./00_inputs` and writing new dataset files plus
+`geometry_after.step` / `geometry_after.glb` under `./01_cad`, so the
 source dataset remains unchanged unless the user explicitly overrides the paths.
 
-Workspace resolution is intentionally strict:
-
-- preferred: pass `--workspace /abs/path/to/workspace`
-- fallback: export `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
-
-No project config, user config, or legacy runtime-config discovery remains.
-
-For multi-component placement updates, `freecad-sync-placements` accepts a JSON list like:
-
-```json
-[
-  {
-    "component": "P006",
-    "position": [-103.72, 139.72, -170.91],
-    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-  },
-  {
-    "component": "P018",
-    "position": [-249.72, 179.32, -170.91],
-    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-  }
-]
-```
+Workspace resolution is deterministic: configure
+`/data/lbk/codex_web/config.json` field `freecad.workspaceDir`, then use
+`python -m freecad_cli_tools.cli.main config show` to inspect the resolved absolute paths.
 
 ## Development Layout
 
@@ -203,7 +174,7 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 - `src/freecad_cli_tools/layout_dataset_common.py`: shared validation helpers for layout dataset parsing
 - `src/freecad_cli_tools/layout_dataset_faces.py`: install-face mapping and reverse face resolution
 - `src/freecad_cli_tools/layout_dataset_io.py`: atomic JSON I/O helpers for layout dataset files
-- `src/freecad_cli_tools/component_info_assembly.py`: normalization for direct assembly builds from `geom_component_info.json`
+- `src/freecad_cli_tools/component_info_assembly.py`: normalization for direct assembly builds from `00_inputs/real_bom.json` and optional `geom_component_info.json`
 - `src/freecad_cli_tools/freecad_sync.py`: reusable placement sync helpers for single or batched CAD updates
 - `src/freecad_cli_tools/cli_support.py`: shared CLI-side helpers for RPC calls, output parsing, and file input
 - `src/freecad_cli_tools/rpc_scripts/`: FreeCAD-side Python scripts executed over XML-RPC
@@ -214,8 +185,8 @@ For multi-component placement updates, `freecad-sync-placements` accepts a JSON 
 ## Requirements
 
 - For RPC commands: FreeCAD with the MCP addon running on the host/port from the CLI flags or environment
-- Relative input and output paths are resolved against the explicit workspace root from `--workspace` or `FREECAD_WORKSPACE_DIR`
-- For offline layout-dataset use of `freecad-layout-safe-move`: Python 3.9+ only
+- Relative input and output paths are resolved against `freecad.workspaceDir` from `/data/lbk/codex_web/config.json`
+- For offline layout-dataset use of `python -m freecad_cli_tools.cli.main layout safe-move`: Python 3.9+ only
 - Python 3.9+
 
 ## License

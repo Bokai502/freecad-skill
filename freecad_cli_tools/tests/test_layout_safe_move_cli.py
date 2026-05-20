@@ -196,6 +196,7 @@ def test_layout_safe_move_writes_registry_record(monkeypatch, tmp_path: Path) ->
             "0",
             "10",
             "0",
+            "--no-sync-cad",
             "--run-id",
             "move-run",
             "--session-id",
@@ -219,6 +220,7 @@ def test_layout_safe_move_writes_registry_record(monkeypatch, tmp_path: Path) ->
         "layout_completion_percent": 100.0,
         "modeling_percent": 0.0,
         "export_file_percent": 0.0,
+        "validation_percent": 0.0,
     }
     progress_log_path = tmp_path / "logs" / "progress_percentages.json"
     assert manifest["result"]["progress_json_path"] == str(progress_log_path)
@@ -235,6 +237,48 @@ def test_layout_safe_move_writes_registry_record(monkeypatch, tmp_path: Path) ->
     }
     assert progress_log["output_files"]["step"] == {"path": None, "exists": False}
     assert progress_log["output_files"]["glb"] == {"path": None, "exists": False}
+
+
+def test_layout_safe_move_can_emit_json(monkeypatch, tmp_path: Path, capsys) -> None:
+    layout_path = tmp_path / "layout_topology.json"
+    geom_path = tmp_path / "geom.json"
+    output_layout_path = tmp_path / "layout_topology.updated.json"
+    output_geom_path = tmp_path / "geom.updated.json"
+    write_dataset(layout_path, geom_path)
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-layout-safe-move",
+            "--layout-topology",
+            str(layout_path),
+            "--geom",
+            str(geom_path),
+            "--layout-topology-output",
+            str(output_layout_path),
+            "--geom-output",
+            str(output_geom_path),
+            "--component",
+            "P001",
+            "--move",
+            "0",
+            "10",
+            "0",
+            "--no-sync-cad",
+            "--format",
+            "json",
+        ],
+    )
+
+    exit_code = layout_safe_move.main()
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["success"] is True
+    assert payload["target_component"] == "P001"
+    assert payload["output_layout_topology_path"] == str(output_layout_path.resolve())
+    assert payload["output_geom_path"] == str(output_geom_path.resolve())
 
 
 def test_layout_safe_move_install_face_writes_orientation_rows(monkeypatch, tmp_path: Path) -> None:
@@ -265,6 +309,7 @@ def test_layout_safe_move_install_face_writes_orientation_rows(monkeypatch, tmp_
             "0",
             "0",
             "0",
+            "--no-sync-cad",
         ],
     )
 
@@ -342,7 +387,7 @@ def test_sync_layout_result_to_cad_sends_source_pose(monkeypatch, tmp_path: Path
     assert payload["enabled"] is True
     assert payload["layout_topology_path"] == str(layout_path)
     assert payload["geom_path"] == str(geom_path)
-    assert payload["step_path"] == str(tmp_path / "02_geometry_edit" / "geometry_after.step")
+    assert payload["step_path"] == str(tmp_path / "01_cad" / "geometry_after.step")
     update = captured["updates"][0]
     assert update["source_position"] == [1.0, 2.0, 55.0]
     assert update["source_orientation_rows"] == [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
@@ -432,8 +477,8 @@ def test_layout_safe_move_records_step_and_glb_outputs_on_sync_success(
     output_layout_path = tmp_path / "layout_topology.updated.json"
     output_geom_path = tmp_path / "geom.updated.json"
     registry_dir = tmp_path / "registry"
-    step_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
-    glb_path = tmp_path / "02_geometry_edit" / "geometry_after.glb"
+    step_path = tmp_path / "01_cad" / "geometry_after.step"
+    glb_path = tmp_path / "01_cad" / "geometry_after.glb"
     write_dataset(layout_path, geom_path)
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
@@ -496,6 +541,7 @@ def test_layout_safe_move_records_step_and_glb_outputs_on_sync_success(
         "layout_completion_percent": 100.0,
         "modeling_percent": 100.0,
         "export_file_percent": 100.0,
+        "validation_percent": 0.0,
     }
     progress_log_path = tmp_path / "logs" / "progress_percentages.json"
     assert manifest["result"]["progress_json_path"] == str(progress_log_path)
@@ -515,6 +561,68 @@ def test_layout_safe_move_records_step_and_glb_outputs_on_sync_success(
     }
 
 
+def test_layout_safe_move_syncs_cad_by_default(monkeypatch, tmp_path: Path, capsys) -> None:
+    layout_path = tmp_path / "layout_topology.json"
+    geom_path = tmp_path / "geom.json"
+    output_layout_path = tmp_path / "layout_topology.updated.json"
+    output_geom_path = tmp_path / "geom.updated.json"
+    step_path = tmp_path / "01_cad" / "geometry_after.step"
+    glb_path = tmp_path / "01_cad" / "geometry_after.glb"
+    write_dataset(layout_path, geom_path)
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
+
+    def fake_sync(*args, **kwargs):
+        step_path.parent.mkdir(parents=True, exist_ok=True)
+        step_path.write_text("step-data", encoding="utf-8")
+        glb_path.write_text("glb-data", encoding="utf-8")
+        return {
+            "enabled": True,
+            "success": True,
+            "document": "LayoutAssembly",
+            "component": "P001",
+            "step_path": str(step_path),
+            "glb_path": str(glb_path),
+        }
+
+    monkeypatch.setattr(layout_safe_move, "sync_layout_result_to_cad", fake_sync)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "freecad-layout-safe-move",
+            "--layout-topology",
+            str(layout_path),
+            "--geom",
+            str(geom_path),
+            "--layout-topology-output",
+            str(output_layout_path),
+            "--geom-output",
+            str(output_geom_path),
+            "--component",
+            "P001",
+            "--move",
+            "0",
+            "10",
+            "0",
+            "--format",
+            "json",
+        ],
+    )
+
+    assert layout_safe_move.main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["cad_sync_enabled"] is True
+    assert payload["cad_sync_result"]["document"] == "LayoutAssembly"
+    assert payload["step_path"] == str(step_path)
+    assert payload["glb_path"] == str(glb_path)
+    assert payload["progress_percentages"] == {
+        "layout_completion_percent": 100.0,
+        "modeling_percent": 100.0,
+        "export_file_percent": 100.0,
+        "validation_percent": 0.0,
+    }
+
+
 def test_layout_safe_move_records_partial_success_when_glb_export_missing(
     monkeypatch, tmp_path: Path
 ) -> None:
@@ -523,8 +631,8 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
     output_layout_path = tmp_path / "layout_topology.updated.json"
     output_geom_path = tmp_path / "geom.updated.json"
     registry_dir = tmp_path / "registry"
-    step_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
-    glb_path = tmp_path / "02_geometry_edit" / "geometry_after.glb"
+    step_path = tmp_path / "01_cad" / "geometry_after.step"
+    glb_path = tmp_path / "01_cad" / "geometry_after.glb"
     write_dataset(layout_path, geom_path)
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
     monkeypatch.setenv("FREECAD_ARTIFACT_REGISTRY_DIR", str(registry_dir))
@@ -583,6 +691,7 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
         "layout_completion_percent": 100.0,
         "modeling_percent": 100.0,
         "export_file_percent": 50.0,
+        "validation_percent": 0.0,
     }
     progress_log_path = tmp_path / "logs" / "progress_percentages.json"
     assert manifest["result"]["progress_json_path"] == str(progress_log_path)
@@ -605,7 +714,7 @@ def test_layout_safe_move_records_partial_success_when_glb_export_missing(
 def test_layout_safe_move_defaults_to_geometry_after_outputs_without_touching_source(
     monkeypatch, tmp_path: Path
 ) -> None:
-    source_dir = tmp_path / "01_layout"
+    source_dir = tmp_path / "00_inputs"
     source_dir.mkdir(parents=True)
     layout_path = source_dir / "layout_topology.json"
     geom_path = source_dir / "geom.json"
@@ -625,13 +734,14 @@ def test_layout_safe_move_defaults_to_geometry_after_outputs_without_touching_so
             "0",
             "10",
             "0",
+            "--no-sync-cad",
         ],
     )
 
     exit_code = layout_safe_move.main()
 
-    output_layout_path = tmp_path / "02_geometry_edit" / "geometry_after.layout_topology.json"
-    output_geom_path = tmp_path / "02_geometry_edit" / "geometry_after.geom.json"
+    output_layout_path = tmp_path / "01_cad" / "geometry_after.layout_topology.json"
+    output_geom_path = tmp_path / "01_cad" / "geometry_after.geom.json"
     assert exit_code == 0
     assert layout_path.read_text(encoding="utf-8") == original_layout
     assert geom_path.read_text(encoding="utf-8") == original_geom
@@ -674,6 +784,7 @@ def test_layout_safe_move_allows_explicit_input_paths_when_workspace_defaults_ar
             "0",
             "10",
             "0",
+            "--no-sync-cad",
         ],
     )
 

@@ -11,6 +11,15 @@ from typing import Any
 from freecad_cli_tools.runtime_config import get_default_workspace_dir
 
 PROGRESS_LOG_FILENAME = "progress_percentages.json"
+PROGRESS_SCHEMA_VERSION = "freecad_progress/1.0"
+PROGRESS_KEYS = (
+    "modeling_percent",
+    "export_file_percent",
+    "validation_percent",
+)
+CAD_BUILD_COMMANDS = {"cad build", "freecad-tools cad build"}
+CAD_VALIDATE_COMMANDS = {"cad validate", "freecad-tools cad validate"}
+MAX_PROGRESS_HISTORY = 200
 
 
 def get_progress_log_path() -> Path:
@@ -56,27 +65,174 @@ def output_file_records(**paths: str | Path | None) -> dict[str, dict[str, Any]]
     return {name: output_file_entry(path) for name, path in paths.items()}
 
 
+def normalize_progress(progress: dict[str, float]) -> dict[str, float]:
+    """Return progress with every standard percentage key present."""
+    normalized = {key: 0.0 for key in PROGRESS_KEYS}
+    for key, value in progress.items():
+        normalized[key] = float(value)
+    return normalized
+
+
+def overall_percent(progress: dict[str, float]) -> float:
+    """Return a simple average across the standard FreeCAD progress fields."""
+    normalized = normalize_progress(progress)
+    return round(sum(normalized[key] for key in PROGRESS_KEYS) / len(PROGRESS_KEYS), 2)
+
+
+def visible_progress_for_command(
+    progress: dict[str, float],
+    *,
+    tool: str,
+    command: str | None,
+) -> dict[str, float]:
+    """Return the progress fields that should be exposed in the shared progress log."""
+    normalized = normalize_progress(progress)
+    names = {tool.strip().lower()}
+    if command:
+        names.add(command.strip().lower())
+
+    if names & CAD_VALIDATE_COMMANDS:
+        return {"validation_percent": normalized["validation_percent"]}
+
+    if names & CAD_BUILD_COMMANDS:
+        modeling_values = [normalized["modeling_percent"]]
+        if "export_file_percent" in progress:
+            modeling_values.append(normalized["export_file_percent"])
+        return {"modeling_percent": round(sum(modeling_values) / len(modeling_values), 2)}
+
+    return {key: value for key, value in normalized.items() if key != "layout_completion_percent"}
+
+
+def visible_overall_percent(progress: dict[str, float]) -> float:
+    """Return an overall percent using only the visible progress fields."""
+    if not progress:
+        return 0.0
+    return round(sum(progress.values()) / len(progress), 2)
+
+
+def _read_existing_progress(path: Path) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def read_existing_progress_log() -> dict[str, Any]:
+    """Return the current progress log payload if it exists."""
+    return _read_existing_progress(get_progress_log_path())
+
+
+def infer_validation_workflow(default: str = "cad_validation") -> str:
+    """Infer whether cad validate is completing the create or modify workflow."""
+    existing = read_existing_progress_log()
+    workflow = existing.get("workflow")
+    if workflow in {"create_cad", "modify_cad"}:
+        return str(workflow)
+
+    tools = existing.get("tools")
+    if isinstance(tools, dict):
+        for tool_name in (
+            "freecad-tools cad build",
+            "freecad-layout-safe-move",
+            "freecad-tools layout safe-move",
+        ):
+            entry = tools.get(tool_name)
+            if isinstance(entry, dict) and entry.get("workflow") in {"create_cad", "modify_cad"}:
+                return str(entry["workflow"])
+    return default
+
+
+def _progress_history_entry(tool: str, payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tool": tool,
+        "workflow": payload.get("workflow"),
+        "command": payload.get("command"),
+        "stage": payload.get("stage"),
+        "status": payload.get("status"),
+        "success": payload.get("success"),
+        "overall_percent": payload.get("overall_percent"),
+        "updated_at": payload.get("updated_at"),
+        "error": payload.get("error"),
+        **{key: payload.get(key) for key in PROGRESS_KEYS if key in payload},
+    }
+
+
+def _merge_progress_payload(
+    path: Path,
+    tool: str,
+    payload: dict[str, Any],
+    *,
+    merge_output_files: bool,
+) -> dict[str, Any]:
+    existing = _read_existing_progress(path)
+    merged = dict(existing)
+    merged.update(payload)
+
+    tools = existing.get("tools")
+    if not isinstance(tools, dict):
+        tools = {}
+    merged_tools = dict(tools)
+    merged_tools[tool] = payload
+    for tool_payload in merged_tools.values():
+        if isinstance(tool_payload, dict):
+            tool_payload.pop("output_files", None)
+    merged["tools"] = merged_tools
+
+    history = existing.get("history")
+    if not isinstance(history, list):
+        history = []
+    merged["history"] = [*history, _progress_history_entry(tool, payload)][-MAX_PROGRESS_HISTORY:]
+    merged.pop("output_files", None)
+
+    return merged
+
+
+def _status_from_success(success: bool | None) -> str:
+    if success is None:
+        return "running"
+    return "success" if success else "failed"
+
+
 def write_progress_log(
     *,
     tool: str,
     progress: dict[str, float],
-    success: bool,
+    success: bool | None,
     output_files: dict[str, dict[str, Any]] | None = None,
     output_paths: dict[str, str | Path | None] | None = None,
+    workflow: str | None = None,
+    command: str | None = None,
+    stage: str | None = None,
+    status: str | None = None,
+    error: dict[str, Any] | None = None,
+    merge_output_files: bool = True,
 ) -> Path:
     """Write the latest CLI progress percentages to the workspace logs directory."""
-    if output_files is None and output_paths is not None:
-        output_files = output_file_records(**output_paths)
     path = get_progress_log_path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    command_name = command or tool
+    visible_progress = visible_progress_for_command(progress, tool=tool, command=command_name)
     payload = {
+        "schema_version": PROGRESS_SCHEMA_VERSION,
+        "workflow": workflow,
+        "command": command_name,
+        "stage": stage,
+        "status": status or _status_from_success(success),
         "tool": tool,
         "updated_at": _utc_now_iso(),
-        "success": success,
-        "progress_percentages": progress,
-        "output_files": output_files or {},
-        **progress,
+        "success": bool(success) if success is not None else False,
+        "overall_percent": visible_overall_percent(visible_progress),
+        "error": error,
+        **visible_progress,
     }
+
+    payload = _merge_progress_payload(
+        path,
+        tool,
+        payload,
+        merge_output_files=merge_output_files,
+    )
     temp_path = path.with_name(f".{path.name}.tmp")
     temp_path.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -95,12 +251,22 @@ class ProgressLogWriter:
         tool: str,
         progress: dict[str, float],
         output_paths: dict[str, str | Path | None],
-        success: bool = False,
+        success: bool | None = None,
+        workflow: str | None = None,
+        command: str | None = None,
+        stage: str | None = None,
+        status: str | None = None,
+        merge_output_files: bool = True,
     ) -> None:
         self.tool = tool
         self.progress = dict(progress)
         self.output_paths = dict(output_paths)
         self.success = success
+        self.workflow = workflow
+        self.command = command or tool
+        self.stage = stage
+        self.status = status
+        self.error: dict[str, Any] | None = None
         self.path = get_progress_log_path()
 
     def start(self) -> "ProgressLogWriter":
@@ -114,6 +280,9 @@ class ProgressLogWriter:
         progress: dict[str, float] | None = None,
         output_paths: dict[str, str | Path | None] | None = None,
         success: bool | None = None,
+        status: str | None = None,
+        stage: str | None = None,
+        error: dict[str, Any] | None = None,
     ) -> Path:
         """Update state and write it immediately."""
         if progress is not None:
@@ -122,6 +291,12 @@ class ProgressLogWriter:
             self.output_paths = dict(output_paths)
         if success is not None:
             self.success = success
+        if status is not None:
+            self.status = status
+        if stage is not None:
+            self.stage = stage
+        if error is not None:
+            self.error = error
         return self.write()
 
     def write(self) -> Path:
@@ -131,6 +306,11 @@ class ProgressLogWriter:
             progress=dict(self.progress),
             success=self.success,
             output_paths=dict(self.output_paths),
+            workflow=self.workflow,
+            command=self.command,
+            stage=self.stage,
+            status=self.status,
+            error=self.error,
         )
         return self.path
 
@@ -158,6 +338,7 @@ def progress_percentages(
             glb_path,
             export_requested=export_requested,
         ),
+        "validation_percent": 0.0,
     }
 
 

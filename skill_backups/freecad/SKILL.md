@@ -1,57 +1,104 @@
 ---
 name: freecad
-description: "FreeCAD CLI/RPC workflow for this repo's layout dataset. Use when Codex needs to inspect FreeCAD runtime/workspace config, build placeholder assemblies from layout_topology.json + geom.json, build CAD-asset assemblies from geom_component_info.json or STEP/STP component assets, safely move or re-seat components, export STEP/GLB artifacts, or debug FreeCAD workflow command arguments and progress logs."
+description: "FreeCAD CLI/RPC workflow for the current 00_inputs -> 01_cad CAD stage. Use when Codex needs to create a new CAD model with cad build + cad validate, modify an existing CAD model with layout safe-move + cad validate, inspect runtime/workspace config, validate CAD outputs with geometry checks and screenshots, or debug FreeCAD workflow arguments and progress logs."
 ---
 
 # FreeCAD
 
 ## Prerequisites
 
-- Use the packaged CLI entry points under `/data/lbk/freecad_skills/freecad-skill/freecad_cli_tools` instead of ad hoc Python when a command already exists.
-- Before running a workflow command, call `freecad-runtime-config` to read the resolved workspace, RPC settings, default input paths, default output paths, and component-info STEP size limit.
-- `freecad-runtime-config` does not accept `--workspace`. To inspect defaults for a specific workspace, set `FREECAD_WORKSPACE_DIR=/path/to/workspace` for that command, for example `FREECAD_WORKSPACE_DIR=/data/lbk/codex_web/FreeCAD_data/v4_data freecad-runtime-config`.
-- Workflow commands such as `freecad-create-assembly`, `freecad-create-assembly-from-component-info`, and `freecad-layout-safe-move` do accept `--workspace`. When you plan to pass `--workspace` to a workflow command, call `freecad-runtime-config` first with `FREECAD_WORKSPACE_DIR` set to the same workspace so the inspected defaults match the workflow run.
-- Resolve relative input and output paths only from the configured workspace root. Workflow commands apply this priority order:
-  1. CLI/workflow `--workspace /path/to/workspace`; relative paths are resolved under that workspace.
-  2. `FREECAD_WORKSPACE_DIR=/path/to/workspace`; relative paths are resolved under that workspace.
-  3. `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`; relative paths are resolved under that workspace.
-- If no workspace source is present, stop immediately instead of guessing from the current directory, repo root, or skill directory. If a workspace source is relative, use the absolute path reported by `freecad-runtime-config` or by the workflow command's resolved outputs.
-- Expect FreeCAD RPC at the `rpc_host` and `rpc_port` reported by `freecad-runtime-config`, unless the active workflow command is given explicit `--host` or `--port` overrides. If RPC is unavailable, report the connection problem clearly instead of guessing.
+- Use the packaged unified CLI entry point under `/data/lbk/codex_web/freecad_skills/freecad-skill/freecad_cli_tools` instead of ad hoc Python when a command already exists.
+- Before running a workflow command, call `python -m freecad_cli_tools.cli.main config show` to read the resolved workspace, RPC settings, default input paths, default output paths, and component-info STEP size limit.
+- `python -m freecad_cli_tools.cli.main config show` reports defaults for the workspace configured at `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`.
+- Workflow commands such as `python -m freecad_cli_tools.cli.main cad build`, `python -m freecad_cli_tools.cli.main cad validate`, `python -m freecad_cli_tools.cli.main assembly create-from-component-info`, and `python -m freecad_cli_tools.cli.main layout safe-move` still accept `--workspace` as a deprecated compatibility option, but it does not override `freecad.workspaceDir`.
+- Resolve relative input and output paths only from the configured workspace root reported by `python -m freecad_cli_tools.cli.main config show`.
+- If `freecad.workspaceDir` is missing, stop immediately instead of guessing from the current directory, repo root, skill directory, CLI flags, or environment variables.
+- Expect FreeCAD RPC at the `rpc_host` and `rpc_port` reported by `python -m freecad_cli_tools.cli.main config show`, unless the active workflow command is given explicit `--host` or `--port` overrides. If RPC is unavailable, report the connection problem clearly instead of guessing.
 
 ## Route The Request
 
-- Read exactly one guide first unless the request truly spans multiple workflows.
-- Use `guides/safe-move-workflow.md` for move, rotate, re-seat, install-face changes, collision checks, or requests to adjust an existing component. Treat this as the default entry point for component edits.
-- Use `guides/create-assembly-from-component-info.md` when the request mentions or provides `geom_component_info.json`, `cad_rotated_path`, STEP/STP CAD assets, real component CAD, component-info assembly, or the command `freecad-create-assembly-from-component-info`.
-- Use `guides/create-assembly.md` when the request is to build or rebuild an assembly from the layout dataset without component-info CAD assets, especially from `layout_topology.json + geom.json` or the command `freecad-create-assembly`.
-- If the user asks only about workspace/config/CLI argument behavior, stay in this file unless a workflow guide is needed.
+There are two primary workflows:
+
+- Create a new CAD model: read `guides/cad-build-workflow.md`, run
+  `python -m freecad_cli_tools.cli.main cad build`, then read `guides/cad-validate-workflow.md` and run
+  `python -m freecad_cli_tools.cli.main cad validate`.
+- Modify an existing CAD model: read `guides/safe-move-workflow.md`, run
+  `python -m freecad_cli_tools.cli.main layout safe-move`, then read `guides/cad-validate-workflow.md`
+  and run `python -m freecad_cli_tools.cli.main cad validate`.
+
+Route requests this way:
+
+- Use the create workflow when the user asks to create, build, rebuild, or
+  regenerate the CAD model from `00_inputs`.
+- Use the modify workflow for move, rotate, re-seat, install-face changes,
+  collision-avoidance moves, or requests to adjust an existing component.
+- Use only `guides/cad-validate-workflow.md` when the user asks only to validate
+  a CAD build, check geometry correctness, detect collisions/overlaps, verify贴面安装
+  or face occupancy, capture screenshots, or inspect `cad_agent_output.json`
+  validation results.
+- Use `guides/create-assembly-from-component-info.md` only as an auxiliary
+  real STEP/STP asset assembly/debug workflow when the request explicitly
+  mentions `python -m freecad_cli_tools.cli.main assembly create-from-component-info`,
+  `component_info_assembly.step`, real STEP/STP asset import behavior,
+  `real_bom.source.template_csv`, or optional `geom_component_info.json`. Do not
+  treat it as the standard create-CAD workflow because it does not produce the
+  standard `geometry_after.step/.glb` CAD-stage outputs.
+- If the user asks only about workspace/config/CLI argument behavior, stay in
+  this file unless a workflow guide is needed.
 
 ## Hard Rules
 
-- Treat `layout_topology.json` plus `geom.json` as the only source of truth. Do not use `sample.yaml`; it is backup-only.
-- Default dataset input paths are `./01_layout/layout_topology.json` and `./01_layout/geom.json` under the configured workspace root.
-- The component-info CAD-asset build also uses `./component_info/geom_component_info.json` by default, but only after the route rules select `guides/create-assembly-from-component-info.md`. `./component_info/bom_component_info.json` is colocated there for BOM metadata, but the current CAD-asset build does not read it.
-- Default output paths live under `./02_geometry_edit` under the configured workspace root.
+- Treat `layout_topology.json` plus `geom.json` as the geometry/layout source of truth. Treat `real_bom.json + layout_topology.json + geom.json` as the CAD-stage build source of truth. Do not use `sample.yaml`; it is backup-only.
+- `python -m freecad_cli_tools.cli.main layout safe-move` defaults to `./00_inputs/layout_topology.json` and `./00_inputs/geom.json` under the configured workspace root.
+- The standard create workflow is always `python -m freecad_cli_tools.cli.main cad build` followed by
+  `python -m freecad_cli_tools.cli.main cad validate`.
+- The standard modify workflow is always `python -m freecad_cli_tools.cli.main layout safe-move`
+  followed by `python -m freecad_cli_tools.cli.main cad validate`.
+- The component-info CAD-asset build defaults to `./00_inputs/real_bom.json`, `./00_inputs/layout_topology.json`, and `./00_inputs/geom.json`. It resolves STEP/STP paths from `real_bom.source.template_csv`; explicit `--geom-component-info` is optional and overrides synthesized component info. It is an auxiliary/debug workflow, not the default create workflow.
+- `python -m freecad_cli_tools.cli.main layout safe-move` defaults to writing after-state outputs under `./01_cad` under the configured workspace root. `python -m freecad_cli_tools.cli.main assembly create-from-component-info` defaults to writing `component_info_assembly.step/.glb` under `./01_cad`.
 - Never infer dataset input paths from the repository root, the skill backup directory, or the process `cwd` once a workspace root has been resolved. Expand defaults to absolute paths before reasoning about missing files or running commands.
-- If default input files are not present under the resolved workspace, do not search broadly for similarly named files. Ask for or require an explicit workflow `--workspace`, `FREECAD_WORKSPACE_DIR`, `freecad.workspaceDir`, `--layout-topology`, and `--geom` path. Do not pass `--workspace` to `freecad-runtime-config`; use `FREECAD_WORKSPACE_DIR` for that command.
+- If default input files are not present under the resolved workspace, do not search broadly for similarly named files. Ask for or require a corrected `freecad.workspaceDir`, `--layout-topology`, and `--geom` path.
 - Placeholder and safe-move CAD artifacts must be named `geometry_after.step` and `geometry_after.glb`. Component-info CAD-asset builds must be named `component_info_assembly.step` and `component_info_assembly.glb`. If a CLI accepts an output path, use it only to choose the directory or parent path unless the guide says otherwise.
-- `freecad-layout-safe-move` writes non-destructive dataset outputs such as `geometry_after.layout_topology.json` and `geometry_after.geom.json`. Do not overwrite the source dataset unless the workflow explicitly says to.
+- `python -m freecad_cli_tools.cli.main layout safe-move` writes non-destructive dataset outputs such as `geometry_after.layout_topology.json` and `geometry_after.geom.json`. Do not overwrite the source dataset unless the workflow explicitly says to.
 - Preserve the component-local contact face when changing the installation face. Derive runtime orientation from `placement.mount_face_id`, `placement.component_mount_face_id`, and `placement.alignment.in_plane_rotation_deg` instead of storing `placement.rotation_matrix`.
 - Prefer first-class commands:
-  - `freecad-create-assembly`
-  - `freecad-create-assembly-from-component-info`
-  - `freecad-layout-safe-move`
+  - `python -m freecad_cli_tools.cli.main cad build`
+  - `python -m freecad_cli_tools.cli.main cad validate`
+  - `python -m freecad_cli_tools.cli.main layout safe-move`
+  - `python -m freecad_cli_tools.cli.main config show`
+  - `python -m freecad_cli_tools.cli.main assembly create-from-component-info` only for auxiliary real-CAD asset assembly/debug tasks
 - After CAD geometry changes, recompute and fit the view unless the active command exposes and uses an explicit opt-out such as `--no-fit-view`.
 - Verify outputs after execution. If the dataset update succeeds but STEP or GLB export is missing, report partial success rather than full success.
-- Check and report CLI progress fields: `layout_completion_percent`, `modeling_percent`, and `export_file_percent`. STEP and GLB exports each contribute 50% to `export_file_percent`. The latest values are written to `<configured workspace>/logs/progress_percentages.json` by the CLI and FreeCAD-side scripts as layout, modeling, and export stages advance.
+- Check and report progress fields from `<configured workspace>/logs/progress_percentages.json`: `workflow`, `stage`, `status`, `overall_percent`, `modeling_percent`, `export_file_percent`, `validation_percent`, and `error`. STEP and GLB exports each contribute 50% to `export_file_percent`.
+- Progress `workflow` must match the two primary workflows: `create_cad` for `cad build -> cad validate`, and `modify_cad` for `layout safe-move -> cad validate`. A standalone validation run may use `cad_validation`.
 - When that progress file already contains the BOM pipeline schema (`schema_version: "1.0"` with `steps`), FreeCAD must not replace the file with its standalone payload. Merge FreeCAD progress into the `geometry-edit` step: set `steps[].percent` for `geometry-edit` to the average of the three FreeCAD progress fields, keep it in the range `0-100`, attach the detailed values under `freecad_progress`, recompute `overall_percent`, and preserve top-level `output_files` for frontend display.
 - When the progress file does not contain the BOM pipeline schema, the CLI may keep writing the standalone FreeCAD progress payload for direct FreeCAD use.
 
 ## Workflow Notes
 
-- Placeholder-build workflow: normalize `layout_topology.json + geom.json` into the internal spec, create the assembly hierarchy, include the envelope when available, then export `geometry_after.step` and `geometry_after.glb`. Use this workflow for assembly creation unless the user clearly asks for real CAD/STEP/STP asset import.
-- Component-info CAD-asset workflow: normalize `layout_topology.json + geom.json + geom_component_info.json` into the internal component-info assembly spec, create a new assembly, include the envelope from `geom.outer_shell`, import real STEP components from `cad_rotated_path` when available, fall back to box placeholders when they are not, then export `component_info_assembly.step` and `component_info_assembly.glb`.
-- Safe-move workflow: solve in normalized coordinates, project the move into the active face plane, preserve the component contact face, write updated dataset files, and only then sync CAD when requested.
+- Create workflow: `python -m freecad_cli_tools.cli.main cad build` reads `00_inputs/real_bom.json`,
+  `00_inputs/layout_topology.json`, and `00_inputs/geom.json`; writes
+  `01_cad/geometry_after.step`, `geometry_after.glb`,
+  `simulation_input.json`, and `cad_agent_output.json`; then
+  `python -m freecad_cli_tools.cli.main cad validate` validates the result and writes validation plus
+  six-face screenshot metadata into `01_cad/cad_agent_output.json`.
+- Modify workflow: `python -m freecad_cli_tools.cli.main layout safe-move` solves in normalized
+  coordinates, projects the move into the active face plane, preserves the
+  component contact face, writes updated dataset files under `01_cad`, syncs
+  CAD and exports `geometry_after.step/.glb` by default; then
+  `python -m freecad_cli_tools.cli.main cad validate` validates the modified CAD model.
+- CAD-stage validation reads `00_inputs` and `01_cad`, validates file
+  completeness, ID contracts, bbox overlap, mount-plane contact, footprint
+  bounds, and face occupancy; it writes the report directly into
+  `01_cad/cad_agent_output.json` under `validation`, and writes six-face
+  screenshot metadata under the top-level `screenshot` field.
+- Auxiliary component-info CAD-asset workflow: normalize
+  `real_bom.json + layout_topology.json + geom.json` into the internal
+  component-info assembly spec, create a separate new assembly, include the
+  envelope from `geom.outer_shell`, import real STEP components from
+  `real_bom.source.template_csv` when available, fall back to box placeholders
+  when they are not, then export `01_cad/component_info_assembly.step` and
+  `01_cad/component_info_assembly.glb` by default.
 
 ## Error Handling
 

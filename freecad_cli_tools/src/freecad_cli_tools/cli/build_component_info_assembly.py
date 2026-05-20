@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a new FreeCAD assembly from layout_topology.json + geom.json + geom_component_info.json."""
+"""Build a new FreeCAD assembly from 00_inputs real_bom + layout_topology + geom."""
 
 from __future__ import annotations
 
@@ -33,36 +33,34 @@ from freecad_cli_tools.rpc_client import print_result as print_json
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
 from freecad_cli_tools.runtime_config import (
     get_default_component_info_max_step_size_mb,
-    get_default_geom_component_info_path,
-    get_default_geom_path,
-    get_default_geometry_edit_dir,
-    get_default_layout_topology_path,
     get_default_workspace_dir,
     resolve_workspace_path,
 )
-from freecad_cli_tools.workspace import add_workspace_arg, validate_workspace_inputs, validate_workspace_root
+from freecad_cli_tools.workspace import add_workspace_arg, validate_workspace_root
 
 COMPONENT_INFO_ASSEMBLY_STEM = "component_info_assembly"
+DEFAULT_COMPONENT_INFO_OUTPUT_DIR = Path("01_cad")
+DEFAULT_COMPONENT_INFO_INPUT_DIR = Path("00_inputs")
 
 
 def parse_args() -> argparse.Namespace:
     default_max_step_size_mb = get_default_component_info_max_step_size_mb()
     parser = argparse.ArgumentParser(
         description=(
-            "Create a new FreeCAD assembly from layout_topology.json + geom.json + "
-            "geom_component_info.json. Components with cad_rotated_path STEP files are "
-            "imported directly; missing or oversized STEP files fall back to box "
-            "placeholders."
+            "Create a new FreeCAD assembly from 00_inputs layout_topology.json, geom.json, "
+            "and real_bom.json. STEP/STP assets are resolved from real_bom.source.template_csv "
+            "when geom_component_info.json is not supplied."
         )
     )
     parser.add_argument("--layout-topology", help="Path to layout_topology.json.")
     parser.add_argument("--geom", help="Path to geom.json.")
+    parser.add_argument("--real-bom", help="Path to real_bom.json.")
     add_workspace_arg(parser)
     parser.add_argument(
         "--geom-component-info",
         help=(
-            "Path to geom_component_info.json. Defaults to "
-            "'./component_info/geom_component_info.json' under the configured workspace root."
+            "Optional path to geom_component_info.json. When omitted or missing, the command "
+            "builds equivalent component info from real_bom.json and its template_csv."
         ),
     )
     parser.add_argument("--doc-name", required=True, help="Name of the FreeCAD document to create.")
@@ -70,7 +68,8 @@ def parse_args() -> argparse.Namespace:
         "--output",
         help=(
             "Optional output STEP path or directory. Exported filenames are always "
-            "'component_info_assembly.step' and 'component_info_assembly.glb'."
+            "'component_info_assembly.step' and 'component_info_assembly.glb'. "
+            "Defaults to './01_cad' under the configured workspace root."
         ),
     )
     parser.add_argument(
@@ -90,7 +89,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def get_default_component_info_assembly_step_path() -> Path:
-    return get_default_geometry_edit_dir() / f"{COMPONENT_INFO_ASSEMBLY_STEM}.step"
+    return resolve_workspace_path(DEFAULT_COMPONENT_INFO_OUTPUT_DIR) / (
+        f"{COMPONENT_INFO_ASSEMBLY_STEM}.step"
+    )
 
 
 def resolve_component_info_assembly_step_path(path: str | Path | None = None) -> Path:
@@ -158,7 +159,7 @@ def registry_inputs(
     args: argparse.Namespace,
     layout_topology_path: Path,
     geom_path: Path,
-    geom_component_info_path: Path,
+    geom_component_info_path: Path | None,
     output_path: Path,
 ) -> dict[str, object]:
     return {
@@ -171,7 +172,8 @@ def registry_inputs(
         "max_step_size_mb": args.max_step_size_mb,
         "layout_topology_path": str(layout_topology_path),
         "geom_path": str(geom_path),
-        "geom_component_info_path": str(geom_component_info_path),
+        "geom_component_info_path": str(geom_component_info_path) if geom_component_info_path else None,
+        "real_bom_path": str(getattr(args, "real_bom_path", "")),
         "input_format": "component_info_assembly",
     }
 
@@ -179,21 +181,20 @@ def registry_inputs(
 def main() -> None:
     args = parse_args()
     validate_workspace_root(args.workspace)
-    validate_workspace_inputs(
-        args.workspace,
-        require_layout_topology=args.layout_topology is None,
-        require_geom=args.geom is None,
-        require_component_info=args.geom_component_info is None,
-    )
     layout_topology_path = resolve_workspace_path(
-        args.layout_topology or get_default_layout_topology_path()
+        args.layout_topology or DEFAULT_COMPONENT_INFO_INPUT_DIR / "layout_topology.json"
     )
-    geom_path = resolve_workspace_path(args.geom or get_default_geom_path())
-    geom_component_info_path = resolve_workspace_path(
-        args.geom_component_info or get_default_geom_component_info_path()
+    geom_path = resolve_workspace_path(args.geom or DEFAULT_COMPONENT_INFO_INPUT_DIR / "geom.json")
+    real_bom_path = resolve_workspace_path(args.real_bom or DEFAULT_COMPONENT_INFO_INPUT_DIR / "real_bom.json")
+    geom_component_info_path = (
+        resolve_workspace_path(args.geom_component_info) if args.geom_component_info else None
     )
-    if not geom_component_info_path.exists():
+    for required_path in (layout_topology_path, geom_path, real_bom_path):
+        if not required_path.exists():
+            raise FileNotFoundError(f"required input file not found: {required_path}")
+    if geom_component_info_path is not None and not geom_component_info_path.exists():
         raise FileNotFoundError(f"geom_component_info.json not found: {geom_component_info_path}")
+    args.real_bom_path = real_bom_path
     output_path = resolve_component_info_assembly_step_path(args.output)
     staged_input_name = Path("normalized_component_info_assembly.json")
     staged_input_path, staged_output_path = stage_runtime_paths(
@@ -224,7 +225,7 @@ def main() -> None:
             args=args,
             layout_topology_path=layout_topology_path,
             geom_path=geom_path,
-            geom_component_info_path=geom_component_info_path,
+            geom_component_info_path=geom_component_info_path or real_bom_path,
             output_path=output_path,
         ),
     )
@@ -234,6 +235,7 @@ def main() -> None:
             layout_topology_path=layout_topology_path,
             geom_path=geom_path,
             geom_component_info_path=geom_component_info_path,
+            real_bom_path=real_bom_path,
             max_step_size_mb=args.max_step_size_mb,
         )
         stage_input_data(normalized_data, staged_input_path)
@@ -314,7 +316,8 @@ def main() -> None:
             outputs={
                 "layout_topology_path": str(layout_topology_path),
                 "geom_path": str(geom_path),
-                "geom_component_info_path": str(geom_component_info_path),
+                "real_bom_path": str(real_bom_path),
+                "geom_component_info_path": str(geom_component_info_path) if geom_component_info_path else None,
                 "step_path": str(step_path) if step_path else None,
                 "glb_path": str(glb_path) if glb_path else None,
             },
@@ -323,7 +326,12 @@ def main() -> None:
             artifacts=[
                 artifact_entry("layout_topology", layout_topology_path),
                 artifact_entry("geom", geom_path),
-                artifact_entry("geom_component_info", geom_component_info_path),
+                artifact_entry("real_bom", real_bom_path),
+                *(
+                    [artifact_entry("geom_component_info", geom_component_info_path)]
+                    if geom_component_info_path
+                    else []
+                ),
                 artifact_entry("step", step_path),
                 artifact_entry("glb", glb_path),
             ],
@@ -345,7 +353,8 @@ def main() -> None:
             outputs={
                 "layout_topology_path": str(layout_topology_path),
                 "geom_path": str(geom_path),
-                "geom_component_info_path": str(geom_component_info_path),
+                "real_bom_path": str(real_bom_path),
+                "geom_component_info_path": str(geom_component_info_path) if geom_component_info_path else None,
                 "step_path": str(output_path),
                 "glb_path": str(output_path.with_suffix(".glb")),
             },
@@ -354,7 +363,12 @@ def main() -> None:
             artifacts=[
                 artifact_entry("layout_topology", layout_topology_path),
                 artifact_entry("geom", geom_path),
-                artifact_entry("geom_component_info", geom_component_info_path),
+                artifact_entry("real_bom", real_bom_path),
+                *(
+                    [artifact_entry("geom_component_info", geom_component_info_path)]
+                    if geom_component_info_path
+                    else []
+                ),
                 artifact_entry("step", output_path),
                 artifact_entry("glb", output_path.with_suffix(".glb")),
             ],

@@ -110,10 +110,8 @@ def build_envelope(doc, assembly, data):
     if not outer_size or not inner_size or shell_thickness is None:
         return None
 
-    outer_bbox = envelope.get("outer_bbox") or {}
-    inner_bbox = envelope.get("inner_bbox") or {}
-    outer_min = outer_bbox.get("min") or [-(float(v) / 2.0) for v in outer_size]
-    inner_min = inner_bbox.get("min") or [-(float(v) / 2.0) for v in inner_size]
+    outer_min = [-(float(v) / 2.0) for v in outer_size]
+    inner_min = [-(float(v) / 2.0) for v in inner_size]
 
     outer_shape = Part.makeBox(
         float(outer_size[0]),

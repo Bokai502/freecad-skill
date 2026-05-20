@@ -10,14 +10,14 @@
 ### 方式一：从源码安装
 
 ```bash
-cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+cd /data/lbk/codex_web/freecad_skills/freecad-skill/freecad_cli_tools
 python -m pip install -e .
 ```
 
 ### 方式二：构建并安装 wheel
 
 ```bash
-cd /data/lbk/freecad_skills/freecad-skill/freecad_cli_tools
+cd /data/lbk/codex_web/freecad_skills/freecad-skill/freecad_cli_tools
 python -m pip install build
 python -m build
 python -m pip install dist/freecad_cli_tools-*.whl
@@ -25,55 +25,65 @@ python -m pip install dist/freecad_cli_tools-*.whl
 
 ## 使用方式
 
-安装完成后，所有命令都可以直接使用：
+从源码检出目录中，进入包目录后运行统一 CLI 模块：
 
 ```bash
-# 文档操作
-freecad-create-doc "MyDocument"
-freecad-list-docs
+cd /data/lbk/codex_web/freecad_skills/freecad-skill/freecad_cli_tools
 
-# 对象操作
-freecad-create-obj "MyDoc" "Part::Box" "Box1" -p '{"Length": 100}'
-freecad-edit-obj "MyDoc" "Box1" '{"Length": 200}'
-freecad-del-obj "MyDoc" "Box1"
-freecad-get-objs "MyDoc"
-freecad-get-obj "MyDoc" "Box1"
+# 配置
+python -m freecad_cli_tools.cli.main config show
 
-# 零件库操作
-freecad-get-parts
-freecad-insert-part "Fasteners/Screws/M6x20.FCStd"
+# 装配生成
+python -m freecad_cli_tools.cli.main assembly create-from-component-info --doc-name DirectAssembly
+python -m freecad_cli_tools.cli.main cad build
+python -m freecad_cli_tools.cli.main cad validate
 
-# 代码执行和视图
-freecad-exec-code "import FreeCAD; print(FreeCAD.ActiveDocument.Name)"
-freecad-get-view Isometric --output table.png
-freecad-create-assembly --doc-name LayoutAssembly
-freecad-create-assembly-from-component-info --doc-name DirectAssembly
-
-# 基于 layout dataset 的安全移动与可选 CAD 同步
-freecad-layout-safe-move --component P001 --move 50 50 0
-freecad-layout-safe-move --component P001 --move 50 50 0 --sync-cad --doc-name LayoutAssembly
-freecad-layout-safe-move --component P002 --install-face 4 --move 0 0 0
-freecad-sync-placements --doc-name LayoutAssembly --updates-file updates.json
-
-# 仅针对现有文档的兜底命令
-freecad-check-collision "MyDoc" "P001_part" --move 0 0 -10
-freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
+# 基于 layout dataset 的安全移动与默认 CAD 同步
+python -m freecad_cli_tools.cli.main layout safe-move --component P001 --move 50 50 0
+python -m freecad_cli_tools.cli.main layout safe-move --component P001 --move 50 50 0 --format json
+python -m freecad_cli_tools.cli.main layout safe-move --component P001 --move 50 50 0 --no-sync-cad
+python -m freecad_cli_tools.cli.main layout safe-move --component P002 --install-face 4 --move 0 0 0
 ```
 
-默认情况下，相对 CLI 路径会基于 `--workspace` 或环境变量中的
-`FREECAD_WORKSPACE_DIR` 解析。
-`freecad-create-assembly` 会读取 `./01_layout/layout_topology.json` 和
-`./01_layout/geom.json`，并输出 `./02_geometry_edit/geometry_after.step`
-及同名 `geometry_after.glb`。
+完成 editable 或 wheel 安装后，`freecad-tools` 可作为相同命令的短 console-script 别名。
 
-`freecad-create-assembly-from-component-info` 会读取
-`./01_layout/layout_topology.json`、`./01_layout/geom.json` 和
-`./component_info/geom_component_info.json`，优先从
-`display_info.assets.cad_rotated_path` 导入真实 STEP/STP；缺失或不可读时
-回退为 `Part::Box`。超过 `--max-step-size-mb` 的 STEP/STP 也会回退为
-`Part::Box`，传 `-1` 可以关闭这个限制。这个直接构建流程同样输出
-`./02_geometry_edit/component_info_assembly.step` 和同名
+工作区相关命令会从 `/data/lbk/codex_web/config.json` 的
+`freecad.workspaceDir` 字段解析相对路径。`--workspace` 仅作为弃用兼容选项保留，
+不会覆盖配置中的工作区。
+
+`python -m freecad_cli_tools.cli.main assembly create-from-component-info` 会读取
+`./00_inputs/real_bom.json`、`./00_inputs/layout_topology.json` 和
+`./00_inputs/geom.json`。命令会通过每个 BOM 条目的 `semantic_name`
+到 `real_bom.source.template_csv` 中解析真实 STEP/STP 资产；如果显式传入
+`--geom-component-info`，则用该文件覆盖自动合成的 component info。
+STEP 资产缺失或不可读时回退为 `Part::Box`。超过 `--max-step-size-mb`
+的 STEP/STP 也会回退为 `Part::Box`，传 `-1` 可以关闭这个限制。这个直接构建流程输出
+`./01_cad/component_info_assembly.step` 和同名
 `component_info_assembly.glb`。
+
+`python -m freecad_cli_tools.cli.main cad build` 会读取 `./00_inputs/real_bom.json`、
+`./00_inputs/layout_topology.json` 和 `./00_inputs/geom.json`，并把 CAD
+阶段产物写到 `./01_cad`：
+
+- `geometry_after.step`
+- `geometry_after.glb`
+- `simulation_input.json`
+- `cad_agent_output.json`
+
+它还会写出兼容旧 after-state 的文件，例如
+`geometry_after.geom.json`、`geometry_after.layout_topology.json`、
+`geometry_after_registry.json`，以及 COMSOL 输入文件
+`comsol_inputs/coord.txt` 和 `comsol_inputs/channels_input.npz`。
+
+`python -m freecad_cli_tools.cli.main cad validate` 会校验 `./01_cad` 产物与 `./00_inputs`
+是否一致，并把校验报告直接写入 `./01_cad/cad_agent_output.json` 的
+`validation` 字段。默认还会通过 FreeCAD RPC 截取当前 CAD 文档六面视图，
+写到 `./01_cad/freecad_screenshot_top.png`、
+`./01_cad/freecad_screenshot_bottom.png`、`./01_cad/freecad_screenshot_front.png`、
+`./01_cad/freecad_screenshot_back.png`、`./01_cad/freecad_screenshot_left.png`
+和 `./01_cad/freecad_screenshot_right.png`，并把图片路径写入
+`cad_agent_output.json` 的顶层 `screenshot` 字段。可用
+`--no-screenshot` 跳过截图。
 
 所有一等 CLI 输出都会包含进度百分比：
 
@@ -81,37 +91,29 @@ freecad-move-obj "MyDoc" "P001_part" 0 0 -10 --mode delta
 - `modeling_percent`：FreeCAD 建模或 CAD 同步阶段完成百分比。
 - `export_file_percent`：导出文件完成百分比；STEP 和 GLB 各占 50%。
 
-对于只处理数据集的 `freecad-layout-safe-move`，没有请求 CAD 建模和导出，
+对于只处理数据集的 `python -m freecad_cli_tools.cli.main layout safe-move`，没有请求 CAD 建模和导出，
 因此 `modeling_percent` 与 `export_file_percent` 为 `0.0`。
 最近一次运行的百分比也会写入
 `$FREECAD_WORKSPACE_DIR/logs/progress_percentages.json`。该文件还包含
 `output_files` 对象，记录每个产出文件路径及其是否存在。
 执行 CAD 操作时，FreeCAD 侧脚本会在建模和 STEP/GLB 导出阶段实际推进时刷新该文件。
 
-如果想在完整构建前先检查工作区，可以执行：
-
-```bash
-freecad-validate-workspace --workspace /abs/path/to/workspace
-```
-
 ## 推荐移动流程
 
 只要你手头有 `layout_topology.json` 和 `geom.json`，就建议把这对数据集作为单一事实来源：
 
-1. 先运行 `freecad-layout-safe-move`。
-2. 让它计算安全移动并把新的数据集写到 `./02_geometry_edit`。
-3. 如果需要同步 CAD，就附加 `--sync-cad --doc-name <doc>`，同一条命令会更新 FreeCAD 文档。
-4. 只有在你明确需要重新生成 CAD 文档时，才运行 `freecad-create-assembly`。
-
-如果没有数据集来源，再把 `freecad-check-collision` 和 `freecad-move-obj` 当作文档级兜底命令使用。
+1. 先运行 `python -m freecad_cli_tools.cli.main layout safe-move`。
+2. 让它计算安全移动，把新的数据集写到 `./01_cad`，并更新 CAD STEP/GLB。
+3. 只有明确需要纯 JSON 离线更新时，才附加 `--no-sync-cad`。
+4. 需要从 `00_inputs` 重新生成完整 CAD 阶段产物时，运行 `python -m freecad_cli_tools.cli.main cad build`。
 
 ## Layout Dataset 离线移动命令
 
-`freecad-layout-safe-move` 是面向布局数据集的主移动命令。它既可以离线处理数据集，也可以把批准后的结果同步到正在运行的 FreeCAD 文档里。
+`python -m freecad_cli_tools.cli.main layout safe-move` 是面向布局数据集的主移动命令。它默认会把批准后的结果同步到正在运行的 FreeCAD 文档，并导出 `geometry_after.step` 和 `geometry_after.glb`；只有传入 `--no-sync-cad` 时才只做 JSON 离线更新。
 
-在 `skills_test` 工作区流程中，移动和旋转请求默认会从 `./01_layout`
+在 v9 工作区流程中，移动和旋转请求默认会从 `./00_inputs`
 读取输入，并把新的数据集、`geometry_after.step`、`geometry_after.glb`
-写到 `./02_geometry_edit`；只有在用户明确要求时，才覆盖原路径或指定其他输出。
+写到 `./01_cad`；只有在用户明确要求时，才覆盖原路径或指定其他输出。
 
 适用场景包括：
 
@@ -121,55 +123,23 @@ freecad-validate-workspace --workspace /abs/path/to/workspace
 - 保证组件始终位于 `envelope.inner_size` 内
 - 让外部安装面（6-11）的移动继续受目标墙面二维边界约束，若请求路径越界则返回 `FACE_BOUNDARY`
 - 将新的位置和安装信息反写到 `layout_topology.json` 与 `geom.json`
-- 可选地把更新后的结果同步到打开中的 FreeCAD 文档
-
-如果你要根据布局数据集重建一个新的 CAD 文档，可以使用：
-
-```bash
-freecad-create-assembly \
-  --doc-name LayoutAssembly
-```
-
-该命令会创建：
-
-- 一个 `Assembly` 容器
-- 当归一化后的数据集中存在 `envelope` 时，创建 `Envelope_part` 和 `EnvelopeShell`
-- 每个组件对应一个 `App::Part` 和一个几何实体（当前支持 `Part::Box` / `Part::Cylinder`）
-- 一套占位装配导出：`.step` 和同名 `.glb`
-- 生成后自动做一次 GUI 视图拟合
+- 默认把更新后的结果同步到打开中的 FreeCAD 文档并导出 STEP/GLB
 
 该命令把 `placement.position` 视为组件局部包围盒最小角点位置，并默认在当前朝向下执行安全碰撞移动。在当前归一化模型里：
 
 - `placement.mount_face` 表示组件安装到的包络面（`0..11`）
 - `placement.rotation_matrix` 表示装配朝向
 
-当传入 `--install-face` 时，命令会把组件旋转到“原组件接触面安装到目标包络面”的姿态，从目标面的中心位置开始，再把请求的移动量当作该安装面内的偏移量来执行。如果完整请求安全，就直接采用；如果不安全，就选择这条路径上的最近安全前缀；如果请求路径上没有安全点，命令会报告“未找到解”，但仍会写出受约束后的数据集结果。传入 `--sync-cad` 时，它会把最终计算出的位姿直接同步到目标 FreeCAD 文档里的对应对象。
+当传入 `--install-face` 时，命令会把组件旋转到“原组件接触面安装到目标包络面”的姿态，从目标面的中心位置开始，再把请求的移动量当作该安装面内的偏移量来执行。如果完整请求安全，就直接采用；如果不安全，就选择这条路径上的最近安全前缀；如果请求路径上没有安全点，命令会报告“未找到解”，但仍会写出受约束后的数据集结果。除非传入 `--no-sync-cad`，否则它会把最终计算出的位姿直接同步到目标 FreeCAD 文档里的对应对象，并导出 STEP/GLB。
 
 补充说明：外部安装面（6-11）虽然会跳过内部包络包含约束，但仍会使用 `envelope.outer_size` 检查目标墙面的面内边界，避免组件沿墙面滑出边缘。如果请求路径跨出了这个二维轮廓，命令会截断到最近安全前缀，并在阻塞原因中包含 `FACE_BOUNDARY`。
 
-工作区解析现在是严格模式：
+工作区解析规则是确定的：
 
 - 推荐：显式传入 `--workspace /abs/path/to/workspace`
-- 兜底：提前导出 `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
-
-已经不再支持项目配置、用户配置或 legacy runtime config 自动发现。
-
-对于多组件位姿更新，`freecad-sync-placements` 接受如下 JSON 列表：
-
-```json
-[
-  {
-    "component": "P006",
-    "position": [-103.72, 139.72, -170.91],
-    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-  },
-  {
-    "component": "P018",
-    "position": [-249.72, 179.32, -170.91],
-    "rotation_matrix": [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
-  }
-]
-```
+- 第一兜底：提前导出 `FREECAD_WORKSPACE_DIR=/abs/path/to/workspace`
+- 第二兜底：提前导出 `WORKSPACE_DIR=/abs/path/to/workspace`
+- 最后兜底：配置 codex-web 工作区目录
 
 ## 开发布局
 
@@ -191,7 +161,7 @@ freecad-create-assembly \
 
 - 对于 RPC 命令：需要安装并运行带 MCP 插件的 FreeCAD，RPC 服务使用 CLI 参数或环境变量中的主机和端口
 - 相对输入输出路径会基于 `--workspace` 或 `FREECAD_WORKSPACE_DIR` 解析
-- 对于离线 layout dataset 模式的 `freecad-layout-safe-move`：只需要 Python 3.9+
+- 对于离线 layout dataset 模式的 `python -m freecad_cli_tools.cli.main layout safe-move`：只需要 Python 3.9+
 - Python 3.9+
 
 ## 许可证

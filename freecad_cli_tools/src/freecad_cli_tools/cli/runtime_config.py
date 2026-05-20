@@ -16,10 +16,10 @@ RUNTIME_CONFIG_KEYS = (
     "rpc_host",
     "rpc_port",
     "component_info_max_step_size_mb",
+    "real_bom_path",
     "layout_topology_path",
     "geom_path",
-    "geom_component_info_path",
-    "geometry_edit_dir",
+    "cad_output_dir",
     "geometry_after_step_path",
     "geometry_after_layout_topology_path",
     "geometry_after_geom_path",
@@ -34,7 +34,7 @@ def _path_payload(path: Path) -> str:
 def build_runtime_config_payload() -> dict[str, Any]:
     """Return resolved runtime configuration values used by CLI commands."""
     workspace_dir = runtime_config.get_default_workspace_dir()
-    geometry_edit_dir = runtime_config.get_default_geometry_edit_dir()
+    cad_output_dir = runtime_config.get_default_cad_output_dir()
     return {
         "config_path": str(runtime_config.CODEX_WEB_CONFIG_PATH),
         "workspace_dir": _path_payload(workspace_dir),
@@ -43,12 +43,10 @@ def build_runtime_config_payload() -> dict[str, Any]:
         "component_info_max_step_size_mb": (
             runtime_config.get_default_component_info_max_step_size_mb()
         ),
+        "real_bom_path": _path_payload(runtime_config.get_default_real_bom_path()),
         "layout_topology_path": _path_payload(runtime_config.get_default_layout_topology_path()),
         "geom_path": _path_payload(runtime_config.get_default_geom_path()),
-        "geom_component_info_path": _path_payload(
-            runtime_config.get_default_geom_component_info_path()
-        ),
-        "geometry_edit_dir": _path_payload(geometry_edit_dir),
+        "cad_output_dir": _path_payload(cad_output_dir),
         "geometry_after_step_path": _path_payload(
             runtime_config.get_default_geometry_after_step_path()
         ),
@@ -70,8 +68,8 @@ def parse_args() -> argparse.Namespace:
         "--workspace",
         type=Path,
         help=(
-            "Workspace root to inspect. This is accepted for compatibility with workflow "
-            "commands and is applied only to this process."
+            "Deprecated compatibility option. Workspace is resolved from "
+            "/data/lbk/codex_web/config.json freecad.workspaceDir."
         ),
     )
     parser.add_argument(
@@ -84,8 +82,6 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    if args.workspace is not None:
-        runtime_config.set_default_workspace_dir(args.workspace)
     payload = build_runtime_config_payload()
     if args.key:
         print(json.dumps({args.key: payload[args.key]}, indent=2, ensure_ascii=False))

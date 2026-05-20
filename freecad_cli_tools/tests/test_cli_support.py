@@ -21,16 +21,17 @@ from freecad_cli_tools.cli_support import (
 from freecad_cli_tools.progress import ProgressLogWriter
 from freecad_cli_tools.runtime_config import (
     get_default_artifact_registry_dir,
+    get_default_cad_output_dir,
     get_default_component_info_max_step_size_mb,
     get_default_geometry_after_step_path,
+    get_default_real_bom_path,
     get_default_rpc_host,
     get_default_rpc_port,
     get_default_workspace_dir,
     resolve_geometry_after_step_path,
     resolve_workspace_path,
-    set_default_workspace_dir,
 )
-from freecad_cli_tools.workspace import validate_workspace_inputs, validate_workspace_root
+from freecad_cli_tools.workspace import validate_workspace_root
 
 
 def write_runtime_config(monkeypatch, tmp_path: Path, freecad_config: dict) -> Path:
@@ -60,7 +61,7 @@ def test_get_default_workspace_dir_requires_environment_or_config(
     monkeypatch.setattr(runtime_config, "_CONFIG_CACHE", None)
     monkeypatch.setattr(runtime_config, "FREECAD_WORKSPACE_DIR", None)
 
-    with pytest.raises(RuntimeError, match="FREECAD_WORKSPACE_DIR is not set"):
+    with pytest.raises(RuntimeError, match="freecad\\.workspaceDir is not configured"):
         get_default_workspace_dir()
 
 
@@ -112,9 +113,11 @@ def test_runtime_config_cli_prints_resolved_values(monkeypatch, tmp_path: Path, 
     assert payload["rpc_host"] == "127.0.0.1"
     assert payload["rpc_port"] == 9988
     assert payload["component_info_max_step_size_mb"] == 12.5
+    assert payload["real_bom_path"] == str(workspace.resolve() / "00_inputs" / "real_bom.json")
     assert payload["layout_topology_path"] == str(
-        workspace.resolve() / "01_layout" / "layout_topology.json"
+        workspace.resolve() / "00_inputs" / "layout_topology.json"
     )
+    assert payload["cad_output_dir"] == str(workspace.resolve() / "01_cad")
 
 
 def test_runtime_config_cli_prints_single_key(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -150,24 +153,29 @@ def test_runtime_config_cli_accepts_workspace_argument(
     runtime_config_command.main()
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["workspace_dir"] == str(cli_workspace.resolve())
+    assert payload["workspace_dir"] == str(configured_workspace.resolve())
     assert payload["layout_topology_path"] == str(
-        cli_workspace.resolve() / "01_layout" / "layout_topology.json"
+        configured_workspace.resolve() / "00_inputs" / "layout_topology.json"
     )
 
 
-def test_freecad_workspace_dir_precedes_workspace_dir(monkeypatch, tmp_path: Path) -> None:
+def test_workspace_env_vars_do_not_override_codex_web_config(monkeypatch, tmp_path: Path) -> None:
+    configured_workspace = tmp_path / "configured-workspace"
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(configured_workspace)})
     monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "freecad-workspace"))
     monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path / "pipeline-workspace"))
 
-    assert get_default_workspace_dir() == (tmp_path / "freecad-workspace").resolve()
+    assert get_default_workspace_dir() == configured_workspace.resolve()
 
 
-def test_workspace_dir_is_supported_as_fallback(monkeypatch, tmp_path: Path) -> None:
+def test_workspace_dir_env_is_not_supported_as_fallback(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(runtime_config, "CODEX_WEB_CONFIG_PATH", tmp_path / "config.json")
+    monkeypatch.setattr(runtime_config, "_CONFIG_CACHE", None)
     monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
     monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path / "pipeline-workspace"))
 
-    assert get_default_workspace_dir() == (tmp_path / "pipeline-workspace").resolve()
+    with pytest.raises(RuntimeError, match="freecad\\.workspaceDir is not configured"):
+        get_default_workspace_dir()
 
 
 def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:
@@ -177,9 +185,9 @@ def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:
     assert normalize_runtime_path(target) == str(target.resolve())
 
 
-def test_progress_log_writer_refreshes_output_files(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path))
-    output_path = tmp_path / "02_geometry_edit" / "geometry_after.step"
+def test_progress_log_writer_omits_output_files(monkeypatch, tmp_path: Path) -> None:
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
+    output_path = tmp_path / "01_cad" / "geometry_after.step"
     writer = ProgressLogWriter(
         tool="test-tool",
         progress={
@@ -197,14 +205,121 @@ def test_progress_log_writer_refreshes_output_files(monkeypatch, tmp_path: Path)
     writer.update()
 
     final_payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert first_payload["output_files"]["step"] == {
-        "path": str(output_path),
-        "exists": False,
-    }
-    assert final_payload["output_files"]["step"] == {
-        "path": str(output_path),
-        "exists": True,
-    }
+    assert "output_files" not in first_payload
+    assert "output_files" not in final_payload
+
+
+def test_progress_log_writer_preserves_existing_progress_history(monkeypatch, tmp_path: Path) -> None:
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+    progress_log_path.parent.mkdir(parents=True)
+    progress_log_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "freecad_progress/1.0",
+                "workflow": "simulation",
+                "status": "success",
+                "custom_marker": "keep-me",
+                "output_files": {
+                    "previous": {"path": "/tmp/previous.json", "exists": True},
+                },
+                "tools": {
+                    "sim-run": {
+                        "tool": "sim-run",
+                        "status": "success",
+                    },
+                },
+                "history": [
+                    {
+                        "tool": "sim-run",
+                        "status": "success",
+                        "updated_at": "2026-01-01T00:00:00Z",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_path = tmp_path / "01_cad" / "geometry_after.glb"
+    ProgressLogWriter(
+        tool="freecad-tools cad build",
+        progress={
+            "modeling_percent": 100.0,
+            "export_file_percent": 100.0,
+            "validation_percent": 0.0,
+        },
+        output_paths={"glb": output_path},
+        workflow="create_cad",
+        command="cad build",
+        status="running",
+    ).start()
+
+    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert payload["custom_marker"] == "keep-me"
+    assert payload["workflow"] == "create_cad"
+    assert payload["tools"]["sim-run"]["status"] == "success"
+    assert payload["tools"]["freecad-tools cad build"]["command"] == "cad build"
+    assert payload["modeling_percent"] == 100.0
+    assert payload["overall_percent"] == 100.0
+    assert "export_file_percent" not in payload
+    assert "validation_percent" not in payload
+    assert "output_files" not in payload
+    assert "output_files" not in payload["tools"]["freecad-tools cad build"]
+    assert [entry["tool"] for entry in payload["history"]] == [
+        "sim-run",
+        "freecad-tools cad build",
+    ]
+
+
+def test_progress_log_writer_filters_cad_validate_progress(monkeypatch, tmp_path: Path) -> None:
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+
+    ProgressLogWriter(
+        tool="freecad-tools cad validate",
+        progress={
+            "modeling_percent": 100.0,
+            "export_file_percent": 100.0,
+            "validation_percent": 35.0,
+        },
+        output_paths={},
+        workflow="cad_validation",
+        command="cad validate",
+        status="running",
+    ).start()
+
+    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert payload["validation_percent"] == 35.0
+    assert payload["overall_percent"] == 35.0
+    assert "modeling_percent" not in payload
+    assert "export_file_percent" not in payload
+    assert "output_files" not in payload
+
+
+def test_progress_log_writer_merges_cad_build_modeling_and_export(monkeypatch, tmp_path: Path) -> None:
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
+    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
+
+    ProgressLogWriter(
+        tool="freecad-tools cad build",
+        progress={
+            "modeling_percent": 100.0,
+            "export_file_percent": 50.0,
+            "validation_percent": 0.0,
+        },
+        output_paths={},
+        workflow="create_cad",
+        command="cad build",
+        status="running",
+    ).start()
+
+    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
+    assert payload["modeling_percent"] == 75.0
+    assert payload["overall_percent"] == 75.0
+    assert "export_file_percent" not in payload
+    assert "validation_percent" not in payload
+    assert "output_files" not in payload
 
 
 def test_describe_rpc_failure_includes_error_message_and_raw_result() -> None:
@@ -245,58 +360,24 @@ def test_extract_output_payload_accepts_message_without_marker_when_json_present
 
 
 def test_runtime_directory_getters_honor_environment_overrides(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
+    workspace = tmp_path / "workspace"
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(workspace)})
     monkeypatch.delenv("FREECAD_ARTIFACT_REGISTRY_DIR", raising=False)
     monkeypatch.setenv("FREECAD_COMPONENT_INFO_MAX_STEP_SIZE_MB", "42.5")
 
-    assert get_default_workspace_dir() == tmp_path / "workspace"
-    assert get_default_artifact_registry_dir() == (tmp_path / "workspace" / "logs" / "registry")
+    assert get_default_workspace_dir() == workspace.resolve()
+    assert get_default_artifact_registry_dir() == (workspace.resolve() / "logs" / "registry")
     assert get_default_component_info_max_step_size_mb() == 42.5
 
 
 def test_resolve_workspace_path_uses_configured_workspace_root(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path / "workspace")})
 
-    assert resolve_workspace_path("./01_layout/geom.json") == (
-        tmp_path / "workspace" / "01_layout" / "geom.json"
+    assert resolve_workspace_path("./00_inputs/geom.json") == (
+        tmp_path / "workspace" / "00_inputs" / "geom.json"
     )
     absolute = tmp_path / "abs" / "geom.json"
     assert resolve_workspace_path(absolute) == absolute
-
-
-def test_set_default_workspace_dir_overrides_environment(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
-
-    resolved = set_default_workspace_dir(tmp_path / "workspace")
-
-    assert resolved == (tmp_path / "workspace").resolve()
-    assert get_default_workspace_dir() == resolved
-
-
-def test_validate_workspace_inputs_requires_default_files(monkeypatch, tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    (workspace / "01_layout").mkdir(parents=True)
-    (workspace / "01_layout" / "layout_topology.json").write_text("{}", encoding="utf-8")
-    (workspace / "01_layout" / "geom.json").write_text("{}", encoding="utf-8")
-
-    resolved, inputs = validate_workspace_inputs(workspace, require_component_info=False)
-
-    assert resolved == workspace.resolve()
-    assert inputs["layout_topology"] == (workspace / "01_layout" / "layout_topology.json").resolve()
-    assert inputs["geom"] == (workspace / "01_layout" / "geom.json").resolve()
-
-
-def test_validate_workspace_inputs_reports_missing_absolute_paths(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    (workspace / "01_layout").mkdir(parents=True)
-    (workspace / "01_layout" / "layout_topology.json").write_text("{}", encoding="utf-8")
-
-    with pytest.raises(FileNotFoundError) as excinfo:
-        validate_workspace_inputs(workspace, require_component_info=True)
-
-    message = str(excinfo.value)
-    assert str((workspace / "01_layout" / "geom.json").resolve()) in message
-    assert str((workspace / "component_info" / "geom_component_info.json").resolve()) in message
 
 
 def test_validate_workspace_root_accepts_workspace_without_default_inputs(tmp_path: Path) -> None:
@@ -306,34 +387,22 @@ def test_validate_workspace_root_accepts_workspace_without_default_inputs(tmp_pa
     assert validate_workspace_root(workspace) == workspace.resolve()
 
 
-def test_validate_workspace_inputs_can_skip_default_file_checks(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
-
-    resolved, inputs = validate_workspace_inputs(
-        workspace,
-        require_layout_topology=False,
-        require_geom=False,
-        require_component_info=False,
-    )
-
-    assert resolved == workspace.resolve()
-    assert inputs == {}
-
-
 def test_resolve_geometry_after_step_path_forces_geometry_after_basename(
     monkeypatch, tmp_path: Path
 ) -> None:
-    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "workspace"))
+    workspace = tmp_path / "workspace"
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(workspace)})
 
     assert get_default_geometry_after_step_path() == (
-        tmp_path / "workspace" / "02_geometry_edit" / "geometry_after.step"
+        workspace.resolve() / "01_cad" / "geometry_after.step"
     )
+    assert get_default_cad_output_dir() == workspace.resolve() / "01_cad"
+    assert get_default_real_bom_path() == workspace.resolve() / "00_inputs" / "real_bom.json"
     assert resolve_geometry_after_step_path("exports/custom_name.step") == (
-        tmp_path / "workspace" / "exports" / "geometry_after.step"
+        workspace.resolve() / "exports" / "geometry_after.step"
     )
     assert resolve_geometry_after_step_path("exports") == (
-        tmp_path / "workspace" / "exports" / "geometry_after.step"
+        workspace.resolve() / "exports" / "geometry_after.step"
     )
 
 

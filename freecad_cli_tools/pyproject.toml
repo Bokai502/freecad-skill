@@ -34,11 +34,7 @@ dev = [
 ]
 
 [project.scripts]
-freecad-create-assembly = "freecad_cli_tools.cli.build_assembly:main"
-freecad-create-assembly-from-component-info = "freecad_cli_tools.cli.build_component_info_assembly:main"
-freecad-layout-safe-move = "freecad_cli_tools.cli.layout_safe_move:main"
-freecad-runtime-config = "freecad_cli_tools.cli.runtime_config:main"
-freecad-validate-workspace = "freecad_cli_tools.cli.validate_workspace:main"
+freecad-tools = "freecad_cli_tools.cli.main:main"
 
 [project.urls]
 Homepage = "https://github.com/freecad-mcp/freecad-cli-tools"

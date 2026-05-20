@@ -7,13 +7,15 @@ the layout dataset pair:
 - `geom.json`
 
 `sample.yaml` is not part of this workflow. The CLI entry point is
-`freecad-layout-safe-move`, which always writes updated JSON dataset outputs and
+`python -m freecad_cli_tools.cli.main layout safe-move`, which always writes updated JSON dataset outputs and
 optionally syncs/export CAD artifacts.
 
 ## Core Rules
 
-- Prefer the layout-dataset branch. Use `freecad-layout-safe-move` with
-  `--layout-topology` and `--geom`.
+- Prefer the layout-dataset branch. Use `python -m freecad_cli_tools.cli.main layout safe-move`;
+  by default it reads `./00_inputs/layout_topology.json` and `./00_inputs/geom.json`
+  from the configured workspace. Pass `--layout-topology` and `--geom` only
+  when intentionally overriding those input files.
 - A move is always constrained to the current installation surface. Only the four
   in-plane directions of that surface are valid movement directions.
 - Any requested movement component along the surface normal is ignored and should
@@ -26,7 +28,7 @@ optionally syncs/export CAD artifacts.
   target face changes, rotate the component so the original component contact
   face still touches the new box/envelope face.
 - Do not rebuild the whole assembly for a move. Write new dataset files under
-  `./02_geometry_edit`, and when syncing CAD export `geometry_after.step` plus
+  `./01_cad`, and when syncing CAD export `geometry_after.step` plus
   sibling GLB there by default.
 - During CAD sync, move an existing `<NAME>_part` container by the rigid delta
   from the previous normalized pose to the new normalized pose. Do not directly
@@ -89,24 +91,23 @@ Collect these before running a move:
 - `layout-topology`: source `layout_topology.json`
 - `geom`: source `geom.json`
 - `layout-topology-output` / `geom-output`: optional output paths. If omitted,
-  default to `./02_geometry_edit/geometry_after.layout_topology.json` and
-  `./02_geometry_edit/geometry_after.geom.json`
-- `doc-name`: live FreeCAD document name when syncing CAD
+  default to `./01_cad/geometry_after.layout_topology.json` and
+  `./01_cad/geometry_after.geom.json`
+- `doc-name`: live FreeCAD document name. Defaults to `LayoutAssembly`.
 - `step-output`: optional export path or directory. Its basename is always
   forced to `geometry_after.step`, with sibling `geometry_after.glb`
+- `no-sync-cad`: JSON-only mode. Use only when the user explicitly does not
+  want the CAD document or STEP/GLB artifacts updated.
 
 ## Command Patterns
 
-Read resolved defaults first. `freecad-runtime-config` does not accept
-`--workspace`; use `FREECAD_WORKSPACE_DIR` when you need to inspect a specific
-workspace:
+Read resolved defaults first. The workspace source of truth is
+`/data/lbk/codex_web/config.json` field `freecad.workspaceDir`; deprecated
+`--workspace`, `FREECAD_WORKSPACE_DIR`, and `WORKSPACE_DIR` values must not be
+used to switch datasets.
 
 ```bash
-freecad-runtime-config
-```
-
-```bash
-FREECAD_WORKSPACE_DIR=/abs/path/to/workspace freecad-runtime-config
+python -m freecad_cli_tools.cli.main config show
 ```
 
 ### Move On Current Face
@@ -115,12 +116,9 @@ Use this when the user only asks to move a component on its current installation
 surface.
 
 ```bash
-freecad-layout-safe-move \
-  --workspace /abs/path/to/workspace \
+python -m freecad_cli_tools.cli.main layout safe-move \
   --component P022 \
-  --move 20 0 0 \
-  --sync-cad \
-  --doc-name LayoutAssembly
+  --move 20 0 0
 ```
 
 If `P022` is on face `11` (`external +Z`), `--move 20 0 0` is valid because
@@ -133,12 +131,10 @@ Use `--install-face <0..11>` only when the user explicitly asks to move the
 component to another box/envelope surface.
 
 ```bash
-freecad-layout-safe-move \
+python -m freecad_cli_tools.cli.main layout safe-move \
   --component P022 \
   --install-face 10 \
-  --move 20 0 0 \
-  --sync-cad \
-  --doc-name LayoutAssembly
+  --move 20 0 0
 ```
 
 This updates `placements[*].mount_face_id` to the selected dataset face and
@@ -150,13 +146,14 @@ face continues to touch the box.
 Use this when FreeCAD is not running or the user only wants an updated dataset.
 
 ```bash
-freecad-layout-safe-move \
+python -m freecad_cli_tools.cli.main layout safe-move \
   --component P022 \
-  --move 20 0 0
+  --move 20 0 0 \
+  --no-sync-cad
 ```
 
-This writes new dataset files under `./02_geometry_edit` only. It does not
-update STEP or GLB.
+This writes new dataset files under `./01_cad` only. It does not update the
+FreeCAD document, STEP, or GLB.
 
 ## Execution Steps
 
@@ -171,10 +168,11 @@ update STEP or GLB.
    rotate the component so the original component contact face is used on the
    new target face.
 8. Check whether the requested vector lies in the target face plane.
-9. Run `freecad-layout-safe-move` with the dataset paths.
+9. Run `python -m freecad_cli_tools.cli.main layout safe-move` with the dataset paths.
 10. Write the updated normalized result into the non-destructive output dataset files.
-11. When CAD artifacts must be updated, include `--sync-cad`, `--doc-name`, and
-   optionally `--step-output`.
+11. CAD artifacts are updated by default. Include `--doc-name` only when the
+   active FreeCAD document is not `LayoutAssembly`, and optionally include
+   `--step-output` to choose a different export directory.
 12. Confirm CAD sync used the previous normalized pose and new normalized pose
    as a rigid transform for `<NAME>_part` when the component is represented by a
    container.
@@ -197,18 +195,18 @@ update STEP or GLB.
 
 - `output_layout_topology_path`: updated `layout_topology.json`
 - `output_geom_path`: updated `geom.json`
-- `step_path`: updated STEP path when `--sync-cad` is used
-- `glb_path`: updated GLB path when `--sync-cad` is used
+- `step_path`: updated STEP path unless `--no-sync-cad` is used
+- `glb_path`: updated GLB path unless `--no-sync-cad` is used
 - `progress_percentages`: grouped progress percentages
 - `progress_json_path`: JSON log path under
   `<configured workspace>/logs/progress_percentages.json`; use
-  `freecad-runtime-config` to read the configured workspace root before running
+  `python -m freecad_cli_tools.cli.main config show` to read the configured workspace root before running
   the move command
 - progress log `output_files`: produced `layout_topology`, `geom`, `step`, and
   `glb` paths with existence checks
 - `layout_completion_percent`: dataset update completion percentage
-- `modeling_percent`: CAD sync/modeling completion percentage; `0.0` when
-  `--sync-cad` is not requested
+- `modeling_percent`: CAD sync/modeling completion percentage; `0.0` only in
+  `--no-sync-cad` JSON-only runs or failed sync attempts
 - `export_file_percent`: STEP/GLB export completion percentage; STEP and GLB
   each contribute 50%, and dataset-only runs report `0.0`
 - `target_envelope_face`: final numeric box/envelope installation face

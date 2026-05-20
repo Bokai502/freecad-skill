@@ -161,26 +161,6 @@ def normalize_layout_dataset(
         normalized_components[normalized["id"]] = normalized
 
     envelope = {
-        "outer_bbox": {
-            "min": vector3(
-                (outer_shell.get("outer_bbox") or {}).get("min"),
-                "geom.outer_shell.outer_bbox.min",
-            ),
-            "max": vector3(
-                (outer_shell.get("outer_bbox") or {}).get("max"),
-                "geom.outer_shell.outer_bbox.max",
-            ),
-        },
-        "inner_bbox": {
-            "min": vector3(
-                (outer_shell.get("inner_bbox") or {}).get("min"),
-                "geom.outer_shell.inner_bbox.min",
-            ),
-            "max": vector3(
-                (outer_shell.get("inner_bbox") or {}).get("max"),
-                "geom.outer_shell.inner_bbox.max",
-            ),
-        },
         "outer_size": bbox_size(outer_shell.get("outer_bbox"), "geom.outer_shell.outer_bbox"),
         "inner_size": bbox_size(outer_shell.get("inner_bbox"), "geom.outer_shell.inner_bbox"),
         "shell_thickness": require_number(

@@ -1,10 +1,10 @@
 """Minimal runtime settings for FreeCAD CLI tools.
 
 Workspace resolution is intentionally strict:
-- prefer explicit `--workspace` handled by CLI entry points
-- otherwise use `FREECAD_WORKSPACE_DIR`, `WORKSPACE_DIR`, or the codex-web config
+- use only `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`
 
-No project config, user config, or legacy config discovery remains.
+No CLI workspace override, environment workspace override, project config, user config,
+or legacy config discovery remains.
 """
 
 from __future__ import annotations
@@ -47,10 +47,6 @@ def _get_freecad_config_value(key: str, default: str | None = None) -> str | Non
 
 
 def _get_config_workspace_dir() -> str | None:
-    config = _load_codex_web_config()
-    value = config.get("WORKSPACE_DIR")
-    if isinstance(value, str) and value.strip():
-        return value
     return _get_freecad_config_value("workspaceDir")
 
 
@@ -59,9 +55,8 @@ FALLBACK_RPC_PORT = _get_freecad_config_value("rpcPort", "9877")
 FALLBACK_COMPONENT_INFO_MAX_STEP_SIZE_MB = "100"
 CONFIG_WORKSPACE_DIR = _get_config_workspace_dir()
 FREECAD_WORKSPACE_DIR = CONFIG_WORKSPACE_DIR
-DEFAULT_LAYOUT_INPUT_DIR = Path("./01_layout")
-DEFAULT_COMPONENT_INFO_INPUT_DIR = Path("./component_info")
-DEFAULT_GEOMETRY_EDIT_DIR = Path("./02_geometry_edit")
+DEFAULT_CAD_INPUT_DIR = Path("./00_inputs")
+DEFAULT_CAD_OUTPUT_DIR = Path("./01_cad")
 DEFAULT_GEOMETRY_AFTER_STEM = "geometry_after"
 
 
@@ -89,28 +84,14 @@ def get_default_rpc_port() -> int:
 
 def get_default_workspace_dir() -> Path:
     """Return the workspace root from environment or codex-web config."""
-    raw = os.getenv("FREECAD_WORKSPACE_DIR")
-    if raw is None or not raw.strip():
-        raw = os.getenv("WORKSPACE_DIR")
-    if raw is None or not raw.strip():
-        raw = FREECAD_WORKSPACE_DIR
+    raw = _get_config_workspace_dir()
     if raw is None or not raw.strip():
         raise RuntimeError(
-            "FREECAD_WORKSPACE_DIR is not set, WORKSPACE_DIR is not set, "
-            "and freecad.workspaceDir is not configured "
-            f"in {CODEX_WEB_CONFIG_PATH}. Pass --workspace to the CLI entry point, export "
-            "FREECAD_WORKSPACE_DIR, export WORKSPACE_DIR, or configure freecad.workspaceDir "
-            "before running the command."
+            "freecad.workspaceDir is not configured "
+            f"in {CODEX_WEB_CONFIG_PATH}. Configure freecad.workspaceDir before running "
+            "workspace-scoped commands."
         )
     return Path(raw).expanduser().resolve()
-
-
-def set_default_workspace_dir(path: str | Path) -> Path:
-    """Set the workspace root explicitly for the current process."""
-    resolved = Path(path).expanduser().resolve()
-    os.environ["FREECAD_WORKSPACE_DIR"] = str(resolved)
-    os.environ["WORKSPACE_DIR"] = str(resolved)
-    return resolved
 
 
 def get_default_component_info_max_step_size_mb() -> float:
@@ -134,27 +115,27 @@ def resolve_workspace_path(path: str | Path) -> Path:
 
 def get_default_layout_topology_path() -> Path:
     """Return the default layout_topology.json path."""
-    return resolve_workspace_path(DEFAULT_LAYOUT_INPUT_DIR / "layout_topology.json")
+    return resolve_workspace_path(DEFAULT_CAD_INPUT_DIR / "layout_topology.json")
 
 
 def get_default_geom_path() -> Path:
     """Return the default geom.json path."""
-    return resolve_workspace_path(DEFAULT_LAYOUT_INPUT_DIR / "geom.json")
+    return resolve_workspace_path(DEFAULT_CAD_INPUT_DIR / "geom.json")
 
 
-def get_default_geom_component_info_path() -> Path:
-    """Return the default geom_component_info.json path."""
-    return resolve_workspace_path(DEFAULT_COMPONENT_INFO_INPUT_DIR / "geom_component_info.json")
+def get_default_real_bom_path() -> Path:
+    """Return the default real_bom.json path."""
+    return resolve_workspace_path(DEFAULT_CAD_INPUT_DIR / "real_bom.json")
 
 
-def get_default_geometry_edit_dir() -> Path:
-    """Return the default output directory for geometry-edit artifacts."""
-    return resolve_workspace_path(DEFAULT_GEOMETRY_EDIT_DIR)
+def get_default_cad_output_dir() -> Path:
+    """Return the default output directory for CAD-stage artifacts."""
+    return resolve_workspace_path(DEFAULT_CAD_OUTPUT_DIR)
 
 
 def get_default_geometry_after_step_path() -> Path:
     """Return the default STEP output path for CLI-generated geometry."""
-    return get_default_geometry_edit_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.step"
+    return get_default_cad_output_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.step"
 
 
 def resolve_geometry_after_step_path(path: str | Path | None = None) -> Path:
@@ -170,12 +151,12 @@ def resolve_geometry_after_step_path(path: str | Path | None = None) -> Path:
 
 def get_default_geometry_after_layout_topology_path() -> Path:
     """Return the default layout_topology output path for non-destructive edits."""
-    return get_default_geometry_edit_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.layout_topology.json"
+    return get_default_cad_output_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.layout_topology.json"
 
 
 def get_default_geometry_after_geom_path() -> Path:
     """Return the default geom output path for non-destructive edits."""
-    return get_default_geometry_edit_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.geom.json"
+    return get_default_cad_output_dir() / f"{DEFAULT_GEOMETRY_AFTER_STEM}.geom.json"
 
 
 def get_default_artifact_registry_dir() -> Path:

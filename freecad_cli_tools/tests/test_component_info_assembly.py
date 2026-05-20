@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from freecad_cli_tools.component_info_assembly import (
+    build_geom_component_info_from_real_bom,
     load_and_normalize_component_info_assembly,
     normalize_component_info_assembly,
 )
@@ -161,3 +162,37 @@ def test_normalize_component_info_assembly_falls_back_for_oversized_step(tmp_pat
     assert source["step_path"] is None
     assert source["step_size_bytes"] == 10
     assert source["fallback_reason"] == "file_too_large"
+
+
+def test_build_geom_component_info_from_real_bom_reads_template_csv_step(tmp_path: Path) -> None:
+    step_dir = tmp_path / "refined_coordinate_steps" / "payloads"
+    step_dir.mkdir(parents=True)
+    step_path = step_dir / "payload.step"
+    step_path.write_text("step", encoding="utf-8")
+    csv_path = tmp_path / "template.csv"
+    csv_path.write_text(
+        "器件ID,CAD_rotated_path,CAD_MAJOR_PATH\n"
+        "AIRBUS-REFINED-001,refined_coordinate_steps/payloads/payload.step,\n",
+        encoding="utf-8",
+    )
+    real_bom = {
+        "source": {"template_csv": str(csv_path)},
+        "items": [
+            {
+                "component_id": "P001",
+                "semantic_name": "AIRBUS-REFINED-001",
+                "category": "payload",
+                "size_mm": [10, 20, 30],
+            }
+        ],
+    }
+
+    component_info = build_geom_component_info_from_real_bom(
+        real_bom=real_bom,
+        geom=sample_geom(),
+        template_csv_base_path=tmp_path / "real_bom.json",
+    )
+
+    entry = component_info["components"][0]
+    assert entry["component_id"] == "P001"
+    assert entry["display_info"]["assets"]["cad_rotated_path"] == str(step_path)
