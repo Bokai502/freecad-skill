@@ -183,7 +183,8 @@ def _merge_progress_payload(
     if not isinstance(history, list):
         history = []
     merged["history"] = [*history, _progress_history_entry(tool, payload)][-MAX_PROGRESS_HISTORY:]
-    merged.pop("output_files", None)
+    if not merge_output_files:
+        merged.pop("output_files", None)
 
     return merged
 
@@ -223,9 +224,12 @@ def write_progress_log(
         "updated_at": _utc_now_iso(),
         "success": bool(success) if success is not None else False,
         "overall_percent": visible_overall_percent(visible_progress),
+        "progress_percentages": normalize_progress(progress),
         "error": error,
         **visible_progress,
     }
+    if merge_output_files and output_paths:
+        payload["output_files"] = output_file_records(**output_paths)
 
     payload = _merge_progress_payload(
         path,
@@ -256,7 +260,7 @@ class ProgressLogWriter:
         command: str | None = None,
         stage: str | None = None,
         status: str | None = None,
-        merge_output_files: bool = True,
+        merge_output_files: bool = False,
     ) -> None:
         self.tool = tool
         self.progress = dict(progress)
@@ -268,6 +272,7 @@ class ProgressLogWriter:
         self.status = status
         self.error: dict[str, Any] | None = None
         self.path = get_progress_log_path()
+        self.merge_output_files = merge_output_files
 
     def start(self) -> "ProgressLogWriter":
         """Write the initial state immediately."""
@@ -311,6 +316,7 @@ class ProgressLogWriter:
             stage=self.stage,
             status=self.status,
             error=self.error,
+            merge_output_files=self.merge_output_files,
         )
         return self.path
 

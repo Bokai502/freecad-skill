@@ -203,3 +203,46 @@ def test_validate_cad_build_merges_report_into_cad_agent_output(tmp_path: Path) 
     assert updated["screenshot"] == screenshot
     assert "screenshot" not in updated["validation"]
     assert "cabin_auto_1.xmax" in updated["validation"]["face_occupancy"]
+
+
+def test_validate_cad_build_accepts_outer_face_when_bbox_min_touches_plane(
+    tmp_path: Path,
+) -> None:
+    _, real_bom_path, layout_path, geom_path = write_inputs(tmp_path)
+    output_dir = tmp_path / "01_cad"
+    build_cad_stage_inputs(
+        real_bom_path=real_bom_path,
+        layout_topology_path=layout_path,
+        geom_path=geom_path,
+        output_dir=output_dir,
+        grid_shape=(4, 4, 4),
+    )
+    for name in ("geometry_after.step", "geometry_after.glb"):
+        (output_dir / name).write_text("artifact", encoding="utf-8")
+
+    after_geom_path = output_dir / "geometry_after.geom.json"
+    after_geom = json.loads(after_geom_path.read_text(encoding="utf-8"))
+    after_geom["install_faces"]["cabin_auto_1.xmax"].update(
+        {
+            "id": "outer_shell.zmin",
+            "side": "outer",
+            "plane_axis": 2,
+            "plane_value": -15.0,
+            "normal_sign": -1,
+        }
+    )
+    component = after_geom["components"]["P_001_internal"]
+    component["bbox"] = {"min": [40.0, -10.0, -15.0], "max": [50.0, 10.0, 15.0]}
+    component["position"] = [40.0, -10.0, -15.0]
+    after_geom_path.write_text(json.dumps(after_geom), encoding="utf-8")
+
+    report = validate_cad_build(
+        real_bom_path=real_bom_path,
+        layout_topology_path=layout_path,
+        geom_path=geom_path,
+        cad_dir=output_dir,
+        write_back=False,
+    )
+
+    assert report["checks"]["mount_contact"]["ok"] is True
+    assert not report["checks"]["mount_contact"]["contact_failures"]

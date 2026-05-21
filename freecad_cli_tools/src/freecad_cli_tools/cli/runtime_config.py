@@ -31,8 +31,10 @@ def _path_payload(path: Path) -> str:
     return str(path)
 
 
-def build_runtime_config_payload() -> dict[str, Any]:
+def build_runtime_config_payload(workspace: Path | None = None) -> dict[str, Any]:
     """Return resolved runtime configuration values used by CLI commands."""
+    if workspace is not None:
+        runtime_config.set_workspace_override(workspace)
     workspace_dir = runtime_config.get_default_workspace_dir()
     cad_output_dir = runtime_config.get_default_cad_output_dir()
     return {
@@ -66,9 +68,11 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--workspace",
+        "--workspace-dir",
+        dest="workspace",
         type=Path,
         help=(
-            "Deprecated compatibility option. Workspace is resolved from "
+            "Workspace root for this command. Overrides FREECAD_WORKSPACE_DIR and "
             "/data/lbk/codex_web/config.json freecad.workspaceDir."
         ),
     )
@@ -82,7 +86,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    payload = build_runtime_config_payload()
+    payload = build_runtime_config_payload(args.workspace)
     if args.key:
         print(json.dumps({args.key: payload[args.key]}, indent=2, ensure_ascii=False))
         return

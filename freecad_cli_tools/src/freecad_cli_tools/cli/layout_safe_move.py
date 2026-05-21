@@ -518,6 +518,7 @@ def main() -> int:
             "validation_percent": 0.0,
         },
         output_paths=output_paths,
+        merge_output_files=True,
     ).start()
     progress_log_path = get_progress_log_path()
     registry_run = start_registry_run(

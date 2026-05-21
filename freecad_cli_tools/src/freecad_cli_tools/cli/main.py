@@ -18,23 +18,23 @@ CommandHandler = Callable[[], int | None]
 
 COMMANDS: dict[tuple[str, ...], tuple[CommandHandler, str]] = {
     ("assembly", "create-from-component-info"): (
-        build_component_info_assembly.main,
+        lambda: build_component_info_assembly.main(),
         "Create a FreeCAD assembly using geom_component_info.json STEP assets when available.",
     ),
     ("layout", "safe-move"): (
-        layout_safe_move.main,
+        lambda: layout_safe_move.main(),
         "Move a component in the layout dataset and optionally sync CAD.",
     ),
     ("cad", "build"): (
-        cad_build.main,
+        lambda: cad_build.main(),
         "Build 01_cad artifacts from 00_inputs real_bom, layout_topology, and geom.",
     ),
     ("cad", "validate"): (
-        cad_validate.main,
+        lambda: cad_validate.main(),
         "Validate 01_cad artifacts and update cad_agent_output.json.",
     ),
     ("config", "show"): (
-        runtime_config.main,
+        lambda: runtime_config.main(),
         "Print resolved runtime configuration.",
     ),
 }

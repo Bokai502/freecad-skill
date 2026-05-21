@@ -215,6 +215,7 @@ def main() -> None:
             "export_file_percent": 0.0,
         },
         output_paths=output_paths,
+        merge_output_files=True,
     ).start()
 
     registry_run = start_registry_run(

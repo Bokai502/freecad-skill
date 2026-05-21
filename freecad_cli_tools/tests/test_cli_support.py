@@ -49,6 +49,7 @@ def write_runtime_config(monkeypatch, tmp_path: Path, freecad_config: dict) -> P
         "FREECAD_WORKSPACE_DIR",
         runtime_config._get_freecad_config_value("workspaceDir"),
     )
+    monkeypatch.setattr(runtime_config, "_WORKSPACE_OVERRIDE", None)
     return config_path
 
 
@@ -60,8 +61,9 @@ def test_get_default_workspace_dir_requires_environment_or_config(
     monkeypatch.setattr(runtime_config, "CODEX_WEB_CONFIG_PATH", config_path)
     monkeypatch.setattr(runtime_config, "_CONFIG_CACHE", None)
     monkeypatch.setattr(runtime_config, "FREECAD_WORKSPACE_DIR", None)
+    monkeypatch.setattr(runtime_config, "_WORKSPACE_OVERRIDE", None)
 
-    with pytest.raises(RuntimeError, match="freecad\\.workspaceDir is not configured"):
+    with pytest.raises(RuntimeError, match="FreeCAD workspace is not configured"):
         get_default_workspace_dir()
 
 
@@ -153,28 +155,30 @@ def test_runtime_config_cli_accepts_workspace_argument(
     runtime_config_command.main()
 
     payload = json.loads(capsys.readouterr().out)
-    assert payload["workspace_dir"] == str(configured_workspace.resolve())
+    assert payload["workspace_dir"] == str(cli_workspace.resolve())
     assert payload["layout_topology_path"] == str(
-        configured_workspace.resolve() / "00_inputs" / "layout_topology.json"
+        cli_workspace.resolve() / "00_inputs" / "layout_topology.json"
     )
 
 
-def test_workspace_env_vars_do_not_override_codex_web_config(monkeypatch, tmp_path: Path) -> None:
+def test_workspace_env_var_overrides_codex_web_config(monkeypatch, tmp_path: Path) -> None:
     configured_workspace = tmp_path / "configured-workspace"
+    env_workspace = tmp_path / "freecad-workspace"
     write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(configured_workspace)})
-    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(tmp_path / "freecad-workspace"))
+    monkeypatch.setenv("FREECAD_WORKSPACE_DIR", str(env_workspace))
     monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path / "pipeline-workspace"))
 
-    assert get_default_workspace_dir() == configured_workspace.resolve()
+    assert get_default_workspace_dir() == env_workspace.resolve()
 
 
 def test_workspace_dir_env_is_not_supported_as_fallback(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(runtime_config, "CODEX_WEB_CONFIG_PATH", tmp_path / "config.json")
+    monkeypatch.setattr(runtime_config, "CODEX_WEB_CONFIG_PATH", tmp_path / "missing-config.json")
     monkeypatch.setattr(runtime_config, "_CONFIG_CACHE", None)
+    monkeypatch.setattr(runtime_config, "_WORKSPACE_OVERRIDE", None)
     monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
     monkeypatch.setenv("WORKSPACE_DIR", str(tmp_path / "pipeline-workspace"))
 
-    with pytest.raises(RuntimeError, match="freecad\\.workspaceDir is not configured"):
+    with pytest.raises(RuntimeError, match="FreeCAD workspace is not configured"):
         get_default_workspace_dir()
 
 

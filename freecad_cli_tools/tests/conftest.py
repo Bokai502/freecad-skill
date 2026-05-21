@@ -23,3 +23,4 @@ def configured_freecad_workspace(monkeypatch, tmp_path: Path) -> None:
     )
     monkeypatch.setattr(runtime_config, "CODEX_WEB_CONFIG_PATH", config_path)
     monkeypatch.setattr(runtime_config, "_CONFIG_CACHE", None)
+    monkeypatch.setattr(runtime_config, "_WORKSPACE_OVERRIDE", None)

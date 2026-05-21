@@ -1,11 +1,4 @@
-"""Minimal runtime settings for FreeCAD CLI tools.
-
-Workspace resolution is intentionally strict:
-- use only `/data/lbk/codex_web/config.json` field `freecad.workspaceDir`
-
-No CLI workspace override, environment workspace override, project config, user config,
-or legacy config discovery remains.
-"""
+"""Minimal runtime settings for FreeCAD CLI tools."""
 
 from __future__ import annotations
 
@@ -16,6 +9,7 @@ from typing import Any
 
 CODEX_WEB_CONFIG_PATH = Path("/data/lbk/codex_web/config.json")
 _CONFIG_CACHE: dict[str, Any] | None = None
+_WORKSPACE_OVERRIDE: Path | None = None
 
 
 def _load_codex_web_config() -> dict[str, Any]:
@@ -48,6 +42,21 @@ def _get_freecad_config_value(key: str, default: str | None = None) -> str | Non
 
 def _get_config_workspace_dir() -> str | None:
     return _get_freecad_config_value("workspaceDir")
+
+
+def set_workspace_override(workspace: str | Path | None) -> Path | None:
+    """Set a process-local workspace override used by CLI commands."""
+    global _WORKSPACE_OVERRIDE
+    if workspace is None:
+        _WORKSPACE_OVERRIDE = None
+        return None
+    _WORKSPACE_OVERRIDE = Path(workspace).expanduser().resolve()
+    return _WORKSPACE_OVERRIDE
+
+
+def get_workspace_override() -> Path | None:
+    """Return the process-local workspace override, if any."""
+    return _WORKSPACE_OVERRIDE
 
 
 FALLBACK_RPC_HOST = "localhost"
@@ -83,13 +92,18 @@ def get_default_rpc_port() -> int:
 
 
 def get_default_workspace_dir() -> Path:
-    """Return the workspace root from environment or codex-web config."""
+    """Return the workspace root from CLI override, environment, or codex-web config."""
+    if _WORKSPACE_OVERRIDE is not None:
+        return _WORKSPACE_OVERRIDE
+    env_workspace = os.getenv("FREECAD_WORKSPACE_DIR")
+    if env_workspace is not None and env_workspace.strip():
+        return Path(env_workspace).expanduser().resolve()
     raw = _get_config_workspace_dir()
     if raw is None or not raw.strip():
         raise RuntimeError(
-            "freecad.workspaceDir is not configured "
-            f"in {CODEX_WEB_CONFIG_PATH}. Configure freecad.workspaceDir before running "
-            "workspace-scoped commands."
+            "FreeCAD workspace is not configured. Pass --workspace, set "
+            f"FREECAD_WORKSPACE_DIR, or configure freecad.workspaceDir in {CODEX_WEB_CONFIG_PATH} "
+            "before running workspace-scoped commands."
         )
     return Path(raw).expanduser().resolve()
 

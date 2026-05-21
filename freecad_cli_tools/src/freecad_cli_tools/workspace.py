@@ -5,22 +5,27 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from freecad_cli_tools.runtime_config import get_default_workspace_dir
+from freecad_cli_tools.runtime_config import get_default_workspace_dir, set_workspace_override
 
 
 def add_workspace_arg(parser: argparse.ArgumentParser) -> None:
     """Add a shared explicit workspace argument."""
     parser.add_argument(
         "--workspace",
+        "--workspace-dir",
+        dest="workspace",
         help=(
-            "Deprecated compatibility option. Workspace is resolved from "
+            "Workspace root for this command. Overrides FREECAD_WORKSPACE_DIR and "
             "/data/lbk/codex_web/config.json freecad.workspaceDir."
         ),
     )
 
 
 def apply_workspace_override(workspace: str | Path | None) -> Path:
-    """Return the configured default workspace; explicit overrides are ignored."""
+    """Apply an explicit workspace override and return the resolved workspace."""
+    if workspace is not None:
+        return set_workspace_override(workspace)
+    set_workspace_override(None)
     return get_default_workspace_dir().expanduser().resolve()
 
 

@@ -282,17 +282,16 @@ def _check_mount_contact(
         bbox = component_bbox(component)
         axis = int(face.get("plane_axis", 0))
         plane_value = float(face.get("plane_value", 0.0))
-        normal_sign = int(face.get("normal_sign", 1))
-        side = face.get("side")
-        contact_value = _contact_value(bbox, axis, normal_sign, side)
-        if abs(contact_value - plane_value) > tolerance_mm:
+        contact = _bbox_mount_plane_contact(bbox, axis, plane_value)
+        if contact["distance_mm"] > tolerance_mm:
             item = {
                 "component_id": component_id,
                 "mount_face_id": placement.get("mount_face_id"),
                 "axis": axis,
                 "expected_plane_value": plane_value,
-                "actual_contact_value": contact_value,
-                "delta_mm": contact_value - plane_value,
+                "actual_contact_value": contact["value"],
+                "actual_contact_side": contact["side"],
+                "delta_mm": contact["delta_mm"],
             }
             contact_failures.append(item)
             failures.append({"check": "mount_contact", "code": "not_on_mount_plane", **item})
@@ -371,10 +370,35 @@ def _face_occupancy(
     }
 
 
-def _contact_value(bbox: dict[str, list[float]], axis: int, normal_sign: int, side: Any) -> float:
-    if side == "outer":
-        return bbox["min"][axis] if normal_sign > 0 else bbox["max"][axis]
-    return bbox["max"][axis] if normal_sign > 0 else bbox["min"][axis]
+def _bbox_mount_plane_contact(
+    bbox: dict[str, list[float]],
+    axis: int,
+    plane_value: float,
+) -> dict[str, float | str]:
+    """Return the bbox side closest to a declared mount plane.
+
+    CAD build places axis-aligned placeholder boxes so that the physical
+    contact side is represented by either bbox.min[axis] or bbox.max[axis].
+    Some datasets mark outer shell faces with side="outer" but keep mount_face_id
+    tokens such as ".zmin" instead of ".zmin_outer"; build-time placement follows
+    the face token.  Therefore validation should compare the declared plane
+    against the actual bbox sides instead of deriving a side from normal_sign.
+    """
+    min_delta = float(bbox["min"][axis]) - plane_value
+    max_delta = float(bbox["max"][axis]) - plane_value
+    if abs(min_delta) <= abs(max_delta):
+        return {
+            "side": "min",
+            "value": float(bbox["min"][axis]),
+            "delta_mm": min_delta,
+            "distance_mm": abs(min_delta),
+        }
+    return {
+        "side": "max",
+        "value": float(bbox["max"][axis]),
+        "delta_mm": max_delta,
+        "distance_mm": abs(max_delta),
+    }
 
 
 def _bbox_contains(container: dict[str, Any], bbox: dict[str, list[float]], tolerance_mm: float) -> bool:
