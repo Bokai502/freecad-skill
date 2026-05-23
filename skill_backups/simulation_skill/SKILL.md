@@ -8,14 +8,14 @@ description: "Run or debug thermal simulation for CAD/spacecraft models. Use for
 Use this skill for model thermal simulation work driven by:
 
 ```bash
-/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py
+python -m sim_cli_tools.cli.main
 ```
 
 The tool reads an existing workspace with `00_inputs` and `01_cad`, then writes simulation through analysis outputs under `02_sim`.
 
 ## Core Rules
 
-- Use `sim_run.py` as the first-class entry point. Do not call copied runtime modules directly unless debugging internals.
+- Use `python -m sim_cli_tools.cli.main` as the first-class entry point. The installed `sim-run` wrapper is an alias for the same module. Do not call copied runtime modules directly unless debugging internals.
 - Resolve the workspace from the Open Codex Web execution context `workspace_dir`. Workspace/version selection is request-scoped; `/api/run`, checkout, and branch do not update `/data/lbk/codex_web/config.json`.
 - Always pass the execution context workspace explicitly with `--workspace-dir <workspace_dir>` for `doctor` and `run`. Do not rely on `config.json`, process `cwd`, or CLI defaults.
 - Before running `run`, inspect the selected workspace by running `--json doctor --workspace-dir <workspace_dir>`. If the reported `workspace_dir` differs from the prompt `workspace_dir`, stop and report the mismatch instead of running simulation into the wrong workspace.
@@ -40,14 +40,14 @@ The tool reads an existing workspace with `00_inputs` and `01_cad`, then writes 
 Show help:
 
 ```bash
-/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py --help
-/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py run --help
+python -m sim_cli_tools.cli.main --help
+python -m sim_cli_tools.cli.main run --help
 ```
 
 Check whether inputs are complete:
 
 ```bash
-/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py \
+python -m sim_cli_tools.cli.main \
   --json doctor \
   --workspace-dir <workspace_dir>
 ```
@@ -55,7 +55,7 @@ Check whether inputs are complete:
 Real local COMSOL run:
 
 ```bash
-/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py \
+python -m sim_cli_tools.cli.main \
   --json run \
   --workspace-dir <workspace_dir> \
   --simulation-backend comsol_local \
@@ -67,7 +67,7 @@ Real local COMSOL run:
 Headless run without opening COMSOL/ParaView GUI tools:
 
 ```bash
-/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py \
+python -m sim_cli_tools.cli.main \
   --json run \
   --workspace-dir <workspace_dir> \
   --simulation-backend comsol_local \

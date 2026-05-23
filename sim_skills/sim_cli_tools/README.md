@@ -22,6 +22,14 @@ cd /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools
 make install-local
 ```
 
+Module entry point, matching the FreeCAD CLI style:
+
+```bash
+cd /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools
+PYTHONPATH=src python -m sim_cli_tools.cli.main --help
+PYTHONPATH=src python -m sim_cli_tools.cli.main --json doctor --workspace-dir <workspace_dir>
+```
+
 Check:
 
 ```bash
