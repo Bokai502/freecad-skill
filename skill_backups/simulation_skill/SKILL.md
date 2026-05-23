@@ -89,6 +89,7 @@ After a run, inspect:
 - `<workspace>/02_sim/simulation/simulation_manifest.json`
 - `<workspace>/02_sim/simulation/data1.txt`
 - `<workspace>/02_sim/simulation/native.vtu`
+- `<workspace>/02_sim/simulation/component_face_temperature.json`
 - `<workspace>/02_sim/postprocess/render_summary.json`
 - `<workspace>/02_sim/case_build/component_index.json`
 - `<workspace>/02_sim/analysis/metrics_summary.json`

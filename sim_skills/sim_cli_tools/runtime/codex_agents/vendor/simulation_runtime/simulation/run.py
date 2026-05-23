@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -94,6 +95,7 @@ def run_stage(
                 "field_samples_json": "field_samples.json",
                 "native_vtu": "native.vtu",
                 "tensors_json": "tensors.json",
+                "component_face_temperature_json": "component_face_temperature.json",
             },
             "checks": {
                 "status_ok": True,
@@ -105,6 +107,12 @@ def run_stage(
         field_samples_path = write_json(output_dir / "field_samples.json", field_samples)
         tensors_path = write_json(output_dir / "tensors.json", tensors)
         native_vtu_path = write_mock_vtu(output_dir / "native.vtu", field_samples)
+        component_face_temperature_path = write_component_face_temperature(
+            simulation_input=simulation_input,
+            simulation_input_path=simulation_input_path,
+            native_vtu_path=native_vtu_path,
+            output_path=output_dir / "component_face_temperature.json",
+        )
 
         reports["outputs"] = validate_simulation_outputs(
             status=status,
@@ -122,6 +130,7 @@ def run_stage(
                 "field_samples": field_samples_path,
                 "native_vtu": native_vtu_path,
                 "tensors": tensors_path,
+                "component_face_temperature": component_face_temperature_path,
             }
         )
         result.checks = reports
@@ -267,6 +276,16 @@ def _run_comsol_local(
     tensors = _tensor_summary(field_samples)
     write_json(output_dir / "field_samples.json", field_samples)
     write_json(output_dir / "tensors.json", tensors)
+    component_face_temperature_path: Path | None = None
+    try:
+        component_face_temperature_path = write_component_face_temperature(
+            simulation_input=simulation_input,
+            simulation_input_path=simulation_input_path,
+            native_vtu_path=output_dir / "native.vtu",
+            output_path=output_dir / "component_face_temperature.json",
+        )
+    except Exception as exc:
+        result.warnings.append(f"failed to write component_face_temperature.json: {exc}")
     manifest = {
         "schema_version": "1.0",
         "simulation_id": f"sim_{output_dir.parent.name}",
@@ -286,6 +305,7 @@ def _run_comsol_local(
             "native_vtu": "native.vtu",
             "data1_txt": "data1.txt",
             "tensors_json": "tensors.json",
+            "component_face_temperature_json": "component_face_temperature.json",
         },
         "checks": {
             "status_ok": status.get("ok") is True,
@@ -312,6 +332,8 @@ def _run_comsol_local(
             "data1_txt": output_dir / "data1.txt",
         }
     )
+    if component_face_temperature_path is not None:
+        result.outputs["component_face_temperature"] = component_face_temperature_path
     result.checks = reports
     return result.finish("completed")
 
@@ -678,6 +700,204 @@ def _tensor_summary(field_samples: Mapping[str, Any]) -> dict[str, Any]:
             "sample_count": len(temperatures),
         },
     }
+
+
+def write_component_face_temperature(
+    *,
+    simulation_input: Mapping[str, Any],
+    simulation_input_path: Path,
+    native_vtu_path: Path,
+    output_path: Path,
+    temperature_array: str | None = None,
+    plane_tolerance_m: float = 1e-6,
+    range_tolerance_m: float = 1e-6,
+) -> Path:
+    points, temperatures, resolved_array = _read_ascii_vtu_points_and_temperature(
+        native_vtu_path,
+        preferred_array=temperature_array,
+    )
+    components = []
+    bbox_ranges: list[tuple[list[float], list[float]]] = []
+    for component in simulation_input.get("components", []):
+        if not isinstance(component, Mapping):
+            continue
+        bbox = component.get("bbox")
+        if not isinstance(bbox, Mapping):
+            continue
+        bbox_min = [float(value) / 1000.0 for value in bbox.get("min", [])]
+        bbox_max = [float(value) / 1000.0 for value in bbox.get("max", [])]
+        if len(bbox_min) != 3 or len(bbox_max) != 3:
+            continue
+        bbox_ranges.append((bbox_min, bbox_max))
+    coordinate_scale = _infer_vtu_coordinate_scale_to_m(points, bbox_ranges)
+    if coordinate_scale != 1.0:
+        points = [
+            (point[0] * coordinate_scale, point[1] * coordinate_scale, point[2] * coordinate_scale)
+            for point in points
+        ]
+    for component in simulation_input.get("components", []):
+        if not isinstance(component, Mapping):
+            continue
+        bbox = component.get("bbox")
+        if not isinstance(bbox, Mapping):
+            continue
+        bbox_min = [float(value) / 1000.0 for value in bbox.get("min", [])]
+        bbox_max = [float(value) / 1000.0 for value in bbox.get("max", [])]
+        if len(bbox_min) != 3 or len(bbox_max) != 3:
+            continue
+        components.append(
+            {
+                "component_id": component.get("component_id"),
+                "semantic_name": component.get("semantic_name"),
+                "kind": component.get("kind"),
+                "category": component.get("category"),
+                "bbox_m": {"min": bbox_min, "max": bbox_max},
+                "faces": _component_face_temperature_stats(
+                    points,
+                    temperatures,
+                    bbox_min=bbox_min,
+                    bbox_max=bbox_max,
+                    plane_tolerance_m=plane_tolerance_m,
+                    range_tolerance_m=range_tolerance_m,
+                ),
+            }
+        )
+    payload = {
+        "schema_version": "1.0",
+        "source": {
+            "simulation_input": str(simulation_input_path),
+            "native_vtu": str(native_vtu_path),
+            "temperature_array": resolved_array,
+        },
+        "method": {
+            "description": "Average native VTU point temperatures for points lying on each component bbox face plane and inside the other two bbox ranges.",
+            "bbox_units_in_simulation_input": "mm",
+            "coordinate_units": "m",
+            "temperature_units": "K",
+            "vtu_coordinate_scale_to_m": coordinate_scale,
+            "plane_tolerance_m": plane_tolerance_m,
+            "range_tolerance_m": range_tolerance_m,
+        },
+        "native_vtu_finite_point_count": len(points),
+        "components": components,
+    }
+    return write_json(output_path, payload)
+
+
+def _read_ascii_vtu_points_and_temperature(
+    native_vtu_path: Path,
+    *,
+    preferred_array: str | None,
+) -> tuple[list[tuple[float, float, float]], list[float], str]:
+    root = ET.parse(native_vtu_path).getroot()
+    piece = root.find(".//Piece")
+    if piece is None:
+        raise ValueError(f"{native_vtu_path} does not contain a VTU Piece")
+    points_node = piece.find("./Points/DataArray")
+    if points_node is None:
+        raise ValueError(f"{native_vtu_path} does not contain point coordinates")
+    point_values = _parse_ascii_float_values(points_node)
+    if len(point_values) % 3 != 0:
+        raise ValueError(f"{native_vtu_path} point coordinate count is not divisible by 3")
+    points_all = [
+        (point_values[index], point_values[index + 1], point_values[index + 2])
+        for index in range(0, len(point_values), 3)
+    ]
+    temperature_node = _select_temperature_data_array(piece, preferred_array)
+    temperature_name = temperature_node.get("Name") or preferred_array or "temperature"
+    temperatures_all = _parse_ascii_float_values(temperature_node)
+    if len(temperatures_all) != len(points_all):
+        raise ValueError(
+            f"{native_vtu_path} temperature count ({len(temperatures_all)}) does not match point count ({len(points_all)})"
+        )
+    points: list[tuple[float, float, float]] = []
+    temperatures: list[float] = []
+    for point, temperature in zip(points_all, temperatures_all):
+        if math.isfinite(temperature) and all(math.isfinite(value) for value in point):
+            points.append(point)
+            temperatures.append(temperature)
+    return points, temperatures, temperature_name
+
+
+def _infer_vtu_coordinate_scale_to_m(
+    points: list[tuple[float, float, float]],
+    bbox_ranges: list[tuple[list[float], list[float]]],
+) -> float:
+    if not points or not bbox_ranges:
+        return 1.0
+    point_max_abs = max(abs(value) for point in points for value in point)
+    bbox_max_abs = max(abs(value) for bbox_min, bbox_max in bbox_ranges for value in (*bbox_min, *bbox_max))
+    if point_max_abs > 10.0 and bbox_max_abs < 10.0:
+        return 0.001
+    return 1.0
+
+
+def _select_temperature_data_array(piece: ET.Element, preferred_array: str | None) -> ET.Element:
+    arrays = list(piece.findall("./PointData/DataArray"))
+    if not arrays:
+        raise ValueError("native VTU does not contain PointData arrays")
+    if preferred_array:
+        for array in arrays:
+            if array.get("Name") == preferred_array:
+                return array
+        raise ValueError(f"native VTU does not contain requested temperature array {preferred_array!r}")
+    for name in ("Color", "T", "temperature", "Temperature"):
+        for array in arrays:
+            if array.get("Name") == name:
+                return array
+    return arrays[0]
+
+
+def _parse_ascii_float_values(data_array: ET.Element) -> list[float]:
+    data_format = (data_array.get("format") or data_array.get("Format") or "ascii").lower()
+    if data_format != "ascii":
+        raise ValueError("only ascii VTU DataArray values are supported for component_face_temperature.json")
+    text = data_array.text or ""
+    return [float(token) for token in text.split()]
+
+
+def _component_face_temperature_stats(
+    points: list[tuple[float, float, float]],
+    temperatures: list[float],
+    *,
+    bbox_min: list[float],
+    bbox_max: list[float],
+    plane_tolerance_m: float,
+    range_tolerance_m: float,
+) -> dict[str, Any]:
+    faces = {
+        "xmin": (0, "min", bbox_min[0]),
+        "xmax": (0, "max", bbox_max[0]),
+        "ymin": (1, "min", bbox_min[1]),
+        "ymax": (1, "max", bbox_max[1]),
+        "zmin": (2, "min", bbox_min[2]),
+        "zmax": (2, "max", bbox_max[2]),
+    }
+    axis_names = ("x", "y", "z")
+    result: dict[str, Any] = {}
+    for face_name, (axis, side, plane_value) in faces.items():
+        other_axes = [item for item in (0, 1, 2) if item != axis]
+        values = [
+            temperature
+            for point, temperature in zip(points, temperatures)
+            if abs(point[axis] - plane_value) <= plane_tolerance_m
+            and all(
+                bbox_min[other_axis] - range_tolerance_m
+                <= point[other_axis]
+                <= bbox_max[other_axis] + range_tolerance_m
+                for other_axis in other_axes
+            )
+        ]
+        result[face_name] = {
+            "axis": axis_names[axis],
+            "side": side,
+            "plane_m": plane_value,
+            "sample_count": len(values),
+            "average_temperature_K": (sum(values) / len(values)) if values else None,
+            "min_temperature_K": min(values) if values else None,
+            "max_temperature_K": max(values) if values else None,
+        }
+    return result
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:
