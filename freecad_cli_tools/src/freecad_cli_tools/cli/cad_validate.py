@@ -9,6 +9,7 @@ from pathlib import Path
 
 from freecad_cli_tools.cad_validation import validate_cad_build
 from freecad_cli_tools.cli_support import execute_script_payload, normalize_runtime_path
+from freecad_cli_tools.doc_name import add_doc_name_arg, resolve_doc_name
 from freecad_cli_tools.progress import (
     ProgressLogWriter,
     attach_progress_log_path,
@@ -53,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Exit with status 1 when validation fails.",
     )
-    parser.add_argument("--doc-name", default="LayoutAssembly", help="FreeCAD document name.")
+    add_doc_name_arg(parser)
     parser.add_argument(
         "--screenshot",
         default="freecad_screenshot.png",
@@ -77,6 +78,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     validate_workspace_root(args.workspace)
+    args.doc_name = resolve_doc_name(args.doc_name)
     input_dir = resolve_workspace_path(args.input_dir)
     cad_dir = resolve_workspace_path(args.cad_dir)
     real_bom_path = resolve_workspace_path(args.real_bom) if args.real_bom else input_dir / "real_bom.json"
@@ -137,6 +139,7 @@ def main() -> int:
             screenshot_result=screenshot_result,
             write_back=True,
         )
+        report["requested_doc_name"] = args.doc_name
         progress_log_path = progress_writer.update(
             progress={
                 "layout_completion_percent": 100.0,

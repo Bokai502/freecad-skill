@@ -17,6 +17,7 @@ from freecad_cli_tools.artifact_registry import (
 )
 from freecad_cli_tools.cad_inputs import build_cad_stage_inputs
 from freecad_cli_tools.cli_support import execute_script_payload, exit_on_failure, normalize_runtime_path
+from freecad_cli_tools.doc_name import add_doc_name_arg, resolve_doc_name
 from freecad_cli_tools.progress import (
     ProgressLogWriter,
     attach_progress_log_path,
@@ -51,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--real-bom", help="Optional explicit real_bom.json path.")
     parser.add_argument("--layout-topology", help="Optional explicit layout_topology.json path.")
     parser.add_argument("--geom", help="Optional explicit geom.json path.")
-    parser.add_argument("--doc-name", default="LayoutAssembly", help="FreeCAD document name.")
+    add_doc_name_arg(parser)
     parser.add_argument("--view", default="Isometric", help="Preferred GUI view after creation.")
     parser.add_argument("--no-fit-view", action="store_true", help="Skip GUI fit/view adjustment.")
     parser.add_argument(
@@ -108,6 +109,8 @@ def _registry_inputs(
 def main() -> None:
     args = parse_args()
     validate_workspace_root(args.workspace)
+    requested_doc_name = args.doc_name
+    args.doc_name = resolve_doc_name(args.doc_name)
     real_bom_path, layout_topology_path, geom_path = _input_paths(args)
     for path in (real_bom_path, layout_topology_path, geom_path):
         if not path.exists():
@@ -201,6 +204,8 @@ def main() -> None:
         )
         payload = execute_script_payload(args.host, args.port, code)
         if payload.get("success"):
+            payload["requested_doc_name"] = args.doc_name
+            payload["explicit_doc_name"] = requested_doc_name
             payload["save_path"] = str(step_path)
             payload["glb_path"] = str(glb_path) if glb_path.exists() else None
 

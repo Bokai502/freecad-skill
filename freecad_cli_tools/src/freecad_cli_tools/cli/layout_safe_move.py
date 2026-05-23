@@ -41,6 +41,7 @@ from freecad_cli_tools.layout_dataset import (
     save_layout_dataset_files,
     update_layout_dataset_component_placement,
 )
+from freecad_cli_tools.doc_name import add_doc_name_arg, resolve_doc_name
 from freecad_cli_tools.progress import (
     ProgressLogWriter,
     get_progress_log_path,
@@ -130,11 +131,7 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Only write dataset JSON files; do not update FreeCAD or export STEP/GLB.",
     )
-    parser.add_argument(
-        "--doc-name",
-        default="LayoutAssembly",
-        help="FreeCAD document name to update. Default: LayoutAssembly.",
-    )
+    add_doc_name_arg(parser, help_text="FreeCAD document name to update.")
     parser.add_argument(
         "--step-output",
         help=(
@@ -373,6 +370,7 @@ def build_result_payload(
         "final_mount_point": final_mount_point,
         "final_blockers": final_blockers,
         "cad_sync_enabled": args.sync_cad,
+        "requested_doc_name": args.doc_name,
         "cad_sync_result": cad_sync,
     }
 
@@ -418,6 +416,7 @@ def emit_result_lines(payload: dict[str, object]) -> None:
     print(f"final_mount_point: {payload['final_mount_point']}")
     print(f"final_blockers: {payload['final_blockers']}")
     print(f"cad_sync_enabled: {payload['cad_sync_enabled']}")
+    print(f"requested_doc_name: {payload['requested_doc_name']}")
     print("cad_sync_result: " f"{json.dumps(payload['cad_sync_result'], ensure_ascii=False)}")
 
 
@@ -481,6 +480,7 @@ def classify_cad_sync_result(
 def main() -> int:
     args = parse_args()
     validate_workspace_root(args.workspace)
+    args.doc_name = resolve_doc_name(args.doc_name)
     layout_topology_input_path = resolve_workspace_path(
         args.layout_topology or DEFAULT_SAFE_MOVE_INPUT_DIR / "layout_topology.json"
     )

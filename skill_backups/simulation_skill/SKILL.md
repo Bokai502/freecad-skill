@@ -1,0 +1,133 @@
+---
+name: simulation-skill
+description: "Run or debug thermal simulation for CAD/spacecraft models. Use for requests about heat/thermal simulation, COMSOL runs, sim_run.py, simulation progress/status, 02_sim outputs, ParaView postprocess artifacts, or analysis results after CAD geometry is available."
+---
+
+# Simulation Skill
+
+Use this skill for model thermal simulation work driven by:
+
+```bash
+/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py
+```
+
+The tool reads an existing workspace with `00_inputs` and `01_cad`, then writes simulation through analysis outputs under `02_sim`.
+
+## Core Rules
+
+- Use `sim_run.py` as the first-class entry point. Do not call copied runtime modules directly unless debugging internals.
+- Resolve the workspace from the Open Codex Web execution context `workspace_dir`. Workspace/version selection is request-scoped; `/api/run`, checkout, and branch do not update `/data/lbk/codex_web/config.json`.
+- Always pass the execution context workspace explicitly with `--workspace-dir <workspace_dir>` for `doctor` and `run`. Do not rely on `config.json`, process `cwd`, or CLI defaults.
+- Before running `run`, inspect the selected workspace by running `--json doctor --workspace-dir <workspace_dir>`. If the reported `workspace_dir` differs from the prompt `workspace_dir`, stop and report the mismatch instead of running simulation into the wrong workspace.
+- Required inputs live under:
+  - `<workspace>/00_inputs/real_bom.json`
+  - `<workspace>/00_inputs/layout_topology.json`
+  - `<workspace>/00_inputs/geom.json`
+  - `<workspace>/01_cad/geometry_after.step`
+  - `<workspace>/01_cad/geometry_after.geom.json`
+  - `<workspace>/01_cad/geometry_after.layout_topology.json`
+  - `<workspace>/01_cad/geometry_after_registry.json`
+  - `<workspace>/01_cad/simulation_input.json`
+  - `<workspace>/01_cad/comsol_inputs/coord.txt`
+  - `<workspace>/01_cad/comsol_inputs/channels_input.npz`
+- Real COMSOL runs always start a private mphserver. Reusing an existing mphserver is not supported by this tool.
+- Use `comsol_local` for real thermal simulation.
+- After a successful simulation, COMSOL/ParaView GUI loaders open by default. Use `--no-open-tools` only for headless runs.
+- Do not delete or recreate the workspace unless the user explicitly asks.
+
+## Commands
+
+Show help:
+
+```bash
+/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py --help
+/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py run --help
+```
+
+Check whether inputs are complete:
+
+```bash
+/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py \
+  --json doctor \
+  --workspace-dir <workspace_dir>
+```
+
+Real local COMSOL run:
+
+```bash
+/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py \
+  --json run \
+  --workspace-dir <workspace_dir> \
+  --simulation-backend comsol_local \
+  --mph-port 32036 \
+  --force \
+  --quiet
+```
+
+Headless run without opening COMSOL/ParaView GUI tools:
+
+```bash
+/data/conda/bin/python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/sim_run.py \
+  --json run \
+  --workspace-dir <workspace_dir> \
+  --simulation-backend comsol_local \
+  --mph-port 32036 \
+  --force \
+  --quiet \
+  --no-open-tools
+```
+
+## Outputs To Inspect
+
+After a run, inspect:
+
+- `<workspace>/logs/progress_percentages.json`
+- `<workspace>/logs/pipeline.log`
+- `<workspace>/logs/simulation_run_stage_result.json`
+- `<workspace>/02_sim/run_manifest.json`
+- `<workspace>/02_sim/simulation/status.json`
+- `<workspace>/02_sim/simulation/simulation_manifest.json`
+- `<workspace>/02_sim/simulation/data1.txt`
+- `<workspace>/02_sim/simulation/native.vtu`
+- `<workspace>/02_sim/postprocess/render_summary.json`
+- `<workspace>/02_sim/case_build/component_index.json`
+- `<workspace>/02_sim/analysis/metrics_summary.json`
+
+For real COMSOL progress during simulation, also inspect:
+
+- `<workspace>/02_sim/simulation/_comsol_work/sim/status.json`
+- `<workspace>/02_sim/simulation/_comsol_work/sim/comsol_progress.json`
+
+## Progress Semantics
+
+`logs/progress_percentages.json` is the top-level progress document:
+
+- `status: running|success|failed`
+- `overall_percent` is weighted across simulation, field export, postprocess, case build, and analysis.
+- The `simulation` step may include `comsol_progress` for COMSOL runs.
+- `comsol_progress.stage` describes the current COMSOL stage, such as `prepare_mph`, `update_geometry`, `prepare_mesh`, `solve`, `export`, `postprocess`, or `completed`.
+- `comsol_progress.heartbeat_at` indicates that a long-running stage such as `solve` is still alive even if percent is unchanged.
+
+## Triage
+
+1. Run `doctor` first when inputs or workspace are uncertain.
+2. If `doctor` reports missing files, stop and report the exact missing paths.
+3. If a stale lock blocks a run, use `--force` only when the recorded PID is not alive.
+4. If a real COMSOL run appears stuck, inspect `progress_percentages.json`, `_comsol_work/sim/comsol_progress.json`, and `_comsol_work/sim/status.json` before killing processes.
+5. Check active processes with:
+
+```bash
+pgrep -af "sim_run.py|comsol_remote_entry.py|mphserver"
+```
+
+6. If `mph-port` is busy, keep the requested port unless the runtime chooses the next free private port automatically.
+7. After any failed run, inspect `logs/pipeline.log` and `logs/simulation_run_stage_result.json` before rerunning.
+
+## Expected Success Criteria
+
+A successful full run has:
+
+- `02_sim/run_manifest.json` with `ok: true`.
+- `logs/progress_percentages.json` with `status: success` and `overall_percent: 100.0`.
+- `simulation_run`, `field_export`, `postprocess`, `case_build`, and `analysis` stages completed.
+- For real COMSOL, `02_sim/simulation/status.json` has `ok: true` and real artifacts such as `data1.txt`, `native.vtu`, and `work.mph`.

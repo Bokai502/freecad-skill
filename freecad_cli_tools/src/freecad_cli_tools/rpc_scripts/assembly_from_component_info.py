@@ -26,6 +26,15 @@ LAST_PROGRESS = {
     "export_file_percent": 0.0,
     "validation_percent": 0.0,
 }
+PROGRESS_SCHEMA_VERSION = "freecad_progress/1.0"
+PROGRESS_KEYS = (
+    "modeling_percent",
+    "export_file_percent",
+    "validation_percent",
+)
+CAD_BUILD_COMMANDS = {"cad build", "freecad-tools cad build"}
+CAD_VALIDATE_COMMANDS = {"cad validate", "freecad-tools cad validate"}
+CAD_MODIFY_COMMANDS = {"layout safe-move", "freecad-layout-safe-move", "freecad-tools layout safe-move"}
 TIMINGS = {
     "build_seconds": {},
     "step_template_seconds": {},
@@ -220,12 +229,90 @@ def read_existing_progress(path):
 
 
 def overall_percent(progress):
-    keys = (
-        "modeling_percent",
-        "export_file_percent",
-        "validation_percent",
-    )
-    return round(sum(float(progress.get(key, 0.0)) for key in keys) / len(keys), 2)
+    return round(sum(float(progress.get(key, 0.0)) for key in PROGRESS_KEYS) / len(PROGRESS_KEYS), 2)
+
+
+def normalize_progress(progress):
+    normalized = {key: 0.0 for key in PROGRESS_KEYS}
+    for key, value in progress.items():
+        normalized[key] = float(value)
+    return normalized
+
+
+def progress_for_tool_payload(tool, payload):
+    progress = payload.get("progress_percentages")
+    if not isinstance(progress, dict):
+        return {}
+
+    command = str(payload.get("command") or tool).strip().lower()
+    tool_name = str(payload.get("tool") or tool).strip().lower()
+    names = {command, tool_name}
+    normalized = normalize_progress(progress)
+
+    if names & CAD_VALIDATE_COMMANDS:
+        return {"validation_percent": normalized["validation_percent"]}
+    if names & CAD_BUILD_COMMANDS:
+        return {
+            "modeling_percent": normalized["modeling_percent"],
+            "export_file_percent": normalized["export_file_percent"],
+        }
+    return {key: float(value) for key, value in normalized.items() if key in PROGRESS_KEYS}
+
+
+def aggregate_progress_from_tools(tools, fallback):
+    aggregated = {key: 0.0 for key in PROGRESS_KEYS}
+    for tool_name, tool_payload in tools.items():
+        if not isinstance(tool_payload, dict):
+            continue
+        for key, value in progress_for_tool_payload(str(tool_name), tool_payload).items():
+            aggregated[key] = max(aggregated[key], float(value))
+
+    fallback_progress = fallback.get("progress_percentages")
+    if isinstance(fallback_progress, dict):
+        for key in PROGRESS_KEYS:
+            value = fallback_progress.get(key)
+            if isinstance(value, (int, float)):
+                aggregated[key] = max(aggregated[key], float(value))
+    for key in PROGRESS_KEYS:
+        value = fallback.get(key)
+        if isinstance(value, (int, float)):
+            aggregated[key] = max(aggregated[key], float(value))
+    return aggregated
+
+
+def starts_cad_workflow(payload):
+    command = str(payload.get("command") or "").strip().lower()
+    tool = str(payload.get("tool") or "").strip().lower()
+    return bool({command, tool} & (CAD_BUILD_COMMANDS | CAD_MODIFY_COMMANDS))
+
+
+def merge_progress_payload(path, tool, payload):
+    existing = read_existing_progress(path)
+    merged = dict(existing)
+    merged.update(payload)
+
+    tools = existing.get("tools")
+    if not isinstance(tools, dict):
+        tools = {}
+    merged_tools = dict(tools)
+    if starts_cad_workflow(payload):
+        for stale_tool in list(merged_tools):
+            stale_payload = merged_tools.get(stale_tool)
+            if not isinstance(stale_payload, dict):
+                continue
+            stale_command = str(stale_payload.get("command") or stale_tool).strip().lower()
+            stale_tool_name = str(stale_payload.get("tool") or stale_tool).strip().lower()
+            if {stale_command, stale_tool_name} & CAD_VALIDATE_COMMANDS:
+                merged_tools.pop(stale_tool, None)
+    merged_tools[tool] = payload
+    for tool_payload in merged_tools.values():
+        if isinstance(tool_payload, dict):
+            tool_payload.pop("output_files", None)
+    merged["tools"] = merged_tools
+    merged["progress_percentages"] = aggregate_progress_from_tools(merged_tools, existing)
+
+    merged.pop("history", None)
+    return merged
 
 
 def write_progress(layout_percent, modeling_percent, export_percent, success=False):
@@ -248,7 +335,7 @@ def write_progress_payload(progress, success=False):
     path = Path(PROGRESS_PATH)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "schema_version": "freecad_progress/1.0",
+        "schema_version": PROGRESS_SCHEMA_VERSION,
         "workflow": "component_info_assembly",
         "command": "assembly create-from-component-info",
         "stage": "component_info_assembly",
@@ -257,9 +344,13 @@ def write_progress_payload(progress, success=False):
         "updated_at": utc_now_iso(),
         "success": bool(success),
         "overall_percent": overall_percent(progress),
+        "progress_percentages": normalize_progress(progress),
         "error": None,
         **{key: value for key, value in progress.items() if key != "layout_completion_percent"},
     }
+    if PROGRESS_OUTPUT_FILES:
+        payload["output_files"] = output_file_records()
+    payload = merge_progress_payload(path, PROGRESS_TOOL, payload)
     temp_path = path.with_name(f".{path.name}.tmp")
     temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     os.replace(str(temp_path), str(path))

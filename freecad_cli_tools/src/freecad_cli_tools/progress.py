@@ -19,7 +19,7 @@ PROGRESS_KEYS = (
 )
 CAD_BUILD_COMMANDS = {"cad build", "freecad-tools cad build"}
 CAD_VALIDATE_COMMANDS = {"cad validate", "freecad-tools cad validate"}
-MAX_PROGRESS_HISTORY = 200
+CAD_MODIFY_COMMANDS = {"layout safe-move", "freecad-layout-safe-move", "freecad-tools layout safe-move"}
 
 
 def get_progress_log_path() -> Path:
@@ -143,19 +143,64 @@ def infer_validation_workflow(default: str = "cad_validation") -> str:
     return default
 
 
-def _progress_history_entry(tool: str, payload: dict[str, Any]) -> dict[str, Any]:
+def _progress_for_tool_payload(tool: str, payload: dict[str, Any]) -> dict[str, float]:
+    progress = payload.get("progress_percentages")
+    if not isinstance(progress, dict):
+        return {}
+
+    command = str(payload.get("command") or tool).strip().lower()
+    tool_name = str(payload.get("tool") or tool).strip().lower()
+    names = {command, tool_name}
+    normalized = normalize_progress(progress)
+
+    if names & CAD_VALIDATE_COMMANDS:
+        return {"validation_percent": normalized["validation_percent"]}
+
+    if names & CAD_BUILD_COMMANDS:
+        return {
+            "modeling_percent": normalized["modeling_percent"],
+            "export_file_percent": normalized["export_file_percent"],
+        }
+
     return {
-        "tool": tool,
-        "workflow": payload.get("workflow"),
-        "command": payload.get("command"),
-        "stage": payload.get("stage"),
-        "status": payload.get("status"),
-        "success": payload.get("success"),
-        "overall_percent": payload.get("overall_percent"),
-        "updated_at": payload.get("updated_at"),
-        "error": payload.get("error"),
-        **{key: payload.get(key) for key in PROGRESS_KEYS if key in payload},
+        key: float(value)
+        for key, value in normalized.items()
+        if key in PROGRESS_KEYS
     }
+
+
+def _aggregate_progress_from_tools(
+    tools: dict[str, Any],
+    fallback: dict[str, Any],
+) -> dict[str, float]:
+    aggregated = {key: 0.0 for key in PROGRESS_KEYS}
+    for tool_name, tool_payload in tools.items():
+        if not isinstance(tool_payload, dict):
+            continue
+        for key, value in _progress_for_tool_payload(str(tool_name), tool_payload).items():
+            aggregated[key] = max(aggregated[key], float(value))
+
+    # Legacy progress files may not have a tools map yet. Preserve any existing
+    # completed scalar fields so starting a later stage does not regress them.
+    fallback_progress = fallback.get("progress_percentages")
+    if isinstance(fallback_progress, dict):
+        for key in PROGRESS_KEYS:
+            value = fallback_progress.get(key)
+            if isinstance(value, (int, float)):
+                aggregated[key] = max(aggregated[key], float(value))
+    for key in PROGRESS_KEYS:
+        value = fallback.get(key)
+        if isinstance(value, (int, float)):
+            aggregated[key] = max(aggregated[key], float(value))
+
+    return aggregated
+
+
+def _starts_cad_workflow(payload: dict[str, Any]) -> bool:
+    command = str(payload.get("command") or "").strip().lower()
+    tool = str(payload.get("tool") or "").strip().lower()
+    names = {command, tool}
+    return bool(names & (CAD_BUILD_COMMANDS | CAD_MODIFY_COMMANDS))
 
 
 def _merge_progress_payload(
@@ -173,16 +218,22 @@ def _merge_progress_payload(
     if not isinstance(tools, dict):
         tools = {}
     merged_tools = dict(tools)
+    if _starts_cad_workflow(payload):
+        for stale_tool in list(merged_tools):
+            stale_payload = merged_tools.get(stale_tool)
+            if not isinstance(stale_payload, dict):
+                continue
+            stale_command = str(stale_payload.get("command") or stale_tool).strip().lower()
+            stale_tool_name = str(stale_payload.get("tool") or stale_tool).strip().lower()
+            if {stale_command, stale_tool_name} & CAD_VALIDATE_COMMANDS:
+                merged_tools.pop(stale_tool, None)
     merged_tools[tool] = payload
     for tool_payload in merged_tools.values():
         if isinstance(tool_payload, dict):
             tool_payload.pop("output_files", None)
     merged["tools"] = merged_tools
-
-    history = existing.get("history")
-    if not isinstance(history, list):
-        history = []
-    merged["history"] = [*history, _progress_history_entry(tool, payload)][-MAX_PROGRESS_HISTORY:]
+    merged["progress_percentages"] = _aggregate_progress_from_tools(merged_tools, existing)
+    merged.pop("history", None)
     if not merge_output_files:
         merged.pop("output_files", None)
 

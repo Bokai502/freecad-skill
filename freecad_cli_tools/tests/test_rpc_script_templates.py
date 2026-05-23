@@ -141,6 +141,9 @@ def test_freecad_side_scripts_write_progress_json(script_name: str) -> None:
     rendered = render_rpc_script(script_name, SCRIPT_REPLACEMENTS[script_name])
     assert "def write_progress(" in rendered
     assert "output_file_records()" in rendered
+    assert "def merge_progress_payload(" in rendered
+    assert '"progress_percentages": normalize_progress(progress)' in rendered
+    assert "aggregate_progress_from_tools(merged_tools, existing)" in rendered
     assert "os.replace(str(temp_path), str(path))" in rendered
 
 
