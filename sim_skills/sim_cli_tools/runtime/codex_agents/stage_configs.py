@@ -72,7 +72,6 @@ def simulation_stage_config(
         "geometry_step_path": geometry_step_path,
         "after_state_dir": paths["geometry_edit"],
         "sample_yaml_path": paths["run_root"] / "sample.yaml",
-        "pipeline_progress_path": paths["logs"] / "progress_percentages.json",
     }
     if config.simulation_backend == "comsol_local":
         stage_config.update(

@@ -81,7 +81,6 @@ python -m sim_cli_tools.cli.main \
 
 After a run, inspect:
 
-- `<workspace>/logs/progress_percentages.json`
 - `<workspace>/logs/pipeline.log`
 - `<workspace>/logs/simulation_run_stage_result.json`
 - `<workspace>/02_sim/run_manifest.json`
@@ -95,27 +94,69 @@ After a run, inspect:
 - `<workspace>/02_sim/case_build/component_index.json`
 - `<workspace>/02_sim/analysis/metrics_summary.json`
 
-For real COMSOL progress during simulation, also inspect:
+For real COMSOL progress during simulation, inspect the progress source of truth:
 
-- `<workspace>/02_sim/simulation/_comsol_work/sim/status.json`
 - `<workspace>/02_sim/simulation/_comsol_work/sim/comsol_progress.json`
+
+This file contains `sample_id`, `stage`, `percent`, `ok`, `updated_at`, and
+`heartbeat_at`. Use `<workspace>/02_sim/simulation/_comsol_work/sim/status.json`
+for detailed COMSOL status and validation checks, not progress fallback. Or run:
+
+```bash
+python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/comsol_progress.py \
+  --workspace-dir <workspace_dir>
+```
 
 ## Progress Semantics
 
-`logs/progress_percentages.json` is the top-level progress document:
+- The simulation CLI no longer writes `<workspace>/logs/progress_percentages.json`.
+- Use `python -m freecad_cli_tools.cli.main progress update` as the only writer for
+  `<workspace>/logs/progress.json`.
+- Before starting `run`, write:
 
-- `status: running|success|failed`
-- `overall_percent` is weighted across simulation, field export, postprocess, case build, and analysis.
-- The `simulation` step may include `comsol_progress` for COMSOL runs.
-- `comsol_progress.stage` describes the current COMSOL stage, such as `prepare_mph`, `update_geometry`, `prepare_mesh`, `solve`, `export`, `postprocess`, or `completed`.
-- `comsol_progress.heartbeat_at` indicates that a long-running stage such as `solve` is still alive even if percent is unchanged.
+```bash
+python -m freecad_cli_tools.cli.main progress update \
+  --workspace-dir <workspace_dir> \
+  --loop-name simulation \
+  --status simulation_running \
+  --completed false \
+  --percentage 0
+```
+
+- Use stage-specific running status values instead of plain `running`:
+  - `simulation_running`
+  - `field_export_running`
+  - `postprocess_running`
+  - `case_build_running`
+  - `analysis_running`
+- Map simulation stages into the single `simulation` loop percentage:
+  - `simulation_run`: 0-70
+  - `field_export`: 70-80
+  - `postprocess`: 80-90
+  - `case_build`: 90-96
+  - `analysis`: 96-100
+- Do not require `sim_run.py` or stage scripts to return a unified progress
+  payload. Derive progress from the active stage, durable stage logs, and COMSOL
+  progress files.
+- For real COMSOL progress during `simulation_run`, read
+  `_comsol_work/sim/comsol_progress.json` or use the `comsol_progress.py` reader.
+  Do not use `_comsol_work/sim/status.json` as a progress fallback. Map COMSOL's
+  internal percent into the 0-70 range. For example, 50% COMSOL progress writes
+  `--percentage 35`.
+- `heartbeat_at` in `_comsol_work/sim/comsol_progress.json` is used to decide
+  whether the current `simulation_running` operation is alive. It is not written
+  separately into `<workspace>/logs/progress.json`; only call `progress update`
+  with the mapped percentage and status.
+- When the full simulation workflow finishes, write `--completed true
+  --percentage 100`; use `--status completed` for success and `--status failed`
+  for a completed failed run.
 
 ## Triage
 
 1. Run `doctor` first when inputs or workspace are uncertain.
 2. If `doctor` reports missing files, stop and report the exact missing paths.
 3. If a stale lock blocks a run, use `--force` only when the recorded PID is not alive.
-4. If a real COMSOL run appears stuck, inspect `progress_percentages.json`, `_comsol_work/sim/comsol_progress.json`, and `_comsol_work/sim/status.json` before killing processes.
+4. If a real COMSOL run appears stuck, inspect `_comsol_work/sim/comsol_progress.json` first for `heartbeat_at`, `stage`, and `percent`; use `_comsol_work/sim/status.json` only for detailed status/checks before killing processes.
 5. Check active processes with:
 
 ```bash
@@ -130,6 +171,5 @@ pgrep -af "sim_run.py|comsol_remote_entry.py|mphserver"
 A successful full run has:
 
 - `02_sim/run_manifest.json` with `ok: true`.
-- `logs/progress_percentages.json` with `status: success` and `overall_percent: 100.0`.
 - `simulation_run`, `field_export`, `postprocess`, `case_build`, and `analysis` stages completed.
 - For real COMSOL, `02_sim/simulation/status.json` has `ok: true` and real artifacts such as `data1.txt`, `native.vtu`, and `work.mph`.

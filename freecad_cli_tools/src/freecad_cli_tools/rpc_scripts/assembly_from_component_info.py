@@ -1,8 +1,6 @@
 import json
-import os
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import FreeCAD
@@ -17,165 +15,6 @@ SAVE_PATH = __SAVE_PATH__
 EXPORT_GLB = __EXPORT_GLB__
 FIT_VIEW = __FIT_VIEW__
 VIEW_NAME = __VIEW_NAME__
-PROGRESS_PATH = __PROGRESS_PATH__
-PROGRESS_TOOL = __PROGRESS_TOOL__
-PROGRESS_OUTPUT_FILES = __PROGRESS_OUTPUT_FILES__
-LAST_PROGRESS = {
-    "layout_completion_percent": 100.0,
-    "modeling_percent": 0.0,
-    "export_file_percent": 0.0,
-    "validation_percent": 0.0,
-}
-PROGRESS_SCHEMA_VERSION = "freecad_progress/1.0"
-PROGRESS_KEYS = (
-    "modeling_percent",
-    "export_file_percent",
-    "validation_percent",
-)
-CAD_BUILD_COMMANDS = {"cad build", "freecad-tools cad build"}
-CAD_VALIDATE_COMMANDS = {"cad validate", "freecad-tools cad validate"}
-CAD_MODIFY_COMMANDS = {"layout safe-move", "freecad-layout-safe-move", "freecad-tools layout safe-move"}
-TIMINGS = {
-    "build_seconds": {},
-    "step_template_seconds": {},
-    "exports": {},
-}
-
-FACE_DEFINITIONS = {
-    0: ("-x", 0, -1),
-    1: ("x", 0, 1),
-    2: ("-y", 1, -1),
-    3: ("y", 1, 1),
-    4: ("-z", 2, -1),
-    5: ("z", 2, 1),
-    6: ("ext-x", 0, -1),
-    7: ("ext+x", 0, 1),
-    8: ("ext-y", 1, -1),
-    9: ("ext+y", 1, 1),
-    10: ("ext-z", 2, -1),
-    11: ("ext+z", 2, 1),
-}
-IDENTITY_ROTATION_ROWS = [
-    [1.0, 0.0, 0.0],
-    [0.0, 1.0, 0.0],
-    [0.0, 0.0, 1.0],
-]
-
-
-def utc_now_iso():
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-
-
-def matrix_to_rotation(matrix_rows):
-    matrix = FreeCAD.Matrix()
-    matrix.A11 = float(matrix_rows[0][0])
-    matrix.A12 = float(matrix_rows[0][1])
-    matrix.A13 = float(matrix_rows[0][2])
-    matrix.A14 = 0.0
-    matrix.A21 = float(matrix_rows[1][0])
-    matrix.A22 = float(matrix_rows[1][1])
-    matrix.A23 = float(matrix_rows[1][2])
-    matrix.A24 = 0.0
-    matrix.A31 = float(matrix_rows[2][0])
-    matrix.A32 = float(matrix_rows[2][1])
-    matrix.A33 = float(matrix_rows[2][2])
-    matrix.A34 = 0.0
-    matrix.A41 = 0.0
-    matrix.A42 = 0.0
-    matrix.A43 = 0.0
-    matrix.A44 = 1.0
-    return FreeCAD.Placement(matrix).Rotation
-
-
-def determinant3(matrix_rows):
-    return (
-        matrix_rows[0][0] * (matrix_rows[1][1] * matrix_rows[2][2] - matrix_rows[1][2] * matrix_rows[2][1])
-        - matrix_rows[0][1] * (matrix_rows[1][0] * matrix_rows[2][2] - matrix_rows[1][2] * matrix_rows[2][0])
-        + matrix_rows[0][2] * (matrix_rows[1][0] * matrix_rows[2][1] - matrix_rows[1][1] * matrix_rows[2][0])
-    )
-
-
-def signed_permutation_rotations():
-    rotations = []
-    import itertools
-    for perm in itertools.permutations(range(3)):
-        for signs in itertools.product((-1, 1), repeat=3):
-            matrix_rows = [[0.0, 0.0, 0.0] for _ in range(3)]
-            for row, col in enumerate(perm):
-                matrix_rows[row][col] = float(signs[row])
-            if determinant3(matrix_rows) == 1:
-                rotations.append(matrix_rows)
-    return rotations
-
-
-ROTATION_ROWS = signed_permutation_rotations()
-
-
-def is_external_face(face_id):
-    return int(face_id) >= 6
-
-
-def face_normal(face_id):
-    _, axis, direction = FACE_DEFINITIONS[int(face_id)]
-    normal = [0.0, 0.0, 0.0]
-    normal[axis] = float(direction)
-    return normal
-
-
-def apply_rotation_rows(rotation_rows, point):
-    return [
-        sum(float(rotation_rows[row][col]) * float(point[col]) for col in range(3))
-        for row in range(3)
-    ]
-
-
-def multiply_rotation_rows(left_rows, right_rows):
-    return [
-        [
-            sum(float(left_rows[row][k]) * float(right_rows[k][col]) for k in range(3))
-            for col in range(3)
-        ]
-        for row in range(3)
-    ]
-
-
-def installation_contact_world_face(install_face):
-    install_face = int(install_face)
-    if is_external_face(install_face):
-        return (install_face - 6) ^ 1
-    return install_face
-
-
-def choose_rotation_rows(component_face, target_envelope_face):
-    source = face_normal(component_face)
-    target = face_normal(installation_contact_world_face(target_envelope_face))
-    candidates = [
-        matrix_rows
-        for matrix_rows in ROTATION_ROWS
-        if apply_rotation_rows(matrix_rows, source) == target
-    ]
-    if not candidates:
-        raise RuntimeError("No valid orthogonal rotation found for requested face change.")
-    candidates.sort(key=lambda rows: sum(rows[i][i] for i in range(3)), reverse=True)
-    return candidates[0]
-
-
-def rotation_about_axis(axis_index, quarter_turns):
-    turns = int(quarter_turns) % 4
-    if turns == 0:
-        return [row[:] for row in IDENTITY_ROTATION_ROWS]
-    if axis_index == 0:
-        step = [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0], [0.0, 1.0, 0.0]]
-    elif axis_index == 1:
-        step = [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 0.0]]
-    elif axis_index == 2:
-        step = [[0.0, -1.0, 0.0], [1.0, 0.0, 0.0], [0.0, 0.0, 1.0]]
-    else:
-        raise RuntimeError(f"Invalid rotation axis index {axis_index!r}")
-    result = [row[:] for row in IDENTITY_ROTATION_ROWS]
-    for _ in range(turns):
-        result = multiply_rotation_rows(step, result)
-    return result
 
 
 def normalize_spin_quarter_turns(angle_degrees):
@@ -208,156 +47,6 @@ def orientation_rows_from_normalized_placement(placement):
             normalize_spin_quarter_turns(spin_degrees),
         )
     return orientation_rows
-
-
-def output_file_records():
-    records = {}
-    for name, path in (PROGRESS_OUTPUT_FILES or {}).items():
-        records[name] = {
-            "path": path,
-            "exists": bool(path) and Path(path).exists(),
-        }
-    return records
-
-
-def read_existing_progress(path):
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return payload if isinstance(payload, dict) else {}
-
-
-def overall_percent(progress):
-    return round(sum(float(progress.get(key, 0.0)) for key in PROGRESS_KEYS) / len(PROGRESS_KEYS), 2)
-
-
-def normalize_progress(progress):
-    normalized = {key: 0.0 for key in PROGRESS_KEYS}
-    for key, value in progress.items():
-        normalized[key] = float(value)
-    return normalized
-
-
-def progress_for_tool_payload(tool, payload):
-    progress = payload.get("progress_percentages")
-    if not isinstance(progress, dict):
-        return {}
-
-    command = str(payload.get("command") or tool).strip().lower()
-    tool_name = str(payload.get("tool") or tool).strip().lower()
-    names = {command, tool_name}
-    normalized = normalize_progress(progress)
-
-    if names & CAD_VALIDATE_COMMANDS:
-        return {"validation_percent": normalized["validation_percent"]}
-    if names & CAD_BUILD_COMMANDS:
-        return {
-            "modeling_percent": normalized["modeling_percent"],
-            "export_file_percent": normalized["export_file_percent"],
-        }
-    return {key: float(value) for key, value in normalized.items() if key in PROGRESS_KEYS}
-
-
-def aggregate_progress_from_tools(tools, fallback):
-    aggregated = {key: 0.0 for key in PROGRESS_KEYS}
-    for tool_name, tool_payload in tools.items():
-        if not isinstance(tool_payload, dict):
-            continue
-        for key, value in progress_for_tool_payload(str(tool_name), tool_payload).items():
-            aggregated[key] = max(aggregated[key], float(value))
-
-    fallback_progress = fallback.get("progress_percentages")
-    if isinstance(fallback_progress, dict):
-        for key in PROGRESS_KEYS:
-            value = fallback_progress.get(key)
-            if isinstance(value, (int, float)):
-                aggregated[key] = max(aggregated[key], float(value))
-    for key in PROGRESS_KEYS:
-        value = fallback.get(key)
-        if isinstance(value, (int, float)):
-            aggregated[key] = max(aggregated[key], float(value))
-    return aggregated
-
-
-def starts_cad_workflow(payload):
-    command = str(payload.get("command") or "").strip().lower()
-    tool = str(payload.get("tool") or "").strip().lower()
-    return bool({command, tool} & (CAD_BUILD_COMMANDS | CAD_MODIFY_COMMANDS))
-
-
-def merge_progress_payload(path, tool, payload):
-    existing = read_existing_progress(path)
-    merged = dict(existing)
-    merged.update(payload)
-
-    tools = existing.get("tools")
-    if not isinstance(tools, dict):
-        tools = {}
-    merged_tools = dict(tools)
-    if starts_cad_workflow(payload):
-        for stale_tool in list(merged_tools):
-            stale_payload = merged_tools.get(stale_tool)
-            if not isinstance(stale_payload, dict):
-                continue
-            stale_command = str(stale_payload.get("command") or stale_tool).strip().lower()
-            stale_tool_name = str(stale_payload.get("tool") or stale_tool).strip().lower()
-            if {stale_command, stale_tool_name} & CAD_VALIDATE_COMMANDS:
-                merged_tools.pop(stale_tool, None)
-    merged_tools[tool] = payload
-    for tool_payload in merged_tools.values():
-        if isinstance(tool_payload, dict):
-            tool_payload.pop("output_files", None)
-    merged["tools"] = merged_tools
-    merged["progress_percentages"] = aggregate_progress_from_tools(merged_tools, existing)
-
-    merged.pop("history", None)
-    return merged
-
-
-def write_progress(layout_percent, modeling_percent, export_percent, success=False):
-    global LAST_PROGRESS
-    if not PROGRESS_PATH:
-        return
-    progress = {
-        "layout_completion_percent": float(layout_percent),
-        "modeling_percent": float(modeling_percent),
-        "export_file_percent": float(export_percent),
-        "validation_percent": 0.0,
-    }
-    LAST_PROGRESS = dict(progress)
-    write_progress_payload(progress, success=success)
-
-
-def write_progress_payload(progress, success=False):
-    if not PROGRESS_PATH:
-        return
-    path = Path(PROGRESS_PATH)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema_version": PROGRESS_SCHEMA_VERSION,
-        "workflow": "component_info_assembly",
-        "command": "assembly create-from-component-info",
-        "stage": "component_info_assembly",
-        "status": "success" if success else "running",
-        "tool": PROGRESS_TOOL,
-        "updated_at": utc_now_iso(),
-        "success": bool(success),
-        "overall_percent": overall_percent(progress),
-        "progress_percentages": normalize_progress(progress),
-        "error": None,
-        **{key: value for key, value in progress.items() if key != "layout_completion_percent"},
-    }
-    if PROGRESS_OUTPUT_FILES:
-        payload["output_files"] = output_file_records()
-    payload = merge_progress_payload(path, PROGRESS_TOOL, payload)
-    temp_path = path.with_name(f".{path.name}.tmp")
-    temp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    os.replace(str(temp_path), str(path))
-
-
-def mark_progress_failed():
-    write_progress_payload(dict(LAST_PROGRESS), success=False)
 
 
 def build_envelope(doc, assembly, data):
@@ -478,11 +167,9 @@ def collect_glb_export_objects(objects):
 def export_step_and_glb(objects, step_path):
     step_path = str(Path(step_path))
     glb_path = str(Path(step_path).with_suffix(".glb"))
-    write_progress(100.0, 100.0, 0.0)
     step_started = time.monotonic()
     Import.export(objects, step_path)
     TIMINGS["exports"]["step_export_seconds"] = time.monotonic() - step_started
-    write_progress(100.0, 100.0, 50.0)
     glb_objects = collect_glb_export_objects(objects)
     export_options = None
     if hasattr(ImportGui, "exportOptions"):
@@ -501,15 +188,12 @@ def export_step_and_glb(objects, step_path):
             glb_started = time.monotonic()
             ImportGui.export(glb_objects, glb_path)
     TIMINGS["exports"]["glb_export_seconds"] = time.monotonic() - glb_started
-    write_progress(100.0, 100.0, 100.0, success=True)
     return step_path, glb_path
 
 
 def export_step(objects, step_path):
     step_path = str(Path(step_path))
-    write_progress(100.0, 100.0, 0.0)
     Import.export(objects, step_path)
-    write_progress(100.0, 100.0, 50.0)
     return step_path
 
 
@@ -741,7 +425,6 @@ def create_step_component(doc, part, component_id, component, target_bbox, step_
 
 try:
     build_started = time.monotonic()
-    write_progress(100.0, 0.0, 0.0)
     path = Path(INPUT_PATH)
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
@@ -812,11 +495,8 @@ try:
             if fallback_reason:
                 fallback_components_by_reason.setdefault(fallback_reason, []).append(component_id)
         TIMINGS["build_seconds"][component_id] = time.monotonic() - component_started
-        write_progress(100.0, (index / total_components) * 90.0, 0.0)
-
-    write_progress(100.0, 95.0, 0.0)
+    
     doc.recompute()
-    write_progress(100.0, 100.0, 0.0)
     if EXPORT_GLB:
         save_path, glb_path = export_step_and_glb([assembly], SAVE_PATH)
     else:
@@ -851,6 +531,5 @@ try:
         )
     )
 except Exception as exc:
-    mark_progress_failed()
     print(json.dumps({"success": False, "error": str(exc)}))
     sys.exit(1)

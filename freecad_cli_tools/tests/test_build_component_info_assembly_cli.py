@@ -134,25 +134,6 @@ def test_main_stages_runtime_files_and_rewrites_export_paths(
     assert payload["glb_path"] == str(output_path.with_suffix(".glb"))
     assert payload["components"][0]["fallback_reason"] is None
     assert payload["fallback_components_by_reason"] == {}
-    assert payload["progress_percentages"] == {
-        "layout_completion_percent": 100.0,
-        "modeling_percent": 100.0,
-        "export_file_percent": 100.0,
-        "validation_percent": 0.0,
-    }
-    progress_log_path = workspace / "logs" / "progress_percentages.json"
-    assert payload["progress_json_path"] == str(progress_log_path)
-    progress_log = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert progress_log["tool"] == "freecad-create-assembly-from-component-info"
-    assert progress_log["progress_percentages"] == payload["progress_percentages"]
-    assert progress_log["output_files"]["step"] == {
-        "path": str(output_path),
-        "exists": True,
-    }
-    assert progress_log["output_files"]["glb"] == {
-        "path": str(output_path.with_suffix(".glb")),
-        "exists": True,
-    }
 
 
 def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, capsys) -> None:
@@ -224,12 +205,6 @@ def test_main_allows_output_at_staged_export_path(monkeypatch, tmp_path: Path, c
     assert payload["success"] is True
     assert payload["save_path"] == str(output_path)
     assert payload["glb_path"] == str(output_path.with_suffix(".glb"))
-    assert payload["progress_percentages"] == {
-        "layout_completion_percent": 100.0,
-        "modeling_percent": 100.0,
-        "export_file_percent": 100.0,
-        "validation_percent": 0.0,
-    }
 
 
 def test_main_uses_runtime_default_step_size_limit(monkeypatch, tmp_path: Path, capsys) -> None:

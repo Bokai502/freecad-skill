@@ -10,11 +10,7 @@ from pathlib import Path
 from freecad_cli_tools.cad_validation import validate_cad_build
 from freecad_cli_tools.cli_support import execute_script_payload, normalize_runtime_path
 from freecad_cli_tools.doc_name import add_doc_name_arg, resolve_doc_name
-from freecad_cli_tools.progress import (
-    ProgressLogWriter,
-    attach_progress_log_path,
-    infer_validation_workflow,
-)
+from freecad_cli_tools.pipeline_logging import configure_pipeline_logging, get_pipeline_logger, pipeline_step
 from freecad_cli_tools.rpc_client import print_result as print_json
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
 from freecad_cli_tools.runtime_config import resolve_workspace_path
@@ -77,8 +73,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    validate_workspace_root(args.workspace)
+    workspace_root = validate_workspace_root(args.workspace)
+    configure_pipeline_logging(command="cad validate", workspace=workspace_root)
+    logger = get_pipeline_logger("cad_validate")
     args.doc_name = resolve_doc_name(args.doc_name)
+    logger.info("starting CAD validation: doc=%s strict=%s screenshots=%s", args.doc_name, args.strict, not args.no_screenshot)
     input_dir = resolve_workspace_path(args.input_dir)
     cad_dir = resolve_workspace_path(args.cad_dir)
     real_bom_path = resolve_workspace_path(args.real_bom) if args.real_bom else input_dir / "real_bom.json"
@@ -96,90 +95,44 @@ def main() -> int:
     output_paths = _validation_output_paths(cad_dir, screenshot_paths)
     step_path = output_paths["step"]
     glb_path = output_paths["glb"]
-    workflow = infer_validation_workflow()
-    progress_writer = ProgressLogWriter(
-        tool="freecad-tools cad validate",
-        workflow=workflow,
-        command="cad validate",
-        stage="cad_validate",
-        progress={
-            "layout_completion_percent": 0.0,
-            "modeling_percent": 0.0,
-            "export_file_percent": 0.0,
-            "validation_percent": 0.0,
-        },
-        output_paths=output_paths,
-    ).start()
     screenshot_result = None
     try:
         if not args.no_screenshot:
-            screenshot_result = capture_six_face_screenshots(
-                doc_name=args.doc_name,
-                output_paths=screenshot_paths,
-                width=args.screenshot_width,
-                height=args.screenshot_height,
-                host=args.host,
-                port=args.port,
+            with pipeline_step("cad_screenshot"):
+                logger.info("capturing six-face screenshots into %s", cad_dir)
+                screenshot_result = capture_six_face_screenshots(
+                    doc_name=args.doc_name,
+                    output_paths=screenshot_paths,
+                    width=args.screenshot_width,
+                    height=args.screenshot_height,
+                    host=args.host,
+                    port=args.port,
+                )
+                logger.info("screenshot capture finished: success=%s", screenshot_result.get("success"))
+        with pipeline_step("cad_validate"):
+            logger.info("validating CAD artifacts: real_bom=%s layout=%s geom=%s cad_dir=%s", real_bom_path, layout_topology_path, geom_path, cad_dir)
+            report = validate_cad_build(
+                real_bom_path=real_bom_path,
+                layout_topology_path=layout_topology_path,
+                geom_path=geom_path,
+                cad_dir=cad_dir,
+                tolerance_mm=args.tolerance_mm,
+                max_occupancy_ratio=args.max_occupancy_ratio,
+                screenshot_result=screenshot_result,
+                write_back=True,
             )
-            progress_writer.update(
-                progress={
-                    "layout_completion_percent": 100.0,
-                    "modeling_percent": 100.0 if step_path.exists() else 0.0,
-                    "export_file_percent": _existing_export_percent(step_path, glb_path),
-                    "validation_percent": 50.0,
-                }
+            logger.info(
+                "CAD validation finished: success=%s failures=%d warnings=%d",
+                report.get("success"),
+                len(report.get("failures") or report.get("errors") or []),
+                len(report.get("warnings") or []),
             )
-        report = validate_cad_build(
-            real_bom_path=real_bom_path,
-            layout_topology_path=layout_topology_path,
-            geom_path=geom_path,
-            cad_dir=cad_dir,
-            tolerance_mm=args.tolerance_mm,
-            max_occupancy_ratio=args.max_occupancy_ratio,
-            screenshot_result=screenshot_result,
-            write_back=True,
-        )
         report["requested_doc_name"] = args.doc_name
-        progress_log_path = progress_writer.update(
-            progress={
-                "layout_completion_percent": 100.0,
-                "modeling_percent": 100.0 if step_path.exists() else 0.0,
-                "export_file_percent": _existing_export_percent(step_path, glb_path),
-                "validation_percent": 100.0,
-            },
-            success=bool(report["success"]),
-            status="success" if report["success"] else "validation_failed",
-            error=None
-            if report["success"]
-            else {
-                "code": "CAD_VALIDATION_FAILED",
-                "message": "CAD validation completed with blocking errors.",
-                "details": {
-                    "error_count": len(report.get("failures") or report.get("errors") or []),
-                    "warning_count": len(report.get("warnings") or []),
-                },
-            },
-        )
-        attach_progress_log_path(report, progress_log_path)
-    except Exception:
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 0.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-                "validation_percent": 0.0,
-            },
-            success=False,
-            status="failed",
-        )
+    except Exception as exc:
+        logger.exception("CAD validation failed: %s", exc)
         raise
     print_json(report)
     return 1 if args.strict and not report["success"] else 0
-
-
-def _existing_export_percent(step_path: Path, glb_path: Path) -> float:
-    exported_count = int(step_path.exists()) + int(glb_path.exists())
-    return (exported_count / 2.0) * 100.0
 
 
 def _resolve_screenshot_path(raw_path: str, cad_dir: Path) -> Path:

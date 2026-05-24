@@ -20,11 +20,15 @@ description: "FreeCAD CLI/RPC workflow for the current 00_inputs -> 01_cad CAD s
 There are two primary workflows:
 
 - Create a new CAD model: read `guides/cad-build-workflow.md`, run
-  `python -m freecad_cli_tools.cli.main cad build`, then read `guides/cad-validate-workflow.md` and run
-  `python -m freecad_cli_tools.cli.main cad validate`.
+  `python -m freecad_cli_tools.cli.main progress update --loop-name create_cad --status running --completed false --percentage 0`,
+  run `python -m freecad_cli_tools.cli.main cad build`, update progress to 60, then read
+  `guides/cad-validate-workflow.md`, run `python -m freecad_cli_tools.cli.main cad validate`, and
+  update progress to `--completed true --percentage 100` with `--status completed` when validation passes or `--status failed` when validation fails.
 - Modify an existing CAD model: read `guides/safe-move-workflow.md`, run
-  `python -m freecad_cli_tools.cli.main layout safe-move`, then read `guides/cad-validate-workflow.md`
-  and run `python -m freecad_cli_tools.cli.main cad validate`.
+  `python -m freecad_cli_tools.cli.main progress update --loop-name modify_cad --status running --completed false --percentage 0`,
+  run `python -m freecad_cli_tools.cli.main layout safe-move`, update progress to 60, then read
+  `guides/cad-validate-workflow.md`, run `python -m freecad_cli_tools.cli.main cad validate`, and
+  update progress to `--completed true --percentage 100` with `--status completed` when validation passes or `--status failed` when validation fails.
 
 Route requests this way:
 
@@ -65,10 +69,17 @@ Route requests this way:
   - `python -m freecad_cli_tools.cli.main cad build`
   - `python -m freecad_cli_tools.cli.main cad validate`
   - `python -m freecad_cli_tools.cli.main layout safe-move`
+  - `python -m freecad_cli_tools.cli.main progress update`
   - `python -m freecad_cli_tools.cli.main config show`
   - `python -m freecad_cli_tools.cli.main assembly create-from-component-info` only for auxiliary real-CAD asset assembly/debug tasks
 - After CAD geometry changes, recompute and fit the view unless the active command exposes and uses an explicit opt-out such as `--no-fit-view`.
 - Verify outputs after execution. If the dataset update succeeds but STEP or GLB export is missing, report partial success rather than full success.
+- For every two-primary-workflow run, update `<configured workspace>/logs/progress.json` with
+  `python -m freecad_cli_tools.cli.main progress update --loop-name <create_cad|modify_cad> --status <running|completed|failed> --completed <true|false> --percentage <0-100>`.
+  The `--completed` value is required and must be exactly `true` or `false`; when it is `true`, the command writes `percentage: 100.0` and `finished_at` regardless of the input percentage.
+  The progress command records `created_at`, `updated_at`, `finished_at`, `completed`, and the latest input fields for each loop.
+- Pass the same configured workspace to progress updates as to the workflow command when an explicit workspace is in use.
+- Before a long CAD/RPC operation, write `--status running --completed false`; after build/safe-move succeeds, keep `--completed false` and advance the percentage to 60; after `cad validate` finishes, write `--completed true --percentage 100`. Use `--status failed` if validation failed, but still mark completed because the workflow ran to completion.
 - Check and report progress fields from `<configured workspace>/logs/progress_percentages.json`: `workflow`, `stage`, `status`, `overall_percent`, `modeling_percent`, `export_file_percent`, `validation_percent`, and `error`. STEP and GLB exports each contribute 50% to `export_file_percent`.
 - Progress `workflow` must match the two primary workflows: `create_cad` for `cad build -> cad validate`, and `modify_cad` for `layout safe-move -> cad validate`. A standalone validation run may use `cad_validation`.
 - When that progress file already contains the BOM pipeline schema (`schema_version: "1.0"` with `steps`), FreeCAD must not replace the file with its standalone payload. Merge FreeCAD progress into the `geometry-edit` step: set `steps[].percent` for `geometry-edit` to the average of the three FreeCAD progress fields, keep it in the range `0-100`, attach the detailed values under `freecad_progress`, recompute `overall_percent`, and preserve top-level `output_files` for frontend display.

@@ -879,8 +879,10 @@ class RemoteComsolExecutor:
         }
 
         def set_stage(stage: str) -> None:
+            heartbeat_at = time.strftime('%Y-%m-%d %H:%M:%S')
             status['stage'] = stage
             status['progress_percent'] = progress_by_stage.get(stage, status.get('progress_percent', 0.0))
+            status['heartbeat_at'] = heartbeat_at
             self._write_sample_status(status_json, status)
             self._write_sample_status(
                 progress_json,
@@ -889,6 +891,7 @@ class RemoteComsolExecutor:
                     'stage': stage,
                     'percent': status['progress_percent'],
                     'ok': status.get('ok', False),
+                    'heartbeat_at': heartbeat_at,
                 },
             )
 

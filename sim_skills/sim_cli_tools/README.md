@@ -70,6 +70,12 @@ The CLI does not call the older pipeline skill or CLI. It imports the copied run
 It does not create copied input stage directories such as `02_sim/00_inputs`, `02_sim/01_layout`, or `02_sim/02_geometry_edit`.
 
 The run manifest is written to `02_sim/run_manifest.json`. Runtime logs and stage result logs are written to the workspace-level `logs` directory, for example `<workspace>/logs`, not `02_sim/logs`.
+The CLI does not write `<workspace>/logs/progress_percentages.json`. During real
+COMSOL runs, the progress source of truth is
+`<workspace>/02_sim/simulation/_comsol_work/sim/comsol_progress.json`. That file
+contains `sample_id`, `stage`, `percent`, `ok`, `updated_at`, and
+`heartbeat_at`; `status.json` is for detailed COMSOL status and validation
+checks, not progress fallback.
 
 Resource controls:
 
@@ -86,3 +92,17 @@ sim-run --json run \
   --mph-port 32036 \
   --quiet
 ```
+
+Read COMSOL progress without modifying any progress file:
+
+```bash
+python /data/lbk/codex_web/freecad_skills/freecad-skill/sim_skills/sim_cli_tools/comsol_progress.py \
+  --workspace-dir <workspace_dir>
+```
+
+`sim-run` owns `<workspace>/logs/progress.json` updates for the simulation loop.
+It writes `simulation_running` at 0% when a run starts. During
+`simulation_run`, it polls `comsol_progress.json` about once per second and maps
+COMSOL's internal percent into the outer `simulation` loop's 0-70 range. Later
+pipeline stages advance the same loop through field export, postprocess, case
+build, and analysis, then write `completed` or `failed` at 100%.

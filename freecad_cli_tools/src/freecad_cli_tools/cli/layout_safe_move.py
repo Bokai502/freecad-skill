@@ -42,11 +42,7 @@ from freecad_cli_tools.layout_dataset import (
     update_layout_dataset_component_placement,
 )
 from freecad_cli_tools.doc_name import add_doc_name_arg, resolve_doc_name
-from freecad_cli_tools.progress import (
-    ProgressLogWriter,
-    get_progress_log_path,
-    progress_percentages,
-)
+from freecad_cli_tools.pipeline_logging import configure_pipeline_logging, get_pipeline_logger, pipeline_step
 from freecad_cli_tools.runtime_config import (
     resolve_workspace_path,
 )
@@ -205,8 +201,6 @@ def sync_layout_result_to_cad(
     component_id: str,
     component: dict,
     source_component: dict | None = None,
-    progress_path: Path | None = None,
-    progress_output_files: dict[str, str | None] | None = None,
 ) -> dict:
     if not args.sync_cad:
         return {"enabled": False, "success": False}
@@ -247,9 +241,6 @@ def sync_layout_result_to_cad(
             export_step_path=(
                 normalize_runtime_path(export_step_path) if export_step_path is not None else None
             ),
-            progress_path=normalize_runtime_path(progress_path) if progress_path else None,
-            progress_tool="freecad-layout-safe-move",
-            progress_output_files=progress_output_files,
         )
     except SystemExit as exc:
         raise RuntimeError(
@@ -325,8 +316,6 @@ def build_result_payload(
     glb_path: str | None,
     step_exported: bool,
     glb_exported: bool,
-    progress: dict[str, float],
-    progress_json_path: str,
 ) -> dict[str, object]:
     """Build a structured result payload for layout-dataset safe-move."""
     return {
@@ -340,11 +329,6 @@ def build_result_payload(
         "glb_path": glb_path,
         "step_exported": step_exported,
         "glb_exported": glb_exported,
-        "progress_percentages": progress,
-        "progress_json_path": progress_json_path,
-        "layout_completion_percent": progress["layout_completion_percent"],
-        "modeling_percent": progress["modeling_percent"],
-        "export_file_percent": progress["export_file_percent"],
         "target_component": args.component,
         "component_contact_face": component_contact_face,
         "component_contact_face_label": FACE_DEFINITIONS[component_contact_face][0],
@@ -385,10 +369,6 @@ def emit_result_lines(payload: dict[str, object]) -> None:
     print(f"glb_path: {payload['glb_path']}")
     print(f"step_exported: {payload['step_exported']}")
     print(f"glb_exported: {payload['glb_exported']}")
-    print(f"layout_completion_percent: {payload['layout_completion_percent']:.1f}")
-    print(f"modeling_percent: {payload['modeling_percent']:.1f}")
-    print(f"export_file_percent: {payload['export_file_percent']:.1f}")
-    print(f"progress_json_path: {payload['progress_json_path']}")
     print(f"target_component: {payload['target_component']}")
     print(f"component_contact_face: {payload['component_contact_face']}")
     print(f"component_contact_face_label: {payload['component_contact_face_label']}")
@@ -479,8 +459,18 @@ def classify_cad_sync_result(
 
 def main() -> int:
     args = parse_args()
-    validate_workspace_root(args.workspace)
+    workspace_root = validate_workspace_root(args.workspace)
+    configure_pipeline_logging(command="layout safe-move", workspace=workspace_root)
+    logger = get_pipeline_logger("layout_safe_move")
     args.doc_name = resolve_doc_name(args.doc_name)
+    logger.info(
+        "starting safe move: component=%s move=%s install_face=%s sync_cad=%s doc=%s",
+        args.component,
+        [float(value) for value in args.move],
+        args.install_face,
+        args.sync_cad,
+        args.doc_name,
+    )
     layout_topology_input_path = resolve_workspace_path(
         args.layout_topology or DEFAULT_SAFE_MOVE_INPUT_DIR / "layout_topology.json"
     )
@@ -506,21 +496,6 @@ def main() -> int:
             else None
         ),
     }
-    progress_writer = ProgressLogWriter(
-        tool="freecad-layout-safe-move",
-        workflow="modify_cad",
-        command="layout safe-move",
-        stage="layout_safe_move",
-        progress={
-            "layout_completion_percent": 0.0,
-            "modeling_percent": 0.0,
-            "export_file_percent": 0.0,
-            "validation_percent": 0.0,
-        },
-        output_paths=output_paths,
-        merge_output_files=True,
-    ).start()
-    progress_log_path = get_progress_log_path()
     registry_run = start_registry_run(
         args,
         tool="freecad-layout-safe-move",
@@ -535,22 +510,18 @@ def main() -> int:
     )
 
     try:
-        layout_topology, geom = load_layout_dataset_files(
-            layout_topology_input_path,
-            geom_input_path,
-        )
-        data = normalize_layout_dataset(layout_topology, geom)
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 25.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-                "validation_percent": 0.0,
-            }
-        )
+        with pipeline_step("layout_load"):
+            logger.info("loading layout dataset: layout=%s geom=%s", layout_topology_input_path, geom_input_path)
+            layout_topology, geom = load_layout_dataset_files(
+                layout_topology_input_path,
+                geom_input_path,
+            )
+            data = normalize_layout_dataset(layout_topology, geom)
+            logger.info("normalized layout dataset: components=%d", len(data.get("components", {})))
         components = data.get("components", {})
         if args.component not in components:
             available = ", ".join(sorted(components))
+            logger.error("component not found: component=%s available=%s", args.component, available)
             raise KeyError(
                 f"Component {args.component} not found. Available components: {available}"
             )
@@ -609,9 +580,12 @@ def main() -> int:
             wall_size=wall_size,
         )
         requested_position = vector_add(start_position, effective_move)
-        requested_ok, requested_blockers = analyze_position(
-            analysis_context, requested_position, target_orientation_rows
-        )
+        with pipeline_step("layout_analyze"):
+            logger.info("analyzing requested placement: requested_position=%s effective_move=%s", requested_position, effective_move)
+            requested_ok, requested_blockers = analyze_position(
+                analysis_context, requested_position, target_orientation_rows
+            )
+            logger.info("requested placement result: ok=%s blockers=%s", requested_ok, requested_blockers)
 
         solution_found = True
         if requested_ok:
@@ -619,12 +593,14 @@ def main() -> int:
             applied_move = effective_move
             final_position = requested_position
         else:
-            best_scale = find_best_safe_scale(
-                analysis_context,
-                start_position,
-                effective_move,
-                target_orientation_rows,
-            )
+            with pipeline_step("layout_safe_scale"):
+                logger.info("searching safe scale for move")
+                best_scale = find_best_safe_scale(
+                    analysis_context,
+                    start_position,
+                    effective_move,
+                    target_orientation_rows,
+                )
             if best_scale is None:
                 solution_found = False
                 applied_scale = 0.0
@@ -638,13 +614,13 @@ def main() -> int:
         final_ok, final_blockers = analyze_position(
             analysis_context, final_position, target_orientation_rows
         )
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 75.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-                "validation_percent": 0.0,
-            }
+        logger.info(
+            "final placement result: solution_found=%s final_ok=%s applied_scale=%s final_position=%s blockers=%s",
+            solution_found,
+            final_ok,
+            applied_scale,
+            final_position,
+            final_blockers,
         )
         if solution_found and not final_ok:
             raise RuntimeError(
@@ -665,36 +641,28 @@ def main() -> int:
             args.component,
             updated["components"][args.component],
         )
-        save_layout_dataset_files(
-            layout_topology_output_path,
-            updated_layout_topology,
-            geom_output_path,
-            updated_geom,
-        )
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 100.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-                "validation_percent": 0.0,
-            }
-        )
-
-        try:
-            cad_sync = sync_layout_result_to_cad(
-                args,
+        with pipeline_step("layout_write"):
+            save_layout_dataset_files(
                 layout_topology_output_path,
+                updated_layout_topology,
                 geom_output_path,
-                args.component,
-                updated["components"][args.component],
-                source_component=target,
-                progress_path=progress_log_path,
-                progress_output_files={
-                    name: str(path) if path is not None else None
-                    for name, path in output_paths.items()
-                },
+                updated_geom,
             )
+            logger.info("wrote updated layout dataset: layout=%s geom=%s", layout_topology_output_path, geom_output_path)
+        try:
+            with pipeline_step("layout_cad_sync"):
+                logger.info("syncing layout result to FreeCAD")
+                cad_sync = sync_layout_result_to_cad(
+                    args,
+                    layout_topology_output_path,
+                    geom_output_path,
+                    args.component,
+                    updated["components"][args.component],
+                    source_component=target,
+                )
+                logger.info("FreeCAD sync finished: success=%s step=%s glb=%s", cad_sync.get("success"), cad_sync.get("step_path"), cad_sync.get("glb_path"))
         except Exception as exc:
+            logger.exception("FreeCAD sync failed: %s", exc)
             cad_sync = {
                 "enabled": True,
                 "success": False,
@@ -711,20 +679,7 @@ def main() -> int:
             step_exists,
             glb_exists,
         ) = classify_cad_sync_result(cad_sync)
-        progress = progress_percentages(
-            layout_complete=True,
-            modeling_requested=args.sync_cad,
-            modeling_complete=bool(cad_sync.get("success")),
-            step_path=step_path,
-            glb_path=glb_path,
-            export_requested=args.sync_cad,
-        )
-        progress_log_path = progress_writer.update(
-            progress=progress,
-            success=registry_status == "success",
-            status=registry_status,
-            error=registry_error,
-        )
+        logger.info("safe move artifact status: status=%s step_exists=%s glb_exists=%s", registry_status, step_exists, glb_exists)
         payload = build_result_payload(
             success=registry_status == "success",
             layout_topology_input_path=layout_topology_input_path,
@@ -756,8 +711,6 @@ def main() -> int:
             glb_path=glb_path,
             step_exported=step_exists,
             glb_exported=glb_exists,
-            progress=progress,
-            progress_json_path=str(progress_log_path),
         )
         finalize_registry_run(
             registry_run,
@@ -779,26 +732,14 @@ def main() -> int:
                 artifact_entry("glb", glb_path),
             ],
         )
+        logger.info("safe move registry finalized: status=%s", registry_status)
         if args.format == "json":
             print(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
             emit_result_lines(payload)
         return 2 if registry_status == "partial_success" else 0
     except Exception as exc:
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 0.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-                "validation_percent": 0.0,
-            },
-            success=False,
-            status="failed",
-            error={
-                "code": "LAYOUT_DATASET_SAFE_MOVE_EXCEPTION",
-                "message": str(exc),
-            },
-        )
+        logger.exception("safe move failed: %s", exc)
         finalize_registry_run(
             registry_run,
             status="failed",

@@ -40,7 +40,7 @@ def configure_logging(
     if not quiet:
         stream_handler = logging.StreamHandler(sys.stderr)
         stream_handler.setLevel(numeric_level)
-        stream_handler.setFormatter(logging.Formatter("%(levelname)s [%(pipeline_step)s] %(message)s"))
+        stream_handler.setFormatter(logging.Formatter("%(levelname)s [sim_agent] [%(pipeline_step)s] %(message)s"))
         stream_handler.addFilter(_StepContextFilter())
         logger.addHandler(stream_handler)
 
@@ -78,7 +78,7 @@ def ensure_file_logging(log_file: Path | None = None) -> Path | None:
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(
         logging.Formatter(
-            fmt="%(asctime)s %(levelname)s [%(pipeline_step)s] [%(name)s] %(message)s",
+            fmt="%(asctime)s %(levelname)s [sim_agent] [%(pipeline_step)s] [%(name)s] %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
     )

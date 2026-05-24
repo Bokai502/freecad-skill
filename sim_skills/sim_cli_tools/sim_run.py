@@ -21,13 +21,6 @@ APP_CONFIG_PATH = Path("/data/lbk/codex_web/config.json")
 DEFAULT_PYTHON = Path("/data/conda/bin/python")
 DEFAULT_SAMPLE_ID = "930001"
 TOOL_NAME = "sim-run"
-PROGRESS_STEPS = (
-    ("simulation", "simulation_run"),
-    ("field_export", "field_export"),
-    ("postprocess", "postprocess"),
-    ("case_build", "case_build"),
-    ("analysis", "analysis"),
-)
 
 REQUIRED_INPUT_FILES = ("real_bom.json", "layout_topology.json", "geom.json")
 REQUIRED_CAD_FILES = (
@@ -72,10 +65,27 @@ bootstrap_runtime()
 from codex_agents.config import BomExternalToolsPipelineConfig  # noqa: E402
 from codex_agents.context import BomExternalToolsPipelineContext  # noqa: E402
 from codex_agents.local_io import read_json, write_json  # noqa: E402
-from codex_agents.logging_utils import configure_logging  # noqa: E402
+from codex_agents.logging_utils import configure_logging, step_logging_context  # noqa: E402
 from codex_agents.stage_adapters import case_stage, layout_stage_result  # noqa: E402
 from codex_agents.steps import AnalysisStep, CaseBuildStep, FieldExportStep, PostprocessStep, SimulationStep  # noqa: E402
 from input_normalize.normalize import normalize_bom_to_components  # noqa: E402
+
+
+SIMULATION_LOOP_STAGE_START_PROGRESS = {
+    "simulation": ("simulation_running", 0.0),
+    "field_export": ("field_export_running", 70.0),
+    "postprocess": ("postprocess_running", 80.0),
+    "case_build": ("case_build_running", 90.0),
+    "analysis": ("analysis_running", 96.0),
+}
+
+SIMULATION_LOOP_STAGE_COMPLETE_PROGRESS = {
+    "simulation": ("simulation_running", 70.0),
+    "field_export": ("field_export_running", 80.0),
+    "postprocess": ("postprocess_running", 90.0),
+    "case_build": ("case_build_running", 96.0),
+    "analysis": ("analysis_running", 100.0),
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -191,33 +201,78 @@ def handle_run(args: argparse.Namespace) -> int:
         write_run_state(paths["output_dir"], args)
         ctx = BomExternalToolsPipelineContext(config, restore_existing=False)
         bind_source_paths(ctx, paths)
-        progress_path = ctx.paths["logs"] / "progress_percentages.json"
-        initialize_tool_progress(progress_path, paths)
         prepare_contract_workspace(ctx, paths, args.sample_id, args.seed)
 
         for step in (SimulationStep(), FieldExportStep(), PostprocessStep(), CaseBuildStep(), AnalysisStep()):
             step_name = progress_step_name(step)
-            update_tool_progress(progress_path, step_name, status="running", percent=5.0)
-            execution = step.run(ctx)
-            ctx.append_stage(execution.stage)
-            finished_status = "completed" if execution.stage.get("status") in {"completed", "completed_with_unplaced"} else "failed"
-            update_tool_progress(
-                progress_path,
-                step_name,
-                status=finished_status,
-                percent=100.0 if finished_status == "completed" else 99.0,
-                stage=execution.stage,
-            )
-            if not execution.continue_pipeline:
-                manifest = ctx.write_manifest()
-                finalize_tool_progress(progress_path, ok=bool(manifest.get("ok")))
-                emit(manifest, args.json)
-                return 0 if manifest.get("ok") else 1
+            start_simulation_loop_progress(paths["workspace_dir"], step_name)
+            with step_logging_context(step_name):
+                execution = step.run(ctx)
+                ctx.append_stage(execution.stage)
+                sync_simulation_loop_progress(paths["workspace_dir"], step_name, execution.stage)
+                if not execution.continue_pipeline:
+                    manifest = ctx.write_manifest()
+                    finalize_simulation_loop_progress(paths["workspace_dir"], manifest)
+                    emit(manifest, args.json)
+                    return 0 if manifest.get("ok") else 1
 
         manifest = ctx.write_manifest()
-        finalize_tool_progress(progress_path, ok=bool(manifest.get("ok")))
+        finalize_simulation_loop_progress(paths["workspace_dir"], manifest)
         emit(manifest, args.json)
         return 0 if manifest.get("ok") else 1
+
+
+def start_simulation_loop_progress(workspace_dir: Path, step_name: str) -> None:
+    progress = SIMULATION_LOOP_STAGE_START_PROGRESS.get(step_name)
+    if progress is None:
+        return
+    status, percentage = progress
+    write_simulation_loop_progress(workspace_dir, status=status, completed=False, percentage=percentage)
+
+
+def sync_simulation_loop_progress(workspace_dir: Path, step_name: str, stage: dict[str, Any]) -> None:
+    if stage.get("status") != "completed":
+        write_simulation_loop_progress(workspace_dir, status="failed", completed=True, percentage=100.0)
+        return
+    progress = SIMULATION_LOOP_STAGE_COMPLETE_PROGRESS.get(step_name)
+    if progress is None:
+        return
+    status, percentage = progress
+    write_simulation_loop_progress(workspace_dir, status=status, completed=False, percentage=percentage)
+
+
+def finalize_simulation_loop_progress(workspace_dir: Path, manifest: dict[str, Any]) -> None:
+    status = "completed" if manifest.get("ok") else "failed"
+    write_simulation_loop_progress(workspace_dir, status=status, completed=True, percentage=100.0)
+
+
+def write_simulation_loop_progress(
+    workspace_dir: Path,
+    *,
+    status: str,
+    completed: bool,
+    percentage: float,
+) -> None:
+    try:
+        from freecad_cli_tools.cli.progress import (
+            progress_path_for_workspace,
+            read_progress,
+            update_loop_progress,
+            write_progress,
+        )
+
+        progress_path = progress_path_for_workspace(workspace_dir)
+        data = read_progress(progress_path)
+        update_loop_progress(
+            data,
+            loop_name="simulation",
+            status=status,
+            completed=completed,
+            percentage=percentage,
+        )
+        write_progress(progress_path, data)
+    except Exception:
+        return
 
 
 def resolve_paths(args: argparse.Namespace) -> dict[str, Path]:
@@ -326,171 +381,6 @@ def progress_step_name(step: object) -> str:
     if isinstance(step, AnalysisStep):
         return "analysis"
     raise RuntimeError(f"unknown progress step: {step.__class__.__name__}")
-
-
-def initialize_tool_progress(progress_path: Path, paths: dict[str, Path]) -> None:
-    started_at = timestamp()
-    progress = read_progress_document(progress_path)
-    progress["schema_version"] = progress.get("schema_version") or "freecad_progress/1.0"
-    progress["workflow"] = "simulation"
-    progress["command"] = "sim run"
-    progress["stage"] = "simulation"
-    progress["status"] = "running"
-    progress["overall_percent"] = 0.0
-    progress.setdefault("error", None)
-    progress["paths"] = {
-        **dict(progress.get("paths") or {}),
-        "workspace_dir": str(paths["workspace_dir"]),
-        "input_dir": str(paths["input_dir"]),
-        "cad_dir": str(paths["cad_dir"]),
-        "output_dir": str(paths["output_dir"]),
-    }
-    progress.setdefault("started_at", started_at)
-    progress["current_run_started_at"] = started_at
-    progress["finished_at"] = None
-    progress["updated_at"] = started_at
-    progress["steps"] = merge_progress_steps(progress.get("steps", []), reset=True)
-    write_json(progress_path, progress)
-
-
-def merge_progress_steps(existing_steps: Any, *, reset: bool) -> list[dict[str, Any]]:
-    by_name: dict[str, dict[str, Any]] = {}
-    if isinstance(existing_steps, list):
-        for step in existing_steps:
-            if isinstance(step, dict) and step.get("command_name"):
-                by_name[str(step["command_name"])] = dict(step)
-
-    merged: list[dict[str, Any]] = []
-    known_names = {command_name for command_name, _stage_name in PROGRESS_STEPS}
-    for index, (command_name, stage_name) in enumerate(PROGRESS_STEPS, start=1):
-        step = by_name.get(command_name, {})
-        step.update(
-            {
-                "command_name": command_name,
-                "stage_name": stage_name,
-                "index": index,
-                "weight_percent": round(100.0 / len(PROGRESS_STEPS), 4),
-            }
-        )
-        if reset:
-            step["status"] = "pending"
-            step["percent"] = 0.0
-            step["started_at"] = None
-            step["finished_at"] = None
-        else:
-            step.setdefault("status", "pending")
-            step.setdefault("percent", 0.0)
-            step.setdefault("started_at", None)
-            step.setdefault("finished_at", None)
-        merged.append(step)
-
-    for command_name, step in by_name.items():
-        if command_name not in known_names:
-            merged.append(step)
-    return merged
-
-
-def update_tool_progress(
-    progress_path: Path,
-    command_name: str,
-    *,
-    status: str,
-    percent: float,
-    stage: dict[str, Any] | None = None,
-) -> None:
-    progress = read_progress_document(progress_path)
-    progress["steps"] = merge_progress_steps(progress.get("steps", []), reset=False)
-    now = timestamp()
-    found = False
-    for step in progress.get("steps", []):
-        if step.get("command_name") != command_name:
-            continue
-        found = True
-        step["status"] = status
-        step["percent"] = max(float(step.get("percent") or 0.0), percent) if status == "running" else percent
-        step["started_at"] = step.get("started_at") or now
-        if status in {"completed", "failed", "blocked"}:
-            step["finished_at"] = now
-        if stage is not None:
-            step["stage_status"] = stage.get("status")
-            if stage.get("errors"):
-                step["errors"] = stage.get("errors")
-            if stage.get("warnings"):
-                step["warnings"] = stage.get("warnings")
-        break
-    if not found:
-        progress["steps"].append(
-            {
-                "command_name": command_name,
-                "stage_name": command_name,
-                "status": status,
-                "percent": percent,
-                "started_at": now,
-                "finished_at": now if status in {"completed", "failed", "blocked"} else None,
-            }
-        )
-    progress["stage"] = command_name
-    progress["status"] = "running" if status == "running" else progress.get("status", "running")
-    progress["updated_at"] = now
-    progress["overall_percent"] = overall_tool_percent(progress)
-    if status == "failed" and stage is not None:
-        progress["error"] = stage.get("errors") or stage.get("warnings") or "stage failed"
-    progress["updated_at"] = now
-    write_json(progress_path, progress)
-
-
-def finalize_tool_progress(progress_path: Path, *, ok: bool) -> None:
-    progress = read_progress_document(progress_path)
-    now = timestamp()
-    progress["status"] = "success" if ok else "failed"
-    progress["stage"] = "completed" if ok else str(progress.get("stage") or "failed")
-    progress["finished_at"] = now
-    progress["updated_at"] = now
-    progress["overall_percent"] = overall_tool_percent(progress)
-    if ok:
-        progress["error"] = None
-        progress["last_success_at"] = now
-    else:
-        progress["last_failed_at"] = now
-    progress["updated_at"] = now
-    write_json(progress_path, progress)
-
-
-def read_progress_document(progress_path: Path) -> dict[str, Any]:
-    if not progress_path.exists():
-        return {
-            "schema_version": "freecad_progress/1.0",
-            "workflow": "simulation",
-            "command": "sim run",
-            "stage": "simulation",
-            "status": "running",
-            "overall_percent": 0.0,
-            "error": None,
-            "steps": [],
-        }
-    try:
-        existing = read_json(progress_path)
-    except Exception:
-        existing = {}
-    if not isinstance(existing, dict):
-        existing = {}
-    existing.setdefault("schema_version", "freecad_progress/1.0")
-    existing.setdefault("workflow", "simulation")
-    existing.setdefault("command", "sim run")
-    existing.setdefault("error", None)
-    existing.setdefault("steps", [])
-    return existing
-
-
-def overall_tool_percent(tool: dict[str, Any]) -> float:
-    total = 0.0
-    for step in tool.get("steps", []):
-        total += (float(step.get("percent") or 0.0) / 100.0) * float(step.get("weight_percent") or 0.0)
-    return round(total, 2)
-
-
-def timestamp() -> str:
-    return time.strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
 def prepare_contract_workspace(

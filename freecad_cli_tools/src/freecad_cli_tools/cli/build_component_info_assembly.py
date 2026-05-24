@@ -23,12 +23,7 @@ from freecad_cli_tools.cli_support import (
     normalize_runtime_path,
 )
 from freecad_cli_tools.component_info_assembly import load_and_normalize_component_info_assembly
-from freecad_cli_tools.progress import (
-    ProgressLogWriter,
-    attach_progress_log_path,
-    attach_progress_percentages,
-    get_progress_log_path,
-)
+from freecad_cli_tools.pipeline_logging import configure_pipeline_logging, get_pipeline_logger, pipeline_step
 from freecad_cli_tools.rpc_client import print_result as print_json
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
 from freecad_cli_tools.runtime_config import (
@@ -180,7 +175,10 @@ def registry_inputs(
 
 def main() -> None:
     args = parse_args()
-    validate_workspace_root(args.workspace)
+    workspace_root = validate_workspace_root(args.workspace)
+    configure_pipeline_logging(command="assembly create-from-component-info", workspace=workspace_root)
+    logger = get_pipeline_logger("component_info_assembly")
+    logger.info("starting component-info assembly: doc=%s output=%s", args.doc_name, args.output)
     layout_topology_path = resolve_workspace_path(
         args.layout_topology or DEFAULT_COMPONENT_INFO_INPUT_DIR / "layout_topology.json"
     )
@@ -191,8 +189,10 @@ def main() -> None:
     )
     for required_path in (layout_topology_path, geom_path, real_bom_path):
         if not required_path.exists():
+            logger.error("required input file not found: %s", required_path)
             raise FileNotFoundError(f"required input file not found: {required_path}")
     if geom_component_info_path is not None and not geom_component_info_path.exists():
+        logger.error("geom_component_info.json not found: %s", geom_component_info_path)
         raise FileNotFoundError(f"geom_component_info.json not found: {geom_component_info_path}")
     args.real_bom_path = real_bom_path
     output_path = resolve_component_info_assembly_step_path(args.output)
@@ -206,18 +206,6 @@ def main() -> None:
         "step": output_path,
         "glb": output_path.with_suffix(".glb"),
     }
-    progress_log_path = get_progress_log_path()
-    progress_writer = ProgressLogWriter(
-        tool="freecad-create-assembly-from-component-info",
-        progress={
-            "layout_completion_percent": 0.0,
-            "modeling_percent": 0.0,
-            "export_file_percent": 0.0,
-        },
-        output_paths=output_paths,
-        merge_output_files=True,
-    ).start()
-
     registry_run = start_registry_run(
         args,
         tool="freecad-create-assembly-from-component-info",
@@ -232,23 +220,24 @@ def main() -> None:
     )
 
     try:
-        normalized_data = load_and_normalize_component_info_assembly(
-            layout_topology_path=layout_topology_path,
-            geom_path=geom_path,
-            geom_component_info_path=geom_component_info_path,
-            real_bom_path=real_bom_path,
-            max_step_size_mb=args.max_step_size_mb,
-        )
-        stage_input_data(normalized_data, staged_input_path)
-        stage_output_dir(staged_output_path)
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 100.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-            }
-        )
-
+        with pipeline_step("component_info_prepare"):
+            logger.info(
+                "normalizing component-info inputs: layout=%s geom=%s real_bom=%s component_info=%s",
+                layout_topology_path,
+                geom_path,
+                real_bom_path,
+                geom_component_info_path,
+            )
+            normalized_data = load_and_normalize_component_info_assembly(
+                layout_topology_path=layout_topology_path,
+                geom_path=geom_path,
+                geom_component_info_path=geom_component_info_path,
+                real_bom_path=real_bom_path,
+                max_step_size_mb=args.max_step_size_mb,
+            )
+            stage_input_data(normalized_data, staged_input_path)
+            stage_output_dir(staged_output_path)
+            logger.info("staged component-info input: %s output=%s", staged_input_path, staged_output_path)
         code = render_rpc_script(
             "assembly_from_component_info.py",
             {
@@ -258,41 +247,23 @@ def main() -> None:
                 "__EXPORT_GLB__": "True",
                 "__FIT_VIEW__": "False" if args.no_fit_view else "True",
                 "__VIEW_NAME__": json.dumps(args.view),
-                "__PROGRESS_PATH__": json.dumps(normalize_runtime_path(progress_log_path)),
-                "__PROGRESS_TOOL__": json.dumps("freecad-create-assembly-from-component-info"),
-                "__PROGRESS_OUTPUT_FILES__": json.dumps(
-                    {
-                        name: str(path) if path is not None else None
-                        for name, path in output_paths.items()
-                    }
-                ),
             },
         )
-        payload = execute_script_payload(args.host, args.port, code)
+        with pipeline_step("component_info_freecad_export"):
+            logger.info("executing FreeCAD component-info export: host=%s port=%s", args.host, args.port)
+            payload = execute_script_payload(args.host, args.port, code)
+            logger.info("FreeCAD component-info export returned: success=%s error=%s", payload.get("success"), payload.get("error"))
         if payload.get("success"):
             collect_runtime_exports(staged_output_path, output_path)
             payload["save_path"] = str(output_path)
             final_glb = output_path.with_suffix(".glb")
             payload["glb_path"] = str(final_glb) if final_glb.exists() else None
+            logger.info("collected runtime exports: step=%s glb=%s", output_path, payload["glb_path"])
 
         step_path = payload.get("save_path")
         glb_path = payload.get("glb_path")
         step_exists = bool(step_path) and Path(step_path).exists()
         glb_exists = bool(glb_path) and Path(glb_path).exists()
-        progress = attach_progress_percentages(
-            payload,
-            layout_complete=True,
-            modeling_requested=True,
-            modeling_complete=bool(payload.get("success")),
-            step_path=step_path,
-            glb_path=glb_path,
-            export_requested=True,
-        )
-        progress_log_path = progress_writer.update(
-            progress=progress,
-            success=bool(payload.get("success")),
-        )
-        attach_progress_log_path(payload, progress_log_path)
         if payload.get("success") and step_exists and glb_exists:
             registry_status = "success"
             registry_error = None
@@ -310,6 +281,7 @@ def main() -> None:
                 str(payload.get("error") or "FreeCAD component-info assembly build failed."),
                 details=payload,
             )
+        logger.info("component-info artifact status: status=%s step_exists=%s glb_exists=%s", registry_status, step_exists, glb_exists)
 
         finalize_registry_run(
             registry_run,
@@ -337,17 +309,11 @@ def main() -> None:
                 artifact_entry("glb", glb_path),
             ],
         )
+        logger.info("component-info registry finalized: status=%s", registry_status)
         print_json(payload)
         exit_on_failure(payload)
     except Exception as exc:
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 0.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-            },
-            success=False,
-        )
+        logger.exception("component-info assembly failed: %s", exc)
         finalize_registry_run(
             registry_run,
             status="failed",

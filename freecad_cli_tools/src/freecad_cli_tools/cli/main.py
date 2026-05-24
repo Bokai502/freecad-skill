@@ -11,6 +11,7 @@ from freecad_cli_tools.cli import (
     cad_build,
     cad_validate,
     layout_safe_move,
+    progress,
     runtime_config,
 )
 
@@ -37,6 +38,10 @@ COMMANDS: dict[tuple[str, ...], tuple[CommandHandler, str]] = {
         lambda: runtime_config.main(),
         "Print resolved runtime configuration.",
     ),
+    ("progress", "update"): (
+        lambda: progress.main(),
+        "Update loop progress state in <workspace>/logs/progress.json.",
+    ),
 }
 
 
@@ -57,6 +62,7 @@ def _usage() -> str:
             "  freecad-tools cad build",
             "  freecad-tools cad validate",
             "  freecad-tools layout safe-move --component P001 --move 50 50 0 --format json",
+            "  freecad-tools progress update --loop-name freecad --status running --completed false --percentage 25",
         ]
     )
     return "\n".join(lines)

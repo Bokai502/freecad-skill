@@ -18,12 +18,7 @@ from freecad_cli_tools.artifact_registry import (
 from freecad_cli_tools.cad_inputs import build_cad_stage_inputs
 from freecad_cli_tools.cli_support import execute_script_payload, exit_on_failure, normalize_runtime_path
 from freecad_cli_tools.doc_name import add_doc_name_arg, resolve_doc_name
-from freecad_cli_tools.progress import (
-    ProgressLogWriter,
-    attach_progress_log_path,
-    attach_progress_percentages,
-    get_progress_log_path,
-)
+from freecad_cli_tools.pipeline_logging import configure_pipeline_logging, get_pipeline_logger, pipeline_step
 from freecad_cli_tools.rpc_client import print_result as print_json
 from freecad_cli_tools.rpc_script_fragments import COMPONENT_SHAPE_HELPERS, PLACEMENT_HELPERS
 from freecad_cli_tools.rpc_script_loader import render_rpc_script
@@ -108,12 +103,17 @@ def _registry_inputs(
 
 def main() -> None:
     args = parse_args()
-    validate_workspace_root(args.workspace)
+    workspace_root = validate_workspace_root(args.workspace)
+    configure_pipeline_logging(command="cad build", workspace=workspace_root)
+    logger = get_pipeline_logger("cad_build")
     requested_doc_name = args.doc_name
     args.doc_name = resolve_doc_name(args.doc_name)
+    logger.info("resolved document name: requested=%s active=%s", requested_doc_name, args.doc_name)
     real_bom_path, layout_topology_path, geom_path = _input_paths(args)
+    logger.info("checking CAD inputs: real_bom=%s layout_topology=%s geom=%s", real_bom_path, layout_topology_path, geom_path)
     for path in (real_bom_path, layout_topology_path, geom_path):
         if not path.exists():
+            logger.error("required input file not found: %s", path)
             raise FileNotFoundError(f"required input file not found: {path}")
 
     output_dir = resolve_workspace_path(args.output_dir)
@@ -133,20 +133,6 @@ def main() -> None:
         "comsol_coord": output_dir / "comsol_inputs" / "coord.txt",
         "comsol_channels_input": output_dir / "comsol_inputs" / "channels_input.npz",
     }
-    progress_writer = ProgressLogWriter(
-        tool="freecad-tools cad build",
-        workflow="create_cad",
-        command="cad build",
-        stage="cad_build",
-        progress={
-            "layout_completion_percent": 0.0,
-            "modeling_percent": 0.0,
-            "export_file_percent": 0.0,
-            "validation_percent": 0.0,
-        },
-        output_paths=output_paths,
-    ).start()
-
     registry_run = start_registry_run(
         args,
         tool="freecad-tools cad build",
@@ -161,29 +147,22 @@ def main() -> None:
     )
 
     try:
-        prepared = build_cad_stage_inputs(
-            real_bom_path=real_bom_path,
-            layout_topology_path=layout_topology_path,
-            geom_path=geom_path,
-            output_dir=output_dir,
-            step_filename=step_path.name,
-            grid_shape=tuple(int(value) for value in args.grid_shape),
-        )
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 100.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-                "validation_percent": 0.0,
-            }
-        )
-
+        with pipeline_step("cad_prepare_inputs"):
+            logger.info("preparing normalized CAD inputs into %s", output_dir)
+            prepared = build_cad_stage_inputs(
+                real_bom_path=real_bom_path,
+                layout_topology_path=layout_topology_path,
+                geom_path=geom_path,
+                output_dir=output_dir,
+                step_filename=step_path.name,
+                grid_shape=tuple(int(value) for value in args.grid_shape),
+            )
         normalized_input_path = output_dir / "normalized_layout_dataset.json"
         normalized_input_path.write_text(
             json.dumps(prepared["normalized"], indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
-        progress_log_path = get_progress_log_path()
+        logger.info("wrote normalized layout dataset: %s", normalized_input_path)
         code = render_rpc_script(
             "assembly_from_layout.py",
             {
@@ -195,14 +174,12 @@ def main() -> None:
                 "__EXPORT_GLB__": "True",
                 "__FIT_VIEW__": "False" if args.no_fit_view else "True",
                 "__VIEW_NAME__": json.dumps(args.view),
-                "__PROGRESS_PATH__": json.dumps(normalize_runtime_path(progress_log_path)),
-                "__PROGRESS_TOOL__": json.dumps("freecad-tools cad build"),
-                "__PROGRESS_OUTPUT_FILES__": json.dumps(
-                    {name: str(path) for name, path in output_paths.items()}
-                ),
             },
         )
-        payload = execute_script_payload(args.host, args.port, code)
+        with pipeline_step("cad_freecad_export"):
+            logger.info("executing FreeCAD assembly export: host=%s port=%s step=%s", args.host, args.port, step_path)
+            payload = execute_script_payload(args.host, args.port, code)
+            logger.info("FreeCAD export returned: success=%s error=%s", payload.get("success"), payload.get("error"))
         if payload.get("success"):
             payload["requested_doc_name"] = args.doc_name
             payload["explicit_doc_name"] = requested_doc_name
@@ -211,15 +188,6 @@ def main() -> None:
 
         step_exists = step_path.exists()
         glb_exists = glb_path.exists()
-        progress = attach_progress_percentages(
-            payload,
-            layout_complete=True,
-            modeling_requested=True,
-            modeling_complete=bool(payload.get("success")),
-            step_path=step_path,
-            glb_path=glb_path,
-            export_requested=True,
-        )
         if payload.get("success") and step_exists and glb_exists:
             registry_status = "success"
             registry_error = None
@@ -237,14 +205,8 @@ def main() -> None:
                 str(payload.get("error") or "FreeCAD CAD build failed."),
                 details=payload,
             )
+        logger.info("CAD build artifact status: status=%s step_exists=%s glb_exists=%s", registry_status, step_exists, glb_exists)
 
-        progress_log_path = progress_writer.update(
-            progress=progress,
-            success=bool(payload.get("success")) and step_exists and glb_exists,
-            status=registry_status,
-            error=registry_error,
-        )
-        attach_progress_log_path(payload, progress_log_path)
         payload.update(
             {
                 "input_format": "real_bom_layout_topology_geom",
@@ -280,23 +242,11 @@ def main() -> None:
                 artifact_entry("comsol_channels_input", output_paths["comsol_channels_input"]),
             ],
         )
+        logger.info("CAD build registry finalized: status=%s output_dir=%s", registry_status, output_dir)
         print_json(payload)
         exit_on_failure(payload)
     except Exception as exc:
-        progress_writer.update(
-            progress={
-                "layout_completion_percent": 0.0,
-                "modeling_percent": 0.0,
-                "export_file_percent": 0.0,
-                "validation_percent": 0.0,
-            },
-            success=False,
-            status="failed",
-            error={
-                "code": "CAD_BUILD_EXCEPTION",
-                "message": str(exc),
-            },
-        )
+        logger.exception("CAD build failed: %s", exc)
         finalize_registry_run(
             registry_run,
             status="failed",

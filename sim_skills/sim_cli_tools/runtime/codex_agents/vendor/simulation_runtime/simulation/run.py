@@ -264,6 +264,8 @@ def _run_comsol_local(
         connection_cfg["comsol"]["connection"],
         entry_config,
         status_path=work_dir / "sim" / "status.json",
+        progress_path=work_dir / "sim" / "comsol_progress.json",
+        workspace_dir=_workspace_dir_from_simulation_output(output_dir),
     )
     sim_src = work_dir / "sim"
     _copy_comsol_outputs(sim_src, output_dir)
@@ -336,6 +338,13 @@ def _run_comsol_local(
         result.outputs["component_face_temperature"] = component_face_temperature_path
     result.checks = reports
     return result.finish("completed")
+
+
+def _workspace_dir_from_simulation_output(output_dir: Path) -> Path | None:
+    output_dir = Path(output_dir).resolve()
+    if output_dir.name == "simulation" and output_dir.parent.name == "02_sim":
+        return output_dir.parent.parent
+    return None
 
 
 def _resolve_after_state_dir(layout_dir: Path, geometry_step_path: Path, config: Mapping[str, Any]) -> Path:
@@ -483,6 +492,8 @@ def _run_comsol_entry(
     config: Mapping[str, Any],
     *,
     status_path: Path | None = None,
+    progress_path: Path | None = None,
+    workspace_dir: Path | None = None,
 ) -> dict[str, Any]:
     local_python = str(connection.get("local_python", "/data/conda/envs/autoflowsim-comsol/bin/python"))
     entry_script = Path(config.get("local_entry_script") or connection.get("local_entry_script"))
@@ -520,13 +531,13 @@ def _run_comsol_entry(
             env=env,
             start_new_session=True,
         )
-        progress_path = Path(config["pipeline_progress_path"]) if config.get("pipeline_progress_path") else None
         try:
             stdout, stderr = _communicate_with_progress(
                 process,
                 timeout_seconds=timeout if timeout > 0 else None,
                 status_path=status_path,
                 progress_path=progress_path,
+                workspace_dir=workspace_dir,
             )
         except subprocess.TimeoutExpired:
             os.killpg(process.pid, signal.SIGTERM)
@@ -552,92 +563,79 @@ def _communicate_with_progress(
     timeout_seconds: int | None,
     status_path: Path | None,
     progress_path: Path | None,
+    workspace_dir: Path | None,
 ) -> tuple[str, str]:
     deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
     last_marker: str | None = None
     while True:
         if deadline is not None and time.monotonic() >= deadline:
             raise subprocess.TimeoutExpired(process.args, timeout_seconds)
-        last_marker = _sync_comsol_progress(status_path, progress_path, last_marker)
+        last_marker = _sync_comsol_progress_to_workspace(status_path, progress_path, workspace_dir, last_marker)
         try:
             stdout, stderr = process.communicate(timeout=1.0)
         except subprocess.TimeoutExpired:
             continue
-        _sync_comsol_progress(status_path, progress_path, last_marker)
+        _sync_comsol_progress_to_workspace(status_path, progress_path, workspace_dir, last_marker)
         return stdout, stderr
 
 
-def _sync_comsol_progress(
+def _sync_comsol_progress_to_workspace(
     status_path: Path | None,
     progress_path: Path | None,
+    workspace_dir: Path | None,
     last_marker: str | None,
 ) -> str | None:
-    if status_path is None or progress_path is None or not status_path.exists() or not progress_path.exists():
+    if progress_path is None or not progress_path.exists():
         return last_marker
     try:
-        status = json.loads(status_path.read_text(encoding="utf-8"))
-        progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        from comsol_progress import normalize_comsol_progress
+
+        progress = normalize_comsol_progress(status_path=status_path, progress_path=progress_path)
     except Exception:
         return last_marker
-    stage = str(status.get("stage") or "")
+    stage = str(progress.get("stage") or "")
     if not stage:
         return last_marker
-    percent_limit = 100.0 if stage == "completed" or status.get("ok") is True else 99.0
-    percent = max(0.0, min(percent_limit, float(status.get("progress_percent") or 0.0)))
+    mapped_percent = round(max(0.0, min(100.0, float(progress.get("percent") or 0.0))) * 0.7, 2)
     marker = json.dumps(
         {
             "stage": stage,
-            "percent": percent,
-            "updated_at": status.get("updated_at"),
-            "heartbeat_at": status.get("heartbeat_at"),
+            "percent": progress.get("percent"),
+            "mapped_percent": mapped_percent,
+            "updated_at": progress.get("updated_at"),
+            "heartbeat_at": progress.get("heartbeat_at"),
         },
         sort_keys=True,
     )
     if marker == last_marker:
         return last_marker
-    now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    for step in progress.get("steps", []):
-        if step.get("command_name") != "simulation":
-            continue
-        step["status"] = "running"
-        step["percent"] = max(float(step.get("percent") or 0.0), percent)
-        step["started_at"] = step.get("started_at") or now
-        step["comsol_progress"] = {
-            "stage": stage,
-            "percent": percent,
-            "sample_id": status.get("sample_id"),
-            "status_json": str(status_path),
-            "updated_at": status.get("updated_at"),
-            "heartbeat_at": status.get("heartbeat_at"),
-        }
-        break
-    progress["schema_version"] = "freecad_progress/1.0"
-    progress["workflow"] = "simulation"
-    progress["command"] = "sim run"
-    progress["stage"] = "simulation"
-    progress["status"] = "running"
-    progress["updated_at"] = now
-    progress["overall_percent"] = _overall_pipeline_percent(progress)
-    progress["comsol_progress"] = {
-        "stage": stage,
-        "percent": percent,
-        "sample_id": status.get("sample_id"),
-        "status_json": str(status_path),
-        "updated_at": status.get("updated_at"),
-        "heartbeat_at": status.get("heartbeat_at"),
-    }
-    progress["updated_at"] = now
-    progress_path.write_text(json.dumps(progress, ensure_ascii=False, indent=2), encoding="utf-8")
+    _write_workspace_simulation_progress(workspace_dir, percentage=mapped_percent)
     return marker
 
 
-def _overall_pipeline_percent(progress: Mapping[str, Any]) -> float:
-    completed_weight = 0.0
-    for step in progress.get("steps", []):
-        step_percent = float(step.get("percent") or 0.0)
-        weight_percent = float(step.get("weight_percent") or 0.0)
-        completed_weight += (step_percent / 100.0) * weight_percent
-    return round(completed_weight, 2)
+def _write_workspace_simulation_progress(workspace_dir: Path | None, *, percentage: float) -> None:
+    if workspace_dir is None:
+        return
+    try:
+        from freecad_cli_tools.cli.progress import (
+            progress_path_for_workspace,
+            read_progress,
+            update_loop_progress,
+            write_progress,
+        )
+
+        progress_path = progress_path_for_workspace(workspace_dir)
+        data = read_progress(progress_path)
+        update_loop_progress(
+            data,
+            loop_name="simulation",
+            status="simulation_running",
+            completed=False,
+            percentage=percentage,
+        )
+        write_progress(progress_path, data)
+    except Exception:
+        return
 
 
 def _copy_comsol_outputs(sim_src: Path, output_dir: Path) -> None:

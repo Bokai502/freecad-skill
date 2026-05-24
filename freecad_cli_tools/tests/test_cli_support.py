@@ -19,7 +19,7 @@ from freecad_cli_tools.cli_support import (
     normalize_runtime_path,
 )
 from freecad_cli_tools.doc_name import DEFAULT_DOC_NAME, infer_doc_name_from_workspace, resolve_doc_name
-from freecad_cli_tools.progress import ProgressLogWriter
+from freecad_cli_tools.pipeline_logging import configure_pipeline_logging, get_pipeline_logger, pipeline_step
 from freecad_cli_tools.runtime_config import (
     get_default_artifact_registry_dir,
     get_default_cad_output_dir,
@@ -66,6 +66,25 @@ def test_get_default_workspace_dir_requires_environment_or_config(
 
     with pytest.raises(RuntimeError, match="FreeCAD workspace is not configured"):
         get_default_workspace_dir()
+
+
+def test_pipeline_logging_writes_workspace_pipeline_log(monkeypatch, tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(workspace)})
+    monkeypatch.delenv("FREECAD_WORKSPACE_DIR", raising=False)
+
+    log_path = configure_pipeline_logging(command="cad build", workspace=workspace)
+    logger = get_pipeline_logger("test")
+    with pipeline_step("unit_step"):
+        logger.info("unit progress message")
+
+    content = log_path.read_text(encoding="utf-8")
+    assert log_path == workspace / "logs" / "pipeline.log"
+    assert "freecad command started: cad build" in content
+    assert "INFO [cad_agent]" in content
+    assert "[unit_step]" in content
+    assert "unit progress message" in content
 
 
 def test_runtime_config_reads_codex_web_freecad_defaults(monkeypatch, tmp_path: Path) -> None:
@@ -227,217 +246,6 @@ def test_normalize_runtime_path_resolves_path(tmp_path: Path) -> None:
     target.write_text("ok", encoding="utf-8")
 
     assert normalize_runtime_path(target) == str(target.resolve())
-
-
-def test_progress_log_writer_omits_output_files(monkeypatch, tmp_path: Path) -> None:
-    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
-    output_path = tmp_path / "01_cad" / "geometry_after.step"
-    writer = ProgressLogWriter(
-        tool="test-tool",
-        progress={
-            "layout_completion_percent": 10.0,
-            "modeling_percent": 0.0,
-            "export_file_percent": 0.0,
-        },
-        output_paths={"step": output_path},
-    ).start()
-
-    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
-    first_payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    output_path.parent.mkdir(parents=True)
-    output_path.write_text("step-data", encoding="utf-8")
-    writer.update()
-
-    final_payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert "output_files" not in first_payload
-    assert "output_files" not in final_payload
-
-
-def test_progress_log_writer_removes_existing_progress_history(monkeypatch, tmp_path: Path) -> None:
-    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
-    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
-    progress_log_path.parent.mkdir(parents=True)
-    progress_log_path.write_text(
-        json.dumps(
-            {
-                "schema_version": "freecad_progress/1.0",
-                "workflow": "simulation",
-                "status": "success",
-                "custom_marker": "keep-me",
-                "output_files": {
-                    "previous": {"path": "/tmp/previous.json", "exists": True},
-                },
-                "tools": {
-                    "sim-run": {
-                        "tool": "sim-run",
-                        "status": "success",
-                    },
-                },
-                "history": [
-                    {
-                        "tool": "sim-run",
-                        "status": "success",
-                        "updated_at": "2026-01-01T00:00:00Z",
-                    },
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    output_path = tmp_path / "01_cad" / "geometry_after.glb"
-    ProgressLogWriter(
-        tool="freecad-tools cad build",
-        progress={
-            "modeling_percent": 100.0,
-            "export_file_percent": 100.0,
-            "validation_percent": 0.0,
-        },
-        output_paths={"glb": output_path},
-        workflow="create_cad",
-        command="cad build",
-        status="running",
-    ).start()
-
-    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert payload["custom_marker"] == "keep-me"
-    assert payload["workflow"] == "create_cad"
-    assert payload["tools"]["sim-run"]["status"] == "success"
-    assert payload["tools"]["freecad-tools cad build"]["command"] == "cad build"
-    assert payload["modeling_percent"] == 100.0
-    assert payload["overall_percent"] == 100.0
-    assert "export_file_percent" not in payload
-    assert "validation_percent" not in payload
-    assert "output_files" not in payload
-    assert "output_files" not in payload["tools"]["freecad-tools cad build"]
-    assert "history" not in payload
-
-
-def test_progress_log_writer_filters_cad_validate_progress(monkeypatch, tmp_path: Path) -> None:
-    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
-    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
-
-    ProgressLogWriter(
-        tool="freecad-tools cad validate",
-        progress={
-            "modeling_percent": 100.0,
-            "export_file_percent": 100.0,
-            "validation_percent": 35.0,
-        },
-        output_paths={},
-        workflow="cad_validation",
-        command="cad validate",
-        status="running",
-    ).start()
-
-    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert payload["validation_percent"] == 35.0
-    assert payload["overall_percent"] == 35.0
-    assert "modeling_percent" not in payload
-    assert "export_file_percent" not in payload
-    assert "output_files" not in payload
-
-
-def test_progress_log_writer_merges_cad_build_modeling_and_export(monkeypatch, tmp_path: Path) -> None:
-    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
-    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
-
-    ProgressLogWriter(
-        tool="freecad-tools cad build",
-        progress={
-            "modeling_percent": 100.0,
-            "export_file_percent": 50.0,
-            "validation_percent": 0.0,
-        },
-        output_paths={},
-        workflow="create_cad",
-        command="cad build",
-        status="running",
-    ).start()
-
-    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert payload["modeling_percent"] == 75.0
-    assert payload["overall_percent"] == 75.0
-    assert "export_file_percent" not in payload
-    assert "validation_percent" not in payload
-    assert "output_files" not in payload
-
-
-def test_progress_log_writer_preserves_build_progress_when_validate_starts(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
-    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
-
-    ProgressLogWriter(
-        tool="freecad-tools cad build",
-        progress={
-            "modeling_percent": 100.0,
-            "export_file_percent": 100.0,
-            "validation_percent": 0.0,
-        },
-        output_paths={},
-        workflow="create_cad",
-        command="cad build",
-        status="success",
-    ).start()
-    ProgressLogWriter(
-        tool="freecad-tools cad validate",
-        progress={
-            "modeling_percent": 0.0,
-            "export_file_percent": 0.0,
-            "validation_percent": 0.0,
-        },
-        output_paths={},
-        workflow="create_cad",
-        command="cad validate",
-        status="running",
-    ).start()
-
-    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert payload["progress_percentages"]["modeling_percent"] == 100.0
-    assert payload["progress_percentages"]["export_file_percent"] == 100.0
-    assert payload["progress_percentages"]["validation_percent"] == 0.0
-
-
-def test_progress_log_writer_clears_stale_validation_when_new_build_starts(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    write_runtime_config(monkeypatch, tmp_path, {"workspaceDir": str(tmp_path)})
-    progress_log_path = tmp_path / "logs" / "progress_percentages.json"
-
-    ProgressLogWriter(
-        tool="freecad-tools cad validate",
-        progress={
-            "modeling_percent": 100.0,
-            "export_file_percent": 100.0,
-            "validation_percent": 100.0,
-        },
-        output_paths={},
-        workflow="create_cad",
-        command="cad validate",
-        status="success",
-    ).start()
-    ProgressLogWriter(
-        tool="freecad-tools cad build",
-        progress={
-            "modeling_percent": 0.0,
-            "export_file_percent": 0.0,
-            "validation_percent": 0.0,
-        },
-        output_paths={},
-        workflow="create_cad",
-        command="cad build",
-        status="running",
-    ).start()
-
-    payload = json.loads(progress_log_path.read_text(encoding="utf-8"))
-    assert "freecad-tools cad validate" not in payload["tools"]
-    assert payload["progress_percentages"]["modeling_percent"] == 0.0
-    assert payload["progress_percentages"]["export_file_percent"] == 0.0
-    assert payload["progress_percentages"]["validation_percent"] == 0.0
 
 
 def test_describe_rpc_failure_includes_error_message_and_raw_result() -> None:

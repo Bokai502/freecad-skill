@@ -45,9 +45,6 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__VIEW_NAME__": _DUMMY_STR,
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
         "__COMPONENT_SHAPE_HELPERS__": COMPONENT_SHAPE_HELPERS,
-        "__PROGRESS_PATH__": _DUMMY_PATH,
-        "__PROGRESS_TOOL__": _DUMMY_STR,
-        "__PROGRESS_OUTPUT_FILES__": _DUMMY_OUTPUT_FILES,
     },
     "assembly_from_component_info.py": {
         "__INPUT_PATH__": _DUMMY_PATH,
@@ -56,9 +53,6 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__EXPORT_GLB__": "True",
         "__FIT_VIEW__": "True",
         "__VIEW_NAME__": _DUMMY_STR,
-        "__PROGRESS_PATH__": _DUMMY_PATH,
-        "__PROGRESS_TOOL__": _DUMMY_STR,
-        "__PROGRESS_OUTPUT_FILES__": _DUMMY_OUTPUT_FILES,
     },
     "sync_component_placements.py": {
         "__DOC_NAME__": _DUMMY_STR,
@@ -66,9 +60,6 @@ SCRIPT_REPLACEMENTS: dict[str, dict[str, str]] = {
         "__RECOMPUTE__": "True",
         "__EXPORT_STEP_PATH__": _DUMMY_PATH,
         "__PLACEMENT_HELPERS__": PLACEMENT_HELPERS,
-        "__PROGRESS_PATH__": _DUMMY_PATH,
-        "__PROGRESS_TOOL__": _DUMMY_STR,
-        "__PROGRESS_OUTPUT_FILES__": _DUMMY_OUTPUT_FILES,
     },
     "export_glb_from_step.py": {
         "__STEP_PATH__": _DUMMY_PATH,
@@ -109,42 +100,6 @@ def test_sync_component_placements_uses_delta_for_part_containers() -> None:
     assert "def apply_delta_placement(" in rendered
     assert "source_placement.inverse()" in rendered
     assert '"mode": "delta"' in rendered
-
-
-def test_render_batch_sync_script_uses_python_none_for_missing_progress_args() -> None:
-    rendered = render_batch_sync_script(
-        "DemoDoc",
-        [
-            {
-                "component": "P001",
-                "position": [0.0, 0.0, 0.0],
-                "orientation_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
-            }
-        ],
-    )
-
-    assert "PROGRESS_PATH = None" in rendered
-    assert "PROGRESS_TOOL = None" in rendered
-    assert 'PROGRESS_PATH = "null"' not in rendered
-    assert 'PROGRESS_TOOL = "null"' not in rendered
-
-
-@pytest.mark.parametrize(
-    "script_name",
-    [
-        "assembly_from_layout.py",
-        "assembly_from_component_info.py",
-        "sync_component_placements.py",
-    ],
-)
-def test_freecad_side_scripts_write_progress_json(script_name: str) -> None:
-    rendered = render_rpc_script(script_name, SCRIPT_REPLACEMENTS[script_name])
-    assert "def write_progress(" in rendered
-    assert "output_file_records()" in rendered
-    assert "def merge_progress_payload(" in rendered
-    assert '"progress_percentages": normalize_progress(progress)' in rendered
-    assert "aggregate_progress_from_tools(merged_tools, existing)" in rendered
-    assert "os.replace(str(temp_path), str(path))" in rendered
 
 
 @pytest.mark.parametrize(
